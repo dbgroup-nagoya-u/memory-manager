@@ -5,16 +5,12 @@
 
 #include <array>
 #include <atomic>
-#include <cstdint>
 #include <thread>
+
+#include "epoch_based/common.hpp"
 
 namespace gc::epoch
 {
-constexpr size_t kCacheLineSize = 64;
-constexpr size_t kBufferSize = 4096;
-constexpr size_t kPartitionNum = 8;
-constexpr size_t kPartitionMask = 0x7;
-
 class alignas(kCacheLineSize) EpochManager
 {
  private:
