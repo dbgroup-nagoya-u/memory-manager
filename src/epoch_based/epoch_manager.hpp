@@ -8,9 +8,7 @@
 #include <cstdint>
 #include <thread>
 
-#include "util/hash.h"
-
-namespace gc
+namespace gc::epoch
 {
 constexpr size_t kCacheLineSize = 64;
 constexpr size_t kBufferSize = 4096;
@@ -72,10 +70,10 @@ class alignas(kCacheLineSize) EpochManager
 
   ~EpochManager() {}
 
-  EpochManager(const EpochManager&) = delete;
-  EpochManager& operator=(const EpochManager&) = delete;
-  EpochManager(EpochManager&&) = delete;
-  EpochManager& operator=(EpochManager&&) = delete;
+  EpochManager(const EpochManager &) = delete;
+  EpochManager &operator=(const EpochManager &) = delete;
+  EpochManager(EpochManager &&) = delete;
+  EpochManager &operator=(EpochManager &&) = delete;
 
   /*################################################################################################
    * Public utility functions
@@ -103,4 +101,4 @@ class alignas(kCacheLineSize) EpochManager
   }
 };
 
-}  // namespace gc
+}  // namespace gc::epoch

@@ -3,9 +3,9 @@
 
 #pragma once
 
-#include "garbage_collection/epoch_manager.hpp"
+#include "epoch_based/epoch_manager.hpp"
 
-namespace gc
+namespace gc::epoch
 {
 class EpochGuard
 {
@@ -16,14 +16,14 @@ class EpochGuard
 
   size_t current_epoch_;
 
-  EpochManager* epoch_manger_;
+  EpochManager *epoch_manger_;
 
  public:
   /*################################################################################################
    * Public constructors/destructors
    *##############################################################################################*/
 
-  explicit EpochGuard(EpochManager* epoch_manger)
+  explicit EpochGuard(EpochManager *epoch_manger)
   {
     current_epoch_ = epoch_manger->EnterEpoch();
     epoch_manger_ = epoch_manger;
@@ -31,10 +31,10 @@ class EpochGuard
 
   ~EpochGuard() { epoch_manger_->LeaveEpoch(current_epoch_); }
 
-  EpochGuard(const EpochGuard&) = delete;
-  EpochGuard& operator=(const EpochGuard&) = delete;
-  EpochGuard(EpochGuard&&) = default;
-  EpochGuard& operator=(EpochGuard&&) = default;
+  EpochGuard(const EpochGuard &) = delete;
+  EpochGuard &operator=(const EpochGuard &) = delete;
+  EpochGuard(EpochGuard &&) = default;
+  EpochGuard &operator=(EpochGuard &&) = default;
 };
 
-}  // namespace gc
+}  // namespace gc::epoch
