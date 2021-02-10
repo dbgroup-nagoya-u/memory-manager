@@ -17,7 +17,7 @@ class GarbageList
    * Internal member variables
    *##############################################################################################*/
 
-  const GarbageList* next_;
+  GarbageList* next_;
 
   T* target_ptr_;
 
@@ -27,8 +27,8 @@ class GarbageList
    *##############################################################################################*/
 
   explicit GarbageList(  //
-      const GarbageList* next,
-      const T* target_ptr)
+      const T* target_ptr,
+      const GarbageList* next = nullptr)
       : next_{next}, target_ptr_{target_ptr}
   {
   }
@@ -53,6 +53,12 @@ class GarbageList
   Next() const
   {
     return next_;
+  }
+
+  void
+  SetNext(const GarbageList* next)
+  {
+    next_ = next;
   }
 };
 
