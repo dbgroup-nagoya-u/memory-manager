@@ -1,6 +1,8 @@
 # define function to add unit tests in the same format
-function(ADD_SIMPLE_GC_TEST SIMPLE_GC_TEST_TARGET)
-  add_executable(${SIMPLE_GC_TEST_TARGET} "${CMAKE_CURRENT_SOURCE_DIR}/${SIMPLE_GC_TEST_TARGET}.cpp")
+function(ADD_SIMPLE_GC_TEST SIMPLE_GC_TARGET_DIR SIMPLE_GC_TEST_TARGET)
+  add_executable(${SIMPLE_GC_TEST_TARGET}
+    "${CMAKE_CURRENT_SOURCE_DIR}/${SIMPLE_GC_TARGET_DIR}/${SIMPLE_GC_TEST_TARGET}.cpp"
+  )
   target_compile_features(${SIMPLE_GC_TEST_TARGET} PRIVATE "cxx_std_20")
   target_compile_options(${SIMPLE_GC_TEST_TARGET} PRIVATE
     -Wall
@@ -24,4 +26,4 @@ function(ADD_SIMPLE_GC_TEST SIMPLE_GC_TEST_TARGET)
 endfunction()
 
 # add unit tests to build targets
-#ADD_SIMPLE_GC_TEST(epoch_based/epoch_manager)
+ADD_SIMPLE_GC_TEST("epoch_based" "epoch_manager_test")

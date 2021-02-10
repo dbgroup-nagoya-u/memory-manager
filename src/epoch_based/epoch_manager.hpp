@@ -32,7 +32,11 @@ class alignas(kCacheLineSize) EpochManager
 
   EpochManager() : current_index_{0}, check_begin_index_{0}
   {
-    epoch_ring_buffer_.fill({0, 0, 0, 0, 0, 0, 0, 0});
+    for (size_t epoch = 0; epoch < kBufferSize; ++epoch) {
+      for (size_t partition = 0; partition < kPartitionMask; ++partition) {
+        epoch_ring_buffer_[epoch][partition] = 0;
+      }
+    }
   }
 
   ~EpochManager() {}
@@ -46,7 +50,7 @@ class alignas(kCacheLineSize) EpochManager
    * Public getters/setters
    *##############################################################################################*/
 
-  constexpr size_t
+  size_t
   GetCurrentEpoch() const
   {
     return current_index_.load();
