@@ -26,7 +26,9 @@
     "-whitespace/braces",
     "-build/c++11"
   ],
-  "cSpell.words": [],
+  "cSpell.words": [
+    "alignas"
+  ],
   "files.associations": {
     "fstream": "cpp",
     "thread": "cpp",
