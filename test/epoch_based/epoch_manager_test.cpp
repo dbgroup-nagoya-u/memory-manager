@@ -36,4 +36,17 @@ TEST_F(EpochManagerFixture, Construct_NoArgument_MemberVariableCorrectlyInitiali
   EXPECT_EQ(0, end_epoch);
 }
 
+TEST_F(EpochManagerFixture, ForwardEpoch_GoAroundRingBuffer_EpochGoBackToZero)
+{
+  for (size_t count = 0; count < kBufferSize; ++count, epoch_manger.ForwardEpoch()) {
+    const auto current_epoch = epoch_manger.GetCurrentEpoch();
+
+    EXPECT_EQ(count, current_epoch);
+  }
+
+  const auto current_epoch = epoch_manger.GetCurrentEpoch();
+
+  EXPECT_EQ(0, current_epoch);
+}
+
 }  // namespace gc::epoch
