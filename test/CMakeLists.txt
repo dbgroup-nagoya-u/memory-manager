@@ -17,6 +17,7 @@ function(ADD_SIMPLE_GC_TEST SIMPLE_GC_TARGET_DIR SIMPLE_GC_TEST_TARGET)
     "${GOOGLETEST_SOURCE_DIR}/include"
   )
   target_link_libraries(${SIMPLE_GC_TEST_TARGET} PRIVATE
+    pthread
     gtest_main
   )
   add_dependencies(${SIMPLE_GC_TEST_TARGET}

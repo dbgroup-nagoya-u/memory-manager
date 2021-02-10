@@ -30,6 +30,9 @@ target_include_directories(simple_gc INTERFACE
   "${SIMPLE_GC_SOURCE_DIR}/src"
   "${SIMPLE_GC_SOURCE_DIR}/include"
 )
+target_link_libraries(simple_gc INTERFACE
+  pthread
+)
 
 # build unit tests if required
 option(SIMPLE_GC_BUILD_TESTS, "Build unit tests for simple GC implementations" OFF)
