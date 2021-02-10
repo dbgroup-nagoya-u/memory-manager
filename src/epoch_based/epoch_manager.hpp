@@ -56,7 +56,7 @@ class alignas(kCacheLineSize) EpochManager
    * Public utility functions
    *##############################################################################################*/
 
-  size_t
+  std::pair<size_t, size_t>
   EnterEpoch()
   {
     const auto thread_id = std::this_thread::get_id();
@@ -65,15 +65,14 @@ class alignas(kCacheLineSize) EpochManager
 
     ++epoch_ring_buffer_[current_epoch][partition_id];
 
-    return current_epoch;
+    return {current_epoch, partition_id};
   }
 
   void
-  LeaveEpoch(const size_t entered_epoch)
+  LeaveEpoch(  //
+      const size_t entered_epoch,
+      const size_t partition_id)
   {
-    const auto thread_id = std::this_thread::get_id();
-    const auto partition_id = std::hash<std::thread::id>()(thread_id) & kPartitionMask;
-
     --epoch_ring_buffer_[entered_epoch][partition_id];
   }
 

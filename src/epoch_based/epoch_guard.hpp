@@ -16,6 +16,8 @@ class EpochGuard
 
   size_t current_epoch_;
 
+  size_t partition_id_;
+
   EpochManager *epoch_manger_;
 
  public:
@@ -25,16 +27,32 @@ class EpochGuard
 
   explicit EpochGuard(EpochManager *epoch_manger)
   {
-    current_epoch_ = epoch_manger->EnterEpoch();
+    std::tie(current_epoch_, partition_id_) = epoch_manger->EnterEpoch();
     epoch_manger_ = epoch_manger;
   }
 
-  ~EpochGuard() { epoch_manger_->LeaveEpoch(current_epoch_); }
+  ~EpochGuard() { epoch_manger_->LeaveEpoch(current_epoch_, partition_id_); }
 
   EpochGuard(const EpochGuard &) = delete;
   EpochGuard &operator=(const EpochGuard &) = delete;
   EpochGuard(EpochGuard &&) = default;
   EpochGuard &operator=(EpochGuard &&) = default;
+
+  /*################################################################################################
+   * Public getters/setters
+   *##############################################################################################*/
+
+  constexpr size_t
+  GetEpoch() const
+  {
+    return current_epoch_;
+  }
+
+  constexpr size_t
+  GetPartitionId() const
+  {
+    return partition_id_;
+  }
 };
 
 }  // namespace gc::epoch
