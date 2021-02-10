@@ -6,6 +6,7 @@
 #include <array>
 #include <atomic>
 #include <thread>
+#include <utility>
 
 #include "epoch_based/common.hpp"
 
@@ -18,50 +19,20 @@ class alignas(kCacheLineSize) EpochManager
    * Internal member variables
    *##############################################################################################*/
 
-  std::array<std::array<std::atomic_uint64_t, kPartitionNum>, kBufferSize> ring_buffer_;
+  std::array<std::array<std::atomic_uint64_t, kPartitionNum>, kBufferSize> epoch_ring_buffer_;
 
   std::atomic_size_t current_index_;
 
-  size_t last_freed_index_;
-
-  /*################################################################################################
-   * Internal utility functions
-   *##############################################################################################*/
-
-  void
-  ForwardEpoch()
-  {
-    auto previous_index = current_index_.fetch_add(1);
-    if (previous_index == kBufferSize - 1) {
-      current_index_ = 0;
-    }
-  }
-
-  size_t
-  GetFreeableEpoch()
-  {
-    size_t index = last_freed_index_ + 1;
-    for (; index < current_index_; ++index) {
-      // check each epoch has no eintering thread
-      for (size_t partition = 0; partition < kPartitionNum; ++partition) {
-        if (ring_buffer_[index][partition].load() != 0) {
-          goto TO_RETURN;
-        }
-      }
-    }
-  TO_RETURN:
-    last_freed_index_ = index - 1;
-    return last_freed_index_;
-  }
+  size_t check_begin_index_;
 
  public:
   /*################################################################################################
    * Public constructors/destructors
    *##############################################################################################*/
 
-  EpochManager() : current_index_{0}, last_freed_index_{0}
+  EpochManager() : current_index_{0}, check_begin_index_{0}
   {
-    ring_buffer_.fill({0, 0, 0, 0, 0, 0, 0, 0});
+    epoch_ring_buffer_.fill({0, 0, 0, 0, 0, 0, 0, 0});
   }
 
   ~EpochManager() {}
@@ -70,6 +41,16 @@ class alignas(kCacheLineSize) EpochManager
   EpochManager &operator=(const EpochManager &) = delete;
   EpochManager(EpochManager &&) = delete;
   EpochManager &operator=(EpochManager &&) = delete;
+
+  /*################################################################################################
+   * Public getters/setters
+   *##############################################################################################*/
+
+  constexpr size_t
+  GetCurrentEpoch() const
+  {
+    return current_index_.load();
+  }
 
   /*################################################################################################
    * Public utility functions
@@ -82,7 +63,7 @@ class alignas(kCacheLineSize) EpochManager
     const auto partition_id = std::hash<std::thread::id>()(thread_id) & kPartitionMask;
     const auto current_epoch = current_index_.load();
 
-    ++ring_buffer_[current_epoch][partition_id];
+    ++epoch_ring_buffer_[current_epoch][partition_id];
 
     return current_epoch;
   }
@@ -93,7 +74,35 @@ class alignas(kCacheLineSize) EpochManager
     const auto thread_id = std::this_thread::get_id();
     const auto partition_id = std::hash<std::thread::id>()(thread_id) & kPartitionMask;
 
-    --ring_buffer_[entered_epoch][partition_id];
+    --epoch_ring_buffer_[entered_epoch][partition_id];
+  }
+
+  void
+  ForwardEpoch()
+  {
+    auto previous_index = current_index_.fetch_add(1);
+    if (previous_index == kBufferSize - 1) {
+      current_index_ = 0;
+    }
+  }
+
+  std::pair<size_t, size_t>
+  ListFreeableEpoch()
+  {
+    const size_t freeable_begin_index = check_begin_index_;
+    size_t index = freeable_begin_index;
+    while (index != current_index_) {
+      // check each epoch has no eintering thread
+      for (size_t partition = 0; partition < kPartitionNum; ++partition) {
+        if (epoch_ring_buffer_[index][partition].load() != 0) {
+          goto TO_RETURN;
+        }
+      }
+      index = (index == kBufferSize - 1) ? 0 : index + 1;
+    }
+  TO_RETURN:
+    check_begin_index_ = index;
+    return {freeable_begin_index, index};
   }
 };
 
