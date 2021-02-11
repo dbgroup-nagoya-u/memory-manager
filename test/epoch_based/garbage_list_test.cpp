@@ -42,4 +42,20 @@ TEST_F(GarbageListFixture, Construct_ArgTargetPointer_MemberVariableCorrectlyIni
   EXPECT_EQ(&garbage_1, garbage_2.Next());
 }
 
+TEST_F(GarbageListFixture, SetNext_SwapNullptrForNextGarbage_ReferenceCorrectNext)
+{
+  const auto target_ptr_1 = new size_t{1};
+  const auto target_ptr_2 = new size_t{2};
+
+  auto garbage_1 = GarbageList{target_ptr_1};
+
+  EXPECT_EQ(nullptr, garbage_1.Next());
+
+  const auto garbage_2 = GarbageList{target_ptr_2};
+  garbage_1.SetNext(&garbage_2);
+
+  EXPECT_EQ(&garbage_2, garbage_1.Next());
+  EXPECT_NE(nullptr, garbage_1.Next());
+}
+
 }  // namespace gc::epoch

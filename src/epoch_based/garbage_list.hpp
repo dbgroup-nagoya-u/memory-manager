@@ -58,7 +58,7 @@ class GarbageList
   void
   SetNext(const GarbageList* next)
   {
-    next_ = next;
+    next_ = const_cast<GarbageList*>(next);
   }
 };
 
