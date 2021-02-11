@@ -17,9 +17,9 @@ class GarbageList
    * Internal member variables
    *##############################################################################################*/
 
-  GarbageList* next_;
+  std::unique_ptr<GarbageList> next_;
 
-  const T* target_ptr_;
+  const std::unique_ptr<T> target_ptr_;
 
  public:
   /*################################################################################################
@@ -33,12 +33,7 @@ class GarbageList
   {
   }
 
-  ~GarbageList()
-  {
-    if (target_ptr_ != nullptr) {
-      delete target_ptr_;
-    }
-  }
+  ~GarbageList() {}
 
   GarbageList(const GarbageList&) = delete;
   GarbageList& operator=(const GarbageList&) = delete;
@@ -52,13 +47,13 @@ class GarbageList
   constexpr GarbageList*
   Next() const
   {
-    return next_;
+    return next_.get();
   }
 
   void
   SetNext(const GarbageList* next)
   {
-    next_ = const_cast<GarbageList*>(next);
+    next_.reset(const_cast<GarbageList*>(next));
   }
 };
 

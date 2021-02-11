@@ -33,13 +33,13 @@ TEST_F(GarbageListFixture, Construct_ArgTargetPointer_MemberVariableCorrectlyIni
   const auto target_ptr_1 = new size_t{1};
   const auto target_ptr_2 = new size_t{2};
 
-  const auto garbage_1 = GarbageList{target_ptr_1};
+  const auto garbage_tail = new GarbageList{target_ptr_1};
 
-  EXPECT_EQ(nullptr, garbage_1.Next());
+  EXPECT_EQ(nullptr, garbage_tail->Next());
 
-  const auto garbage_2 = GarbageList{target_ptr_2, &garbage_1};
+  const auto garbage_head = GarbageList{target_ptr_2, garbage_tail};
 
-  EXPECT_EQ(&garbage_1, garbage_2.Next());
+  EXPECT_EQ(garbage_tail, garbage_head.Next());
 }
 
 TEST_F(GarbageListFixture, SetNext_SwapNullptrForNextGarbage_ReferenceCorrectNext)
@@ -47,15 +47,29 @@ TEST_F(GarbageListFixture, SetNext_SwapNullptrForNextGarbage_ReferenceCorrectNex
   const auto target_ptr_1 = new size_t{1};
   const auto target_ptr_2 = new size_t{2};
 
-  auto garbage_1 = GarbageList{target_ptr_1};
+  auto garbage_head = GarbageList{target_ptr_1};
 
-  EXPECT_EQ(nullptr, garbage_1.Next());
+  EXPECT_EQ(nullptr, garbage_head.Next());
 
-  const auto garbage_2 = GarbageList{target_ptr_2};
-  garbage_1.SetNext(&garbage_2);
+  const auto garbage_tail = new GarbageList{target_ptr_2};
+  garbage_head.SetNext(garbage_tail);
 
-  EXPECT_EQ(&garbage_2, garbage_1.Next());
-  EXPECT_NE(nullptr, garbage_1.Next());
+  EXPECT_EQ(garbage_tail, garbage_head.Next());
+  EXPECT_NE(nullptr, garbage_head.Next());
+}
+
+TEST_F(GarbageListFixture, Destruct_SetOne_AllocatedValueFreed)
+{
+  const auto target_ptr_1 = new size_t{1};
+  const auto target_ptr_2 = new size_t{2};
+
+  {
+    const auto garbage_tail = new GarbageList{target_ptr_1};
+    const auto garbage_head = GarbageList{target_ptr_2, garbage_tail};
+  }
+
+  EXPECT_NE(1, *target_ptr_1);
+  EXPECT_NE(2, *target_ptr_2);
 }
 
 }  // namespace gc::epoch
