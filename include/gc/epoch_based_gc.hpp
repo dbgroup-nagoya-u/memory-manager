@@ -80,7 +80,7 @@ class alignas(kCacheLineSize) EpochBasedGC
       : epoch_manager_{}, gc_interval_ms_{gc_interval_ms}, gc_is_running_{false}
   {
     for (size_t epoch = 0; epoch < kBufferSize; ++epoch) {
-      for (size_t partition = 0; partition < kPartitionMask; ++partition) {
+      for (size_t partition = 0; partition < kPartitionNum; ++partition) {
         garbage_ring_buffer_[epoch][partition] = 0;
       }
     }
