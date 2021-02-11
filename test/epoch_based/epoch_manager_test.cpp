@@ -33,22 +33,29 @@ class EpochManagerFixture : public ::testing::Test
 
 TEST_F(EpochManagerFixture, Construct_NoArgument_MemberVariableCorrectlyInitialized)
 {
-  const auto current_epoch = epoch_manager.GetCurrentEpoch();
-
-  EXPECT_EQ(0, current_epoch);
-
-  const auto [begin_epoch, end_epoch] = epoch_manager.ListFreeableEpoch();
+  const auto begin_epoch = epoch_manager.GetCurrentEpoch();
 
   EXPECT_EQ(0, begin_epoch);
-  EXPECT_EQ(0, end_epoch);
+
+  for (size_t count = 0; count < kBufferSize - 1; ++count) {
+    epoch_manager.ForwardEpoch();
+  }
+
+  const auto end_epoch = epoch_manager.GetCurrentEpoch();
+  const auto [freeable_begin, freeable_end] = epoch_manager.ListFreeableEpoch();
+
+  EXPECT_EQ(begin_epoch, freeable_begin);
+  EXPECT_EQ(end_epoch, freeable_end);
 }
 
 TEST_F(EpochManagerFixture, ForwardEpoch_GoAroundRingBuffer_EpochGoBackToZero)
 {
-  for (size_t count = 0; count < kBufferSize; ++count, epoch_manager.ForwardEpoch()) {
+  for (size_t count = 0; count < kBufferSize; ++count) {
     const auto current_epoch = epoch_manager.GetCurrentEpoch();
 
     EXPECT_EQ(count, current_epoch);
+
+    epoch_manager.ForwardEpoch();
   }
 
   const auto current_epoch = epoch_manager.GetCurrentEpoch();
