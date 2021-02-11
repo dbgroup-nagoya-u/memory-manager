@@ -73,7 +73,7 @@ TEST_F(EpochManagerFixture, EnterEpoch_HundredThreads_AllThreadsCorrectlyPartiti
   std::vector<std::thread> threads;
   auto current_epoch = epoch_manager.GetCurrentEpoch();
 
-  for (size_t count = 0; count < 50; ++count) {
+  for (size_t count = 0; count < 100; ++count) {
     threads.push_back(std::thread{CheckReturnEpochAndPartition, &epoch_manager, current_epoch});
   }
   for (auto &&thread : threads) {
@@ -84,7 +84,7 @@ TEST_F(EpochManagerFixture, EnterEpoch_HundredThreads_AllThreadsCorrectlyPartiti
   epoch_manager.ForwardEpoch();
   current_epoch = epoch_manager.GetCurrentEpoch();
 
-  for (size_t count = 0; count < 50; ++count) {
+  for (size_t count = 0; count < 100; ++count) {
     threads.emplace_back(std::thread{CheckReturnEpochAndPartition, &epoch_manager, current_epoch});
   }
   for (auto &&thread : threads) {
@@ -108,6 +108,37 @@ TEST_F(EpochManagerFixture, EnterEpoch_OneThread_RingBufferProtectEpoch)
 
   EXPECT_EQ(current_epoch, begin_epoch);
   EXPECT_EQ(current_epoch + 1, end_epoch);
+}
+
+TEST_F(EpochManagerFixture, LeaveEpoch_HundredThreads_LeavedEpochsBecomeFreeable)
+{
+  // keep an initial epoch
+  const auto begin_epoch = epoch_manager.GetCurrentEpoch();
+
+  // a lambda function to enter/leave an epoch
+  auto f = [em = &epoch_manager] {
+    const auto [epoch, partition] = em->EnterEpoch();
+    em->LeaveEpoch(epoch, partition);
+  };
+
+  // repeat entering/leaveing epochs with epoch forwarding
+  for (size_t loop = 0; loop < 10; ++loop) {
+    std::vector<std::thread> threads;
+    for (size_t count = 0; count < 100; ++count) {
+      threads.push_back(std::thread{f});
+    }
+    for (auto &&thread : threads) {
+      thread.join();
+    }
+    epoch_manager.ForwardEpoch();
+  }
+
+  // check all the epochs are freeable
+  const auto end_epoch = epoch_manager.GetCurrentEpoch();
+  const auto [freeable_begin, freeable_end] = epoch_manager.ListFreeableEpoch();
+
+  EXPECT_EQ(begin_epoch, freeable_begin);
+  EXPECT_EQ(end_epoch, freeable_end);
 }
 
 }  // namespace gc::epoch
