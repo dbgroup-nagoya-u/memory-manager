@@ -77,9 +77,13 @@ class alignas(kCacheLineSize) EpochBasedGC
   explicit EpochBasedGC(  //
       const size_t gc_interval_ms = kGCIntervalMilliSec,
       const bool start_gc = true)
-      : epoch_manager_{}, gc_interval_ms_{gc_interval_ms}
+      : epoch_manager_{}, gc_interval_ms_{gc_interval_ms}, gc_is_running_{false}
   {
-    garbage_ring_buffer_.fill({0, 0, 0, 0, 0, 0, 0, 0});
+    for (size_t epoch = 0; epoch < kBufferSize; ++epoch) {
+      for (size_t partition = 0; partition < kPartitionMask; ++partition) {
+        garbage_ring_buffer_[epoch][partition] = 0;
+      }
+    }
     if (start_gc) {
       StartGC();
     }
@@ -124,7 +128,7 @@ class alignas(kCacheLineSize) EpochBasedGC
   {
     const auto epoch = guard.GetEpoch();
     const auto partition = guard.GetPartitionId();
-    auto target_partition = garbage_ring_buffer_[epoch][partition];
+    auto& target_partition = garbage_ring_buffer_[epoch][partition];
 
     // create an inserting garbage
     auto garbage = new GarbageList{target_ptr};
@@ -178,7 +182,7 @@ class alignas(kCacheLineSize) EpochBasedGC
       return false;
     } else {
       gc_is_running_ = true;
-      gc_thread_ = std::thread{EpochBasedGC::RunGC, this};
+      gc_thread_ = std::thread{&EpochBasedGC::RunGC, this};
       return true;
     }
   }
