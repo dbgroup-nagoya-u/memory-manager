@@ -27,18 +27,6 @@ class EpochManagerFixture : public ::testing::Test
   }
 };
 
-void
-CheckReturnEpochAndPartition(  //
-    EpochManager *epoch_manager,
-    const size_t expected_epoch)
-{
-  const auto [epoch, partition] = epoch_manager->EnterEpoch();
-
-  EXPECT_EQ(expected_epoch, epoch);
-  EXPECT_GE(epoch, 0);
-  EXPECT_LT(epoch, kPartitionNum);
-}
-
 /*--------------------------------------------------------------------------------------------------
  * Public utility tests
  *------------------------------------------------------------------------------------------------*/
@@ -70,25 +58,28 @@ TEST_F(EpochManagerFixture, ForwardEpoch_GoAroundRingBuffer_EpochGoBackToZero)
 
 TEST_F(EpochManagerFixture, EnterEpoch_HundredThreads_AllThreadsCorrectlyPartitioned)
 {
-  std::vector<std::thread> threads;
-  auto current_epoch = epoch_manager.GetCurrentEpoch();
+  // a lambda function to check entered epoch and partition id
+  auto f = [em = &epoch_manager](const size_t expected_epoch) {
+    const auto [epoch, partition] = em->EnterEpoch();
 
-  for (size_t count = 0; count < 100; ++count) {
-    threads.push_back(std::thread{CheckReturnEpochAndPartition, &epoch_manager, current_epoch});
-  }
-  for (auto &&thread : threads) {
-    thread.join();
-  }
-  threads.clear();
+    EXPECT_EQ(expected_epoch, epoch);
+    EXPECT_GE(partition, 0);
+    EXPECT_LT(partition, kPartitionNum);
+  };
 
-  epoch_manager.ForwardEpoch();
-  current_epoch = epoch_manager.GetCurrentEpoch();
+  for (size_t loop = 0; loop < 10; ++loop) {
+    // keep a current epoch to check return values
+    const auto current_epoch = epoch_manager.GetCurrentEpoch();
 
-  for (size_t count = 0; count < 100; ++count) {
-    threads.emplace_back(std::thread{CheckReturnEpochAndPartition, &epoch_manager, current_epoch});
-  }
-  for (auto &&thread : threads) {
-    thread.join();
+    // create multi threads and check return values
+    std::vector<std::thread> threads;
+    for (size_t count = 0; count < 100; ++count) {
+      threads.push_back(std::thread{f, current_epoch});
+    }
+    for (auto &&thread : threads) {
+      thread.join();
+    }
+    epoch_manager.ForwardEpoch();
   }
 }
 
