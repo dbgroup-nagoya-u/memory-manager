@@ -79,8 +79,8 @@ TEST_F(GarbageListFixture, Destruct_SetOne_AllocatedValueFreed)
   }
 
   // this check is danger. these lines may fail due to freed memory status
-  EXPECT_NE(1, *target_ptr_1);
-  EXPECT_NE(2, *target_ptr_2);
+  // EXPECT_NE(1, *target_ptr_1);
+  // EXPECT_NE(2, *target_ptr_2);
 }
 
 }  // namespace gc::epoch

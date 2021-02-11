@@ -19,7 +19,7 @@ class alignas(kCacheLineSize) EpochManager
    * Internal member variables
    *##############################################################################################*/
 
-  std::array<std::array<std::atomic_uint64_t, kPartitionNum>, kBufferSize> epoch_ring_buffer_;
+  std::array<std::array<std::atomic_size_t, kPartitionNum>, kBufferSize> epoch_ring_buffer_;
 
   std::atomic_size_t current_index_;
 
@@ -33,7 +33,7 @@ class alignas(kCacheLineSize) EpochManager
   EpochManager() : current_index_{0}, check_begin_index_{0}
   {
     for (size_t epoch = 0; epoch < kBufferSize; ++epoch) {
-      for (size_t partition = 0; partition < kPartitionMask; ++partition) {
+      for (size_t partition = 0; partition < kPartitionNum; ++partition) {
         epoch_ring_buffer_[epoch][partition] = 0;
       }
     }
