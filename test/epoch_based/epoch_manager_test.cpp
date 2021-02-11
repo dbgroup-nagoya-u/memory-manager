@@ -93,22 +93,26 @@ TEST_F(EpochManagerFixture, EnterEpoch_HundredThreads_AllThreadsCorrectlyPartiti
 TEST_F(EpochManagerFixture, EnterEpoch_OneThread_RingBufferProtectEpoch)
 {
   // keep an initial epoch
-  auto current_epoch = epoch_manager.GetCurrentEpoch();
+  const auto begin_epoch = epoch_manager.GetCurrentEpoch();
 
-  // forward to creat a registered epoch
-  epoch_manager.ForwardEpoch();
+  // forward to creat freeable epochs
+  for (size_t loop = 0; loop < 10; ++loop) {
+    epoch_manager.ForwardEpoch();
+  }
 
-  // enter epoch
+  // enter and forward an epoch
   epoch_manager.EnterEpoch();
+  const auto end_epoch = epoch_manager.GetCurrentEpoch();
+  epoch_manager.ForwardEpoch();  // become end_epoch != current_epoch
 
-  // only an inital epoch is freeable
-  const auto [begin_epoch, end_epoch] = epoch_manager.ListFreeableEpoch();
+  // check not-entered epochs are freeable
+  const auto [freeable_begin, freeable_end] = epoch_manager.ListFreeableEpoch();
 
-  EXPECT_EQ(current_epoch, begin_epoch);
-  EXPECT_EQ(current_epoch + 1, end_epoch);
+  EXPECT_EQ(begin_epoch, freeable_begin);
+  EXPECT_EQ(end_epoch, freeable_end);
 }
 
-TEST_F(EpochManagerFixture, LeaveEpoch_HundredThreads_LeavedEpochsBecomeFreeable)
+TEST_F(EpochManagerFixture, LeaveEpoch_HundredThreads_LeftEpochsBecomeFreeable)
 {
   // keep an initial epoch
   const auto begin_epoch = epoch_manager.GetCurrentEpoch();
