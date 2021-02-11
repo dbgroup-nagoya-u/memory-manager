@@ -39,6 +39,10 @@ CheckReturnEpochAndPartition(  //
   EXPECT_LT(epoch, kPartitionNum);
 }
 
+/*--------------------------------------------------------------------------------------------------
+ * Public utility tests
+ *------------------------------------------------------------------------------------------------*/
+
 TEST_F(EpochManagerFixture, Construct_NoArgument_MemberVariableCorrectlyInitialized)
 {
   const auto current_epoch = epoch_manager.GetCurrentEpoch();
@@ -86,6 +90,24 @@ TEST_F(EpochManagerFixture, EnterEpoch_HundredThreads_AllThreadsCorrectlyPartiti
   for (auto &&thread : threads) {
     thread.join();
   }
+}
+
+TEST_F(EpochManagerFixture, EnterEpoch_OneThread_RingBufferProtectEpoch)
+{
+  // keep an initial epoch
+  auto current_epoch = epoch_manager.GetCurrentEpoch();
+
+  // forward to creat a registered epoch
+  epoch_manager.ForwardEpoch();
+
+  // enter epoch
+  epoch_manager.EnterEpoch();
+
+  // only an inital epoch is freeable
+  const auto [begin_epoch, end_epoch] = epoch_manager.ListFreeableEpoch();
+
+  EXPECT_EQ(current_epoch, begin_epoch);
+  EXPECT_EQ(current_epoch + 1, end_epoch);
 }
 
 }  // namespace gc::epoch
