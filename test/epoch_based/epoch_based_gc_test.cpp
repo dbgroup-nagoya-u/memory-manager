@@ -55,9 +55,9 @@ TEST_F(EpochBasedGCFixture, RunGC_AddGarbagesFromSingleThread_AllTargetsAreDelet
 
   // this check is danger: these lines may fail due to freed memory space
   for (size_t loop = 0; loop < kLoopNum; ++loop) {
-    const auto expected = loop + 1;
-    const auto actual = *target_ptrs[loop];
-    EXPECT_NE(expected, actual);
+    // const auto expected = loop + 1;
+    // const auto actual = *target_ptrs[loop];
+    // EXPECT_NE(expected, actual);
   }
 }
 
@@ -102,9 +102,9 @@ TEST_F(EpochBasedGCFixture, RunGC_AddGarbagesFromMultiThreads_AllTargetsAreDelet
   // this check is danger: these lines may fail due to freed memory space
   for (size_t thread = 0; thread < kThreadNum; ++thread) {
     for (size_t loop = 0; loop < kLoopNum; ++loop) {
-      const auto expected = loop + 1;
-      const auto actual = *target_ptrs[thread][loop];
-      EXPECT_NE(expected, actual);
+      // const auto expected = loop + 1;
+      // const auto actual = *target_ptrs[thread][loop];
+      // EXPECT_NE(expected, actual);
     }
   }
 }
