@@ -18,7 +18,7 @@ set(GOOGLETEST_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external/googletest")
 
 # build BzTree as a header-only library
 add_library(simple_gc INTERFACE)
-target_compile_features(simple_gc INTERFACE "cxx_std_20")
+target_compile_features(simple_gc INTERFACE "cxx_std_17")
 target_compile_options(simple_gc INTERFACE
   -Wall
   -Wextra

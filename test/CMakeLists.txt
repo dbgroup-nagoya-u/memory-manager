@@ -3,7 +3,7 @@ function(ADD_SIMPLE_GC_TEST SIMPLE_GC_TARGET_DIR SIMPLE_GC_TEST_TARGET)
   add_executable(${SIMPLE_GC_TEST_TARGET}
     "${CMAKE_CURRENT_SOURCE_DIR}/${SIMPLE_GC_TARGET_DIR}/${SIMPLE_GC_TEST_TARGET}.cpp"
   )
-  target_compile_features(${SIMPLE_GC_TEST_TARGET} PRIVATE "cxx_std_20")
+  target_compile_features(${SIMPLE_GC_TEST_TARGET} PRIVATE "cxx_std_17")
   target_compile_options(${SIMPLE_GC_TEST_TARGET} PRIVATE
     -Wall
     -Wextra
