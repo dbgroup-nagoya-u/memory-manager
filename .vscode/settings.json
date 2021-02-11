@@ -98,6 +98,10 @@
     "streambuf": "cpp",
     "cinttypes": "cpp",
     "typeinfo": "cpp",
-    "bit": "cpp"
+    "bit": "cpp",
+    "any": "cpp",
+    "cstring": "cpp",
+    "future": "cpp",
+    "variant": "cpp"
   },
 }
