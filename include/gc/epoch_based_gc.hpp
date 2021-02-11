@@ -50,19 +50,8 @@ class alignas(kCacheLineSize) EpochBasedGC
     {
       for (size_t partition = 0; partition < kPartitionNum; ++partition) {
         auto uintptr = garbage_ring_buffer_[epoch][partition].load();
-        if (uintptr == 0) {
-          continue;
-        }
-
-        // delete all garbages in a list
-        GarbageList<T>* garbage = static_cast<GarbageList<T>*>(reinterpret_cast<void*>(uintptr));
-        GarbageList<T>* next = garbage->Next();
-        while (next != nullptr) {
-          delete garbage;
-          garbage = next;
-          next = garbage->Next();
-        }
-        delete garbage;
+        const auto garbage = static_cast<GarbageList<T>*>(reinterpret_cast<void*>(uintptr));
+        delete garbage;  // all garbages are deleted by domino effect
       }
     }
   }
@@ -143,16 +132,11 @@ class alignas(kCacheLineSize) EpochBasedGC
     // swap the head of a garbage list
     auto old_head = target_partition.load();
     const auto new_head = reinterpret_cast<uintptr_t>(static_cast<void*>(garbage));
-    do {
-      // re-install a garbage
-      GarbageList<T>* next;
-      if (old_head == 0) {
-        next = nullptr;
-      } else {
-        next = static_cast<GarbageList<T>*>(reinterpret_cast<void*>(old_head));
-      }
-      garbage->SetNext(next);
-    } while (!target_partition.compare_exchange_weak(old_head, new_head));
+    while (!target_partition.compare_exchange_weak(old_head, new_head)) {
+      // continue until installation succeeds
+    }
+    const auto old_head_garbage = static_cast<GarbageList<T>*>(reinterpret_cast<void*>(old_head));
+    garbage->SetNext(old_head_garbage);
   }
 
   void
@@ -176,16 +160,11 @@ class alignas(kCacheLineSize) EpochBasedGC
     // swap the head of a garbage list
     auto old_head = target_partition.load();
     const auto new_head = reinterpret_cast<uintptr_t>(static_cast<void*>(head_garbage));
-    do {
-      // re-install a garbage list
-      GarbageList<T>* next;
-      if (old_head == 0) {
-        next = nullptr;
-      } else {
-        next = static_cast<GarbageList<T>*>(reinterpret_cast<void*>(old_head));
-      }
-      tail_garbage->SetNext(next);
-    } while (!target_partition.compare_exchange_weak(old_head, new_head));
+    while (!target_partition.compare_exchange_weak(old_head, new_head)) {
+      // continue until installation succeeds
+    }
+    const auto old_head_garbage = static_cast<GarbageList<T>*>(reinterpret_cast<void*>(old_head));
+    tail_garbage->SetNext(old_head_garbage);
   }
 
   /*################################################################################################
