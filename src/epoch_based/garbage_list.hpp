@@ -19,7 +19,7 @@ class GarbageList
 
   GarbageList* next_;
 
-  T* target_ptr_;
+  const T* target_ptr_;
 
  public:
   /*################################################################################################
@@ -29,7 +29,7 @@ class GarbageList
   explicit GarbageList(  //
       const T* target_ptr,
       const GarbageList* next = nullptr)
-      : next_{next}, target_ptr_{target_ptr}
+      : next_{const_cast<GarbageList*>(next)}, target_ptr_{const_cast<T*>(target_ptr)}
   {
   }
 

@@ -29,3 +29,4 @@ endfunction()
 # add unit tests to build targets
 ADD_SIMPLE_GC_TEST("epoch_based" "epoch_manager_test")
 ADD_SIMPLE_GC_TEST("epoch_based" "epoch_guard_test")
+ADD_SIMPLE_GC_TEST("epoch_based" "garbage_list_test")
