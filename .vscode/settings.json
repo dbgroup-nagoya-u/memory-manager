@@ -24,7 +24,8 @@
   "cpplint.filters": [
     "-readability/fn_size",
     "-whitespace/braces",
-    "-build/c++11"
+    "-build/c++11",
+    "-whitespace/newline"
   ],
   "cSpell.words": [
     "alignas"
@@ -97,6 +98,10 @@
     "streambuf": "cpp",
     "cinttypes": "cpp",
     "typeinfo": "cpp",
-    "bit": "cpp"
+    "bit": "cpp",
+    "any": "cpp",
+    "cstring": "cpp",
+    "future": "cpp",
+    "variant": "cpp"
   },
 }

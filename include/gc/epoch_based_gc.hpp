@@ -50,19 +50,8 @@ class alignas(kCacheLineSize) EpochBasedGC
     {
       for (size_t partition = 0; partition < kPartitionNum; ++partition) {
         auto uintptr = garbage_ring_buffer_[epoch][partition].load();
-        if (uintptr == 0) {
-          continue;
-        }
-
-        // delete all garbages in a list
-        GarbageList<T>* garbage = static_cast<GarbageList<T>*>(reinterpret_cast<void*>(uintptr));
-        GarbageList<T>* next = garbage->Next();
-        while (next != nullptr) {
-          delete garbage;
-          garbage = next;
-          next = garbage->Next();
-        }
-        delete garbage;
+        const auto garbage = static_cast<GarbageList<T>*>(reinterpret_cast<void*>(uintptr));
+        delete garbage;  // all garbages are deleted by domino effect
       }
     }
   }
@@ -88,9 +77,13 @@ class alignas(kCacheLineSize) EpochBasedGC
   explicit EpochBasedGC(  //
       const size_t gc_interval_ms = kGCIntervalMilliSec,
       const bool start_gc = true)
-      : epoch_manager_{}, gc_interval_ms_{gc_interval_ms}
+      : epoch_manager_{}, gc_interval_ms_{gc_interval_ms}, gc_is_running_{false}
   {
-    garbage_ring_buffer_.fill({0, 0, 0, 0, 0, 0, 0, 0});
+    for (size_t epoch = 0; epoch < kBufferSize; ++epoch) {
+      for (size_t partition = 0; partition < kPartitionMask; ++partition) {
+        garbage_ring_buffer_[epoch][partition] = 0;
+      }
+    }
     if (start_gc) {
       StartGC();
     }
@@ -135,7 +128,7 @@ class alignas(kCacheLineSize) EpochBasedGC
   {
     const auto epoch = guard.GetEpoch();
     const auto partition = guard.GetPartitionId();
-    auto target_partition = garbage_ring_buffer_[epoch][partition];
+    auto& target_partition = garbage_ring_buffer_[epoch][partition];
 
     // create an inserting garbage
     auto garbage = new GarbageList{target_ptr};
@@ -143,16 +136,11 @@ class alignas(kCacheLineSize) EpochBasedGC
     // swap the head of a garbage list
     auto old_head = target_partition.load();
     const auto new_head = reinterpret_cast<uintptr_t>(static_cast<void*>(garbage));
-    do {
-      // re-install a garbage
-      GarbageList<T>* next;
-      if (old_head == 0) {
-        next = nullptr;
-      } else {
-        next = static_cast<GarbageList<T>*>(reinterpret_cast<void*>(old_head));
-      }
-      garbage->SetNext(next);
-    } while (!target_partition.compare_exchange_weak(old_head, new_head));
+    while (!target_partition.compare_exchange_weak(old_head, new_head)) {
+      // continue until installation succeeds
+    }
+    const auto old_head_garbage = static_cast<GarbageList<T>*>(reinterpret_cast<void*>(old_head));
+    garbage->SetNext(old_head_garbage);
   }
 
   void
@@ -176,16 +164,11 @@ class alignas(kCacheLineSize) EpochBasedGC
     // swap the head of a garbage list
     auto old_head = target_partition.load();
     const auto new_head = reinterpret_cast<uintptr_t>(static_cast<void*>(head_garbage));
-    do {
-      // re-install a garbage list
-      GarbageList<T>* next;
-      if (old_head == 0) {
-        next = nullptr;
-      } else {
-        next = static_cast<GarbageList<T>*>(reinterpret_cast<void*>(old_head));
-      }
-      tail_garbage->SetNext(next);
-    } while (!target_partition.compare_exchange_weak(old_head, new_head));
+    while (!target_partition.compare_exchange_weak(old_head, new_head)) {
+      // continue until installation succeeds
+    }
+    const auto old_head_garbage = static_cast<GarbageList<T>*>(reinterpret_cast<void*>(old_head));
+    tail_garbage->SetNext(old_head_garbage);
   }
 
   /*################################################################################################
@@ -199,7 +182,7 @@ class alignas(kCacheLineSize) EpochBasedGC
       return false;
     } else {
       gc_is_running_ = true;
-      gc_thread_ = std::thread{EpochBasedGC::RunGC, this};
+      gc_thread_ = std::thread{&EpochBasedGC::RunGC, this};
       return true;
     }
   }
