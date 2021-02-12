@@ -95,7 +95,7 @@ class alignas(kCacheLineSize) EpochManager
     const size_t freeable_begin_index = check_begin_index_;
     size_t index = freeable_begin_index;
     while (index != current_index_) {
-      // check each epoch has no eintering thread
+      // check each epoch has no entering thread
       for (size_t partition = 0; partition < kPartitionNum; ++partition) {
         if (epoch_ring_buffer_[index][partition].load() != 0) {
           goto TO_RETURN;
