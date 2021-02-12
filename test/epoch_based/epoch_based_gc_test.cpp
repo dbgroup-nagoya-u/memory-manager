@@ -37,27 +37,26 @@ TEST_F(EpochBasedGCFixture, RunGC_AddGarbagesFromSingleThread_AllTargetsAreDelet
   constexpr size_t kLoopNum = 100;
 
   // keep garbage targets
-  std::vector<size_t *> target_ptrs;
+  std::vector<std::weak_ptr<size_t>> target_weak_ptrs;
 
   // register garbages to GC
   {
-    auto gc = EpochBasedGC<size_t>{kDefaultGCInterval};
+    auto gc = EpochBasedGC<std::shared_ptr<size_t>>{kDefaultGCInterval};
 
     for (size_t loop = 0; loop < kLoopNum; ++loop) {
       const auto guard = gc.CreateEpochGuard();
-      target_ptrs.emplace_back(new size_t{loop + 1});
-      gc.AddGarbage(guard, target_ptrs.back());
-      std::this_thread::sleep_for(std::chrono::microseconds(10));
+      const auto target_ptr = new size_t{loop};
+      const auto target_shared = new std::shared_ptr<size_t>(target_ptr);
+      target_weak_ptrs.emplace_back(*target_shared);
+      gc.AddGarbage(guard, target_shared);
     }
 
     // GC deletes all targets when it leaves this scope
   }
 
-  // this check is danger: these lines may fail due to freed memory space
-  for (size_t loop = 0; loop < kLoopNum; ++loop) {
-    const auto expected = loop + 1;
-    const auto actual = *target_ptrs[loop];
-    EXPECT_NE(expected, actual);
+  // check there is no referece to target pointers
+  for (auto &&target_weak : target_weak_ptrs) {
+    EXPECT_EQ(0, target_weak.use_count());
   }
 }
 
@@ -66,45 +65,44 @@ TEST_F(EpochBasedGCFixture, RunGC_AddGarbagesFromMultiThreads_AllTargetsAreDelet
   // keep garbage targets
   constexpr size_t kThreadNum = 100;
   constexpr size_t kLoopNum = 100;
-  std::vector<std::vector<size_t *>> target_ptrs;
+  std::vector<std::vector<std::weak_ptr<size_t>>> target_weak_ptrs;
 
   // register garbages to GC
   {
-    auto gc = EpochBasedGC<size_t>{kDefaultGCInterval};
+    auto gc = EpochBasedGC<std::shared_ptr<size_t>>{kDefaultGCInterval};
 
     // a lambda function to add garbages in multi-threads
-    auto f = [&gc = gc](std::promise<std::vector<size_t *>> p) {
-      std::vector<size_t *> target_vec;
+    auto f = [&gc = gc](std::promise<std::vector<std::weak_ptr<size_t>>> p) {
+      std::vector<std::weak_ptr<size_t>> target_vec;
       for (size_t loop = 0; loop < kLoopNum; ++loop) {
         const auto guard = gc.CreateEpochGuard();
-        target_vec.emplace_back(new size_t{loop + 1});
-        gc.AddGarbage(guard, target_vec.back());
-        std::this_thread::sleep_for(std::chrono::microseconds(100));
+        const auto target_ptr = new size_t{loop};
+        const auto target_shared = new std::shared_ptr<size_t>(target_ptr);
+        target_vec.emplace_back(*target_shared);
+        gc.AddGarbage(guard, target_shared);
       }
       p.set_value(target_vec);
     };
 
     // add garbages and catch original targets via promise/future
-    std::vector<std::future<std::vector<size_t *>>> target_futures;
+    std::vector<std::future<std::vector<std::weak_ptr<size_t>>>> target_futures;
     for (size_t count = 0; count < kThreadNum; ++count) {
-      std::promise<std::vector<size_t *>> p;
+      std::promise<std::vector<std::weak_ptr<size_t>>> p;
       target_futures.emplace_back(p.get_future());
       auto t = std::thread{f, std::move(p)};
       t.detach();
     }
     for (auto &&future : target_futures) {
-      target_ptrs.emplace_back(future.get());
+      target_weak_ptrs.emplace_back(future.get());
     }
 
     // GC deletes all targets when it leaves this scope
   }
 
   // this check is danger: these lines may fail due to freed memory space
-  for (size_t thread = 0; thread < kThreadNum; ++thread) {
-    for (size_t loop = 0; loop < kLoopNum; ++loop) {
-      const auto expected = loop + 1;
-      const auto actual = *target_ptrs[thread][loop];
-      EXPECT_NE(expected, actual);
+  for (auto &&threaded_weak_ptrs : target_weak_ptrs) {
+    for (auto &&target_weak : threaded_weak_ptrs) {
+      EXPECT_EQ(0, target_weak.use_count());
     }
   }
 }
