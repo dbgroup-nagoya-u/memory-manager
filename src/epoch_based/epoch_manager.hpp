@@ -83,10 +83,10 @@ class alignas(kCacheLineSize) EpochManager
   void
   ForwardEpoch()
   {
-    auto previous_index = current_index_.fetch_add(1);
-    if (previous_index == kBufferSize - 1) {
-      current_index_ = 0;
-    }
+    const auto previous_index = current_index_.load();
+    const auto next_index = (previous_index == kBufferSize - 1) ? 0 : previous_index + 1;
+
+    current_index_ = next_index;
   }
 
   std::pair<size_t, size_t>
