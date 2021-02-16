@@ -48,7 +48,7 @@ TEST_F(EpochBasedGCFixture, RunGC_AddGarbagesFromSingleThread_AllTargetsAreDelet
       const auto target_ptr = new size_t{loop};
       const auto target_shared = new std::shared_ptr<size_t>(target_ptr);
       target_weak_ptrs.emplace_back(*target_shared);
-      gc.AddGarbage(guard, target_shared);
+      gc.AddGarbage(target_shared);
     }
 
     // GC deletes all targets when it leaves this scope
@@ -79,7 +79,7 @@ TEST_F(EpochBasedGCFixture, RunGC_AddGarbagesFromMultiThreads_AllTargetsAreDelet
         const auto target_ptr = new size_t{loop};
         const auto target_shared = new std::shared_ptr<size_t>(target_ptr);
         target_vec.emplace_back(*target_shared);
-        gc.AddGarbage(guard, target_shared);
+        gc.AddGarbage(target_shared);
       }
       p.set_value(target_vec);
     };
