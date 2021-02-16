@@ -122,12 +122,11 @@ class alignas(kCacheLineSize) EpochBasedGC
   }
 
   void
-  AddGarbage(  //
-      const EpochGuard& guard,
-      const T* target_ptr)
+  AddGarbage(const T* target_ptr)
   {
-    const auto epoch = guard.GetEpoch();
-    const auto partition = guard.GetPartitionId();
+    const auto epoch = epoch_manager_.GetCurrentEpoch();
+    const auto partition =
+        std::hash<std::thread::id>()(std::this_thread::get_id()) & kPartitionMask;
     auto& target_partition = garbage_ring_buffer_[epoch][partition];
 
     // create an inserting garbage
@@ -144,14 +143,13 @@ class alignas(kCacheLineSize) EpochBasedGC
   }
 
   void
-  AddGarbages(  //
-      const EpochGuard& guard,
-      const std::vector<T*>& target_ptrs)
+  AddGarbages(const std::vector<T*>& target_ptrs)
   {
     assert(target_ptrs.size() > 1);
 
-    const auto epoch = guard.GetEpoch();
-    const auto partition = guard.GetPartitionId();
+    const auto epoch = epoch_manager_.GetCurrentEpoch();
+    const auto partition =
+        std::hash<std::thread::id>()(std::this_thread::get_id()) & kPartitionMask;
     auto target_partition = garbage_ring_buffer_[epoch][partition];
 
     // create an inserting garbage list
