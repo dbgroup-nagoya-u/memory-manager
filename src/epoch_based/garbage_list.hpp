@@ -24,18 +24,19 @@ class GarbageList
 
   std::atomic_uintptr_t next_;
 
-  std::array<std::unique_ptr<T>, kGarbageListCapacity> target_ptrs_;
+  std::array<uintptr_t, kGarbageListCapacity> target_ptrs_;
 
  public:
   /*################################################################################################
    * Public constructors/destructors
    *##############################################################################################*/
 
-  GarbageList() : current_size_{0}, next_{0} { target_ptrs_.fill(nullptr); }
+  GarbageList() : current_size_{0}, next_{0} { target_ptrs_.fill(0); }
 
   ~GarbageList()
   {
-    auto next = reinterpret_cast<GarbageList*>(next_);
+    Clear();
+    auto next = reinterpret_cast<GarbageList*>(next_.load());
     delete next;
   }
 
@@ -70,11 +71,22 @@ class GarbageList
     } while (current_size_.compare_exchange_weak(current_size, reserved_size));
 
     // insert a garbage
-    target_ptrs_[current_size] = std::unique_ptr{target};
+    target_ptrs_[current_size] = reinterpret_cast<uintptr_t>(target);
     if (reserved_size == kGarbageListCapacity) {
       // if a garbage list becomes full, create a next list
       auto next = new GarbageList{};
       next_.store(reinterpret_cast<uintptr_t>(next));  // only this thread sets a next pointer
+    }
+  }
+
+  void
+  Clear()
+  {
+    const auto current_size = current_size_.load();
+    for (size_t index = 0; index < current_size; ++index) {
+      auto target = reinterpret_cast<T*>(target_ptrs_[index]);
+      delete target;
+      target_ptrs_[index] = 0;
     }
   }
 };
