@@ -17,8 +17,15 @@ set(SIMPLE_GC_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
 set(GOOGLETEST_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external/googletest")
 
 # set default parameters for GC
-set(SIMPLE_GC_BUFFER_SIZE "4096" CACHE STRING "the size of epoch/garbage ring buffers")
-set(SIMPLE_GC_PARTITION_NUM "8" CACHE STRING "the number of paritions of epoch/garbage ring buffers")
+set(SIMPLE_GC_BUFFER_SIZE "4096" CACHE STRING
+  "the size of epoch/garbage ring buffers"
+)
+set(SIMPLE_GC_PARTITION_NUM "8" CACHE STRING
+  "the number of paritions of epoch/garbage ring buffers"
+)
+set(SIMPLE_GC_INITIAL_GARBAGE_LIST_CAPACITY "1024" CACHE STRING
+  "the default capacity of garbage lists"
+)
 
 # build BzTree as a header-only library
 add_library(simple_gc INTERFACE)
@@ -33,6 +40,7 @@ target_compile_options(simple_gc INTERFACE
 target_compile_definitions(simple_gc INTERFACE
   BUFFER_SIZE=${SIMPLE_GC_BUFFER_SIZE}
   PARTITION_NUM=${SIMPLE_GC_PARTITION_NUM}
+  INITIAL_GARBAGE_LIST_CAPACITY=${SIMPLE_GC_INITIAL_GARBAGE_LIST_CAPACITY}
 )
 target_include_directories(simple_gc INTERFACE
   "${SIMPLE_GC_SOURCE_DIR}/src"
