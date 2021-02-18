@@ -7,6 +7,7 @@
 #include <atomic>
 #include <memory>
 #include <thread>
+#include <vector>
 
 #include "epoch_based/common.hpp"
 
@@ -76,6 +77,51 @@ class GarbageList
       // if a garbage list becomes full, create a next list
       auto next = new GarbageList{};
       next_.store(reinterpret_cast<uintptr_t>(next));  // only this thread sets a next pointer
+    }
+  }
+
+  void
+  AddGarbages(const std::vector<T*>& targets)
+  {
+    const auto target_num = target_num;
+
+    // reserve a garbage region
+    auto current_size = current_size_.load();
+    size_t reserved_size;
+    do {
+      reserved_size = current_size + target_num;
+      if (current_size == kGarbageListCapacity) {
+        // if this garbage list is full, go to the next one
+        auto next = next_.load();
+        while (next == 0) {
+          // a current thread may be inserting a next pointer
+          std::this_thread::sleep_for(std::chrono::nanoseconds(100));
+          next = next_.load();
+        }
+        reinterpret_cast<GarbageList*>(next)->AddGarbages(targets);
+        return;
+      } else if (reserved_size > kGarbageListCapacity) {
+        reserved_size = kGarbageListCapacity;
+      }
+    } while (current_size_.compare_exchange_weak(current_size, reserved_size));
+
+    // insert garbages
+    auto target = targets.begin();
+    for (size_t index = current_size; index < reserved_size; ++index, ++target) {
+      target_ptrs_[index] = reinterpret_cast<uintptr_t>(*target);
+    }
+
+    if (reserved_size == kGarbageListCapacity) {
+      // if a garbage list becomes full, create a next list
+      auto next = new GarbageList{};
+      next_.store(reinterpret_cast<uintptr_t>(next));  // only this thread sets a next pointer
+
+      if (target != targets.end()) {
+        // if garbages remian, add them to a next list
+        std::vector<T*> remaining_targets;
+        remaining_targets.insert(target, targets.end());
+        next->AddGarbages(remaining_targets);
+      }
     }
   }
 
