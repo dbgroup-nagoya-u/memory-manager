@@ -10,25 +10,25 @@ namespace gc::epoch
 {
 constexpr size_t kCacheLineSize = 64;
 
-bool
-has_single_bit(const uint64_t target)
+constexpr bool
+HasSingleBit(const uint64_t target)
 {
-  if (target == 0) {
+  if (target == 0UL) {
     return false;
   } else {
-    return (target && (target - 1)) == 0;
+    return (target & (target - 1UL)) == 0UL;
   }
 }
 
-#ifdef SIMPLE_GC_BUFFER_SIZE
-constexpr size_t kBufferSize = SIMPLE_GC_BUFFER_SIZE;
+#ifdef BUFFER_SIZE
+constexpr size_t kBufferSize = BUFFER_SIZE;
 #else
 constexpr size_t kBufferSize = 4096;
 #endif
 
-#ifdef SIMPLE_GC_PARTITION_NUM
-static_assert(has_single_bit(SIMPLE_GC_PARTITION_NUM), true);
-constexpr size_t kPartitionNum = SIMPLE_GC_PARTITION_NUM;
+#ifdef PARTITION_NUM
+static_assert(HasSingleBit(PARTITION_NUM));
+constexpr size_t kPartitionNum = PARTITION_NUM;
 constexpr size_t kPartitionMask = kPartitionNum - 1;
 #else
 constexpr size_t kPartitionNum = 8;
