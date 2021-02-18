@@ -11,6 +11,10 @@ function(ADD_SIMPLE_GC_TEST SIMPLE_GC_TARGET_DIR SIMPLE_GC_TEST_TARGET)
     $<$<STREQUAL:${CMAKE_BUILD_TYPE},"RelWithDebInfo">:"-g3 -Og -pg">
     $<$<STREQUAL:${CMAKE_BUILD_TYPE},"Debug">:"-g3 -O0 -pg">
   )
+  target_compile_definitions(${SIMPLE_GC_TEST_TARGET} PRIVATE
+    BUFFER_SIZE=${SIMPLE_GC_BUFFER_SIZE}
+    PARTITION_NUM=${SIMPLE_GC_PARTITION_NUM}
+  )
   target_include_directories(${SIMPLE_GC_TEST_TARGET} PRIVATE
     "${SIMPLE_GC_SOURCE_DIR}/src"
     "${SIMPLE_GC_SOURCE_DIR}/include"
