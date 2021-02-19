@@ -35,4 +35,10 @@ constexpr size_t kPartitionNum = 8;
 constexpr size_t kPartitionMask = 0x7;
 #endif
 
+#ifdef INITIAL_GARBAGE_LIST_CAPACITY
+constexpr size_t kGarbageListCapacity = INITIAL_GARBAGE_LIST_CAPACITY;
+#else
+constexpr size_t kGarbageListCapacity = 128;
+#endif
+
 }  // namespace gc::epoch

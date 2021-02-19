@@ -14,7 +14,7 @@ namespace gc::epoch
 class EpochBasedGCFixture : public ::testing::Test
 {
  public:
-  static constexpr size_t kDefaultGCInterval = 1;
+  static constexpr size_t kDefaultGCInterval = 10;
 
  protected:
   void
@@ -34,7 +34,7 @@ class EpochBasedGCFixture : public ::testing::Test
 
 TEST_F(EpochBasedGCFixture, RunGC_AddGarbagesFromSingleThread_AllTargetsAreDeleted)
 {
-  constexpr size_t kLoopNum = 100;
+  constexpr auto kLoopNum = 1E5;
 
   // keep garbage targets
   std::vector<std::weak_ptr<size_t>> target_weak_ptrs;
@@ -63,8 +63,8 @@ TEST_F(EpochBasedGCFixture, RunGC_AddGarbagesFromSingleThread_AllTargetsAreDelet
 TEST_F(EpochBasedGCFixture, RunGC_AddGarbagesFromMultiThreads_AllTargetsAreDeleted)
 {
   // keep garbage targets
-  constexpr size_t kThreadNum = 100;
-  constexpr size_t kLoopNum = 100;
+  constexpr auto kThreadNum = kPartitionNum * 4;
+  constexpr auto kLoopNum = 1E5;
   std::vector<std::vector<std::weak_ptr<size_t>>> target_weak_ptrs;
 
   // register garbages to GC
@@ -72,7 +72,7 @@ TEST_F(EpochBasedGCFixture, RunGC_AddGarbagesFromMultiThreads_AllTargetsAreDelet
     auto gc = EpochBasedGC<std::shared_ptr<size_t>>{kDefaultGCInterval};
 
     // a lambda function to add garbages in multi-threads
-    auto f = [&gc = gc](std::promise<std::vector<std::weak_ptr<size_t>>> p) {
+    auto f = [&](std::promise<std::vector<std::weak_ptr<size_t>>> p) {
       std::vector<std::weak_ptr<size_t>> target_vec;
       for (size_t loop = 0; loop < kLoopNum; ++loop) {
         const auto guard = gc.CreateEpochGuard();
@@ -99,7 +99,7 @@ TEST_F(EpochBasedGCFixture, RunGC_AddGarbagesFromMultiThreads_AllTargetsAreDelet
     // GC deletes all targets when it leaves this scope
   }
 
-  // this check is danger: these lines may fail due to freed memory space
+  // check there is no referece to target pointers
   for (auto &&threaded_weak_ptrs : target_weak_ptrs) {
     for (auto &&target_weak : threaded_weak_ptrs) {
       EXPECT_EQ(0, target_weak.use_count());

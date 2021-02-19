@@ -18,18 +18,18 @@ namespace gc::epoch
 template <class T>
 class alignas(kCacheLineSize) EpochBasedGC
 {
-  static constexpr size_t kGCIntervalMilliSec = 100;
+  static constexpr size_t kDefaultGCIntervalMicroSec = 100000;
 
  private:
   /*################################################################################################
    * Internal member variables
    *##############################################################################################*/
 
-  std::array<std::array<std::atomic_uintptr_t, kPartitionNum>, kBufferSize> garbage_ring_buffer_;
+  std::array<std::array<uintptr_t, kPartitionNum>, kBufferSize> garbage_ring_buffer_;
 
   EpochManager epoch_manager_;
 
-  const size_t gc_interval_ms_;
+  const size_t gc_interval_micro_sec_;
 
   std::thread gc_thread_;
 
@@ -49,9 +49,9 @@ class alignas(kCacheLineSize) EpochBasedGC
          epoch = (epoch == kBufferSize - 1) ? 0 : epoch + 1)  //
     {
       for (size_t partition = 0; partition < kPartitionNum; ++partition) {
-        auto uintptr = garbage_ring_buffer_[epoch][partition].load();
-        const auto garbage = static_cast<GarbageList<T>*>(reinterpret_cast<void*>(uintptr));
-        delete garbage;  // all garbages are deleted by domino effect
+        auto garbage_list =
+            reinterpret_cast<GarbageList<T>*>(garbage_ring_buffer_[epoch][partition]);
+        garbage_list->Clear();
       }
     }
   }
@@ -61,7 +61,7 @@ class alignas(kCacheLineSize) EpochBasedGC
   {
     while (gc_is_running_) {
       // wait for garbages to be out of scope
-      std::this_thread::sleep_for(std::chrono::milliseconds(gc_interval_ms_));
+      std::this_thread::sleep_for(std::chrono::microseconds(gc_interval_micro_sec_));
       epoch_manager_.ForwardEpoch();
       // delete freeable garbages
       const auto [begin_epoch, end_epoch] = epoch_manager_.ListFreeableEpoch();
@@ -75,13 +75,13 @@ class alignas(kCacheLineSize) EpochBasedGC
    *##############################################################################################*/
 
   explicit EpochBasedGC(  //
-      const size_t gc_interval_ms = kGCIntervalMilliSec,
+      const size_t gc_interval_micro_sec = kDefaultGCIntervalMicroSec,
       const bool start_gc = true)
-      : epoch_manager_{}, gc_interval_ms_{gc_interval_ms}, gc_is_running_{false}
+      : epoch_manager_{}, gc_interval_micro_sec_{gc_interval_micro_sec}, gc_is_running_{false}
   {
     for (size_t epoch = 0; epoch < kBufferSize; ++epoch) {
       for (size_t partition = 0; partition < kPartitionNum; ++partition) {
-        garbage_ring_buffer_[epoch][partition] = 0;
+        garbage_ring_buffer_[epoch][partition] = reinterpret_cast<uintptr_t>(new GarbageList<T>{});
       }
     }
     if (start_gc) {
@@ -99,11 +99,18 @@ class alignas(kCacheLineSize) EpochBasedGC
     size_t begin_epoch, end_epoch;
     do {
       // wait for garbages to be out of scope
-      std::this_thread::sleep_for(std::chrono::milliseconds(gc_interval_ms_));
+      std::this_thread::sleep_for(std::chrono::microseconds(gc_interval_micro_sec_));
       // delete freeable garbages
       std::tie(begin_epoch, end_epoch) = epoch_manager_.ListFreeableEpoch();
-      DeleteGarbages(begin_epoch, end_epoch);
     } while (end_epoch != current_epoch);
+
+    for (size_t epoch = 0; epoch < kBufferSize; ++epoch) {
+      for (size_t partition = 0; partition < kPartitionNum; ++partition) {
+        auto garbage_list =
+            reinterpret_cast<GarbageList<T>*>(garbage_ring_buffer_[epoch][partition]);
+        delete garbage_list;
+      }
+    }
   }
 
   EpochBasedGC(const EpochBasedGC&) = delete;
@@ -127,19 +134,9 @@ class alignas(kCacheLineSize) EpochBasedGC
     const auto epoch = epoch_manager_.GetCurrentEpoch();
     const auto partition =
         std::hash<std::thread::id>()(std::this_thread::get_id()) & kPartitionMask;
-    auto& target_partition = garbage_ring_buffer_[epoch][partition];
 
-    // create an inserting garbage
-    auto garbage = new GarbageList{target_ptr};
-
-    // swap the head of a garbage list
-    auto old_head = target_partition.load();
-    const auto new_head = reinterpret_cast<uintptr_t>(static_cast<void*>(garbage));
-    while (!target_partition.compare_exchange_weak(old_head, new_head)) {
-      // continue until installation succeeds
-    }
-    const auto old_head_garbage = static_cast<GarbageList<T>*>(reinterpret_cast<void*>(old_head));
-    garbage->SetNext(old_head_garbage);
+    auto garbage_list = reinterpret_cast<GarbageList<T>*>(garbage_ring_buffer_[epoch][partition]);
+    garbage_list->AddGarbage(target_ptr);
   }
 
   void
@@ -150,23 +147,9 @@ class alignas(kCacheLineSize) EpochBasedGC
     const auto epoch = epoch_manager_.GetCurrentEpoch();
     const auto partition =
         std::hash<std::thread::id>()(std::this_thread::get_id()) & kPartitionMask;
-    auto target_partition = garbage_ring_buffer_[epoch][partition];
 
-    // create an inserting garbage list
-    auto tail_garbage = new GarbageList{target_ptrs[0]};
-    auto head_garbage = tail_garbage;
-    for (size_t index = 1; index < target_ptrs.size(); ++index) {
-      head_garbage = new GarbageList{target_ptrs[index], head_garbage};
-    }
-
-    // swap the head of a garbage list
-    auto old_head = target_partition.load();
-    const auto new_head = reinterpret_cast<uintptr_t>(static_cast<void*>(head_garbage));
-    while (!target_partition.compare_exchange_weak(old_head, new_head)) {
-      // continue until installation succeeds
-    }
-    const auto old_head_garbage = static_cast<GarbageList<T>*>(reinterpret_cast<void*>(old_head));
-    tail_garbage->SetNext(old_head_garbage);
+    auto garbage_list = reinterpret_cast<GarbageList<T>*>(garbage_ring_buffer_[epoch][partition]);
+    garbage_list->AddGarbages(target_ptrs);
   }
 
   /*################################################################################################
