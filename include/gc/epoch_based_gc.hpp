@@ -18,7 +18,7 @@ namespace gc::epoch
 template <class T>
 class alignas(kCacheLineSize) EpochBasedGC
 {
-  static constexpr size_t kGCIntervalMilliSec = 100;
+  static constexpr size_t kDefaultGCIntervalMicroSec = 100000;
 
  private:
   /*################################################################################################
@@ -29,7 +29,7 @@ class alignas(kCacheLineSize) EpochBasedGC
 
   EpochManager epoch_manager_;
 
-  const size_t gc_interval_ms_;
+  const size_t gc_interval_micro_sec_;
 
   std::thread gc_thread_;
 
@@ -59,7 +59,7 @@ class alignas(kCacheLineSize) EpochBasedGC
   {
     while (gc_is_running_) {
       // wait for garbages to be out of scope
-      std::this_thread::sleep_for(std::chrono::milliseconds(gc_interval_ms_));
+      std::this_thread::sleep_for(std::chrono::microseconds(gc_interval_micro_sec_));
       epoch_manager_.ForwardEpoch();
       // delete freeable garbages
       const auto [begin_epoch, end_epoch] = epoch_manager_.ListFreeableEpoch();
@@ -73,9 +73,9 @@ class alignas(kCacheLineSize) EpochBasedGC
    *##############################################################################################*/
 
   explicit EpochBasedGC(  //
-      const size_t gc_interval_ms = kGCIntervalMilliSec,
+      const size_t gc_interval_micro_sec = kDefaultGCIntervalMicroSec,
       const bool start_gc = true)
-      : epoch_manager_{}, gc_interval_ms_{gc_interval_ms}, gc_is_running_{false}
+      : epoch_manager_{}, gc_interval_micro_sec_{gc_interval_micro_sec}, gc_is_running_{false}
   {
     // for (size_t epoch = 0; epoch < kBufferSize; ++epoch) {
     //   for (size_t partition = 0; partition < kPartitionNum; ++partition) {
@@ -97,7 +97,7 @@ class alignas(kCacheLineSize) EpochBasedGC
     size_t begin_epoch, end_epoch;
     do {
       // wait for garbages to be out of scope
-      std::this_thread::sleep_for(std::chrono::milliseconds(gc_interval_ms_));
+      std::this_thread::sleep_for(std::chrono::microseconds(gc_interval_micro_sec_));
       // delete freeable garbages
       std::tie(begin_epoch, end_epoch) = epoch_manager_.ListFreeableEpoch();
       DeleteGarbages(begin_epoch, end_epoch);
