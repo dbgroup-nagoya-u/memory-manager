@@ -36,7 +36,6 @@ class GarbageList
 
   ~GarbageList()
   {
-    Clear();
     auto next = reinterpret_cast<GarbageList*>(next_.load());
     delete next;
   }
@@ -51,7 +50,7 @@ class GarbageList
    *##############################################################################################*/
 
   void
-  AddGarbage(T* target)
+  AddGarbage(const T* target)
   {
     // reserve a garbage region
     auto current_size = current_size_.load();
@@ -72,7 +71,7 @@ class GarbageList
     } while (current_size_.compare_exchange_weak(current_size, reserved_size));
 
     // insert a garbage
-    target_ptrs_[current_size] = reinterpret_cast<uintptr_t>(target);
+    target_ptrs_[current_size] = reinterpret_cast<uintptr_t>(const_cast<T*>(target));
     if (reserved_size == kGarbageListCapacity) {
       // if a garbage list becomes full, create a next list
       auto next = new GarbageList{};
@@ -134,6 +133,9 @@ class GarbageList
       delete target;
       target_ptrs_[index] = 0;
     }
+
+    auto next = reinterpret_cast<GarbageList*>(next_.load());
+    next->Clear();
   }
 };
 

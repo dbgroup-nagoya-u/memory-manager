@@ -25,7 +25,7 @@ class alignas(kCacheLineSize) EpochBasedGC
    * Internal member variables
    *##############################################################################################*/
 
-  std::array<std::array<std::atomic_uintptr_t, kPartitionNum>, kBufferSize> garbage_ring_buffer_;
+  std::array<std::array<GarbageList<T>, kPartitionNum>, kBufferSize> garbage_ring_buffer_;
 
   EpochManager epoch_manager_;
 
@@ -49,9 +49,7 @@ class alignas(kCacheLineSize) EpochBasedGC
          epoch = (epoch == kBufferSize - 1) ? 0 : epoch + 1)  //
     {
       for (size_t partition = 0; partition < kPartitionNum; ++partition) {
-        auto uintptr = garbage_ring_buffer_[epoch][partition].load();
-        const auto garbage = static_cast<GarbageList<T>*>(reinterpret_cast<void*>(uintptr));
-        delete garbage;  // all garbages are deleted by domino effect
+        garbage_ring_buffer_[epoch][partition].Clear();
       }
     }
   }
@@ -81,7 +79,7 @@ class alignas(kCacheLineSize) EpochBasedGC
   {
     for (size_t epoch = 0; epoch < kBufferSize; ++epoch) {
       for (size_t partition = 0; partition < kPartitionNum; ++partition) {
-        garbage_ring_buffer_[epoch][partition] = 0;
+        garbage_ring_buffer_[epoch][partition] = GarbageList<T>{};
       }
     }
     if (start_gc) {
@@ -127,19 +125,8 @@ class alignas(kCacheLineSize) EpochBasedGC
     const auto epoch = epoch_manager_.GetCurrentEpoch();
     const auto partition =
         std::hash<std::thread::id>()(std::this_thread::get_id()) & kPartitionMask;
-    auto& target_partition = garbage_ring_buffer_[epoch][partition];
 
-    // create an inserting garbage
-    auto garbage = new GarbageList{target_ptr};
-
-    // swap the head of a garbage list
-    auto old_head = target_partition.load();
-    const auto new_head = reinterpret_cast<uintptr_t>(static_cast<void*>(garbage));
-    while (!target_partition.compare_exchange_weak(old_head, new_head)) {
-      // continue until installation succeeds
-    }
-    const auto old_head_garbage = static_cast<GarbageList<T>*>(reinterpret_cast<void*>(old_head));
-    garbage->SetNext(old_head_garbage);
+    garbage_ring_buffer_[epoch][partition].AddGarbage(target_ptr);
   }
 
   void
@@ -150,23 +137,8 @@ class alignas(kCacheLineSize) EpochBasedGC
     const auto epoch = epoch_manager_.GetCurrentEpoch();
     const auto partition =
         std::hash<std::thread::id>()(std::this_thread::get_id()) & kPartitionMask;
-    auto target_partition = garbage_ring_buffer_[epoch][partition];
 
-    // create an inserting garbage list
-    auto tail_garbage = new GarbageList{target_ptrs[0]};
-    auto head_garbage = tail_garbage;
-    for (size_t index = 1; index < target_ptrs.size(); ++index) {
-      head_garbage = new GarbageList{target_ptrs[index], head_garbage};
-    }
-
-    // swap the head of a garbage list
-    auto old_head = target_partition.load();
-    const auto new_head = reinterpret_cast<uintptr_t>(static_cast<void*>(head_garbage));
-    while (!target_partition.compare_exchange_weak(old_head, new_head)) {
-      // continue until installation succeeds
-    }
-    const auto old_head_garbage = static_cast<GarbageList<T>*>(reinterpret_cast<void*>(old_head));
-    tail_garbage->SetNext(old_head_garbage);
+    garbage_ring_buffer_[epoch][partition].AddGarbages(target_ptrs);
   }
 
   /*################################################################################################
