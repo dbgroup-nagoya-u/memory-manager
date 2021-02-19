@@ -33,6 +33,7 @@ TEST_F(GarbageListFixture, Construct_NoArgs_MemberVariableCorrectlyInitialized)
   const auto garbage_list = GarbageList<size_t>{};
 
   EXPECT_EQ(0, garbage_list.Size());
+  EXPECT_EQ(nullptr, garbage_list.Next());
 }
 
 TEST_F(GarbageListFixture, Destruct_AddTenGarbages_AllocatedValueFreed)
@@ -89,6 +90,28 @@ TEST_F(GarbageListFixture, AddGarbage_TenGarbages_ListSizeCorrectlyIncremented)
   for (size_t count = 0; count < kGarbageNum; ++count) {
     garbage_list.AddGarbage(targets[count]);
     EXPECT_EQ(count + 1, garbage_list.Size());
+  }
+}
+
+TEST_F(GarbageListFixture, AddGarbages_TenGarbages_ListSizeCorrectlyIncremented)
+{
+  constexpr auto kGarbageNum = 10UL;
+
+  // create GC targets
+  std::vector<size_t *> targets;
+  for (size_t index = 0; index < kGarbageNum; ++index) {
+    targets.push_back(new size_t{index});
+  }
+
+  // create a garbage list
+  auto garbage_list = GarbageList<size_t>{};
+
+  // add garbages
+  for (size_t count = 0; count < kGarbageNum; count += 2) {
+    std::vector<size_t *> garbages = {targets[count], targets[count + 1]};
+
+    garbage_list.AddGarbages(garbages);
+    EXPECT_EQ(count + 2, garbage_list.Size());
   }
 }
 

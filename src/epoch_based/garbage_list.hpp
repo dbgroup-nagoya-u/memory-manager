@@ -60,6 +60,12 @@ class GarbageList
     return current_size_.load();
   }
 
+  GarbageList*
+  Next() const
+  {
+    return reinterpret_cast<GarbageList*>(next_.load());
+  }
+
   /*################################################################################################
    * Public utility functions
    *##############################################################################################*/
@@ -97,7 +103,7 @@ class GarbageList
   void
   AddGarbages(const std::vector<T*>& targets)
   {
-    const auto target_num = target_num;
+    const auto target_num = targets.size();
 
     // reserve a garbage region
     auto current_size = current_size_.load();
@@ -133,7 +139,7 @@ class GarbageList
       if (target != targets.end()) {
         // if garbages remian, add them to a next list
         std::vector<T*> remaining_targets;
-        remaining_targets.insert(target, targets.end());
+        remaining_targets.insert(remaining_targets.begin(), target, targets.end());
         next->AddGarbages(remaining_targets);
       }
     }
