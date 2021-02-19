@@ -99,7 +99,7 @@ TEST_F(EpochBasedGCFixture, RunGC_AddGarbagesFromMultiThreads_AllTargetsAreDelet
     // GC deletes all targets when it leaves this scope
   }
 
-  // this check is danger: these lines may fail due to freed memory space
+  // check there is no referece to target pointers
   for (auto &&threaded_weak_ptrs : target_weak_ptrs) {
     for (auto &&target_weak : threaded_weak_ptrs) {
       EXPECT_EQ(0, target_weak.use_count());

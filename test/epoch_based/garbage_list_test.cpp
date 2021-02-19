@@ -197,6 +197,7 @@ TEST_F(GarbageListFixture, Destruct_AddGarbageWithMultiThread_AllocatedValueFree
     // GC deletes all targets when it leaves this scope
   }
 
+  // check there is no referece to target pointers
   for (auto &&threaded_weak_ptrs : target_weak_ptrs) {
     for (auto &&target_weak : threaded_weak_ptrs) {
       EXPECT_EQ(0, target_weak.use_count());
@@ -253,6 +254,7 @@ TEST_F(GarbageListFixture, Destruct_AddGarbagesWithMultiThread_AllocatedValueFre
     // GC deletes all targets when it leaves this scope
   }
 
+  // check there is no referece to target pointers
   for (auto &&threaded_weak_ptrs : target_weak_ptrs) {
     for (auto &&target_weak : threaded_weak_ptrs) {
       EXPECT_EQ(0, target_weak.use_count());
