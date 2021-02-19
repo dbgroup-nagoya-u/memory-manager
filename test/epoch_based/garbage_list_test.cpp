@@ -93,6 +93,29 @@ TEST_F(GarbageListFixture, AddGarbage_TenGarbages_ListSizeCorrectlyIncremented)
   }
 }
 
+TEST_F(GarbageListFixture, AddGarbage_ManyGarbages_NextGarbageListIsCreated)
+{
+  constexpr auto kGarbageNum = kGarbageListCapacity + 1;
+
+  // create GC targets
+  std::vector<size_t *> targets;
+  for (size_t index = 0; index < kGarbageNum; ++index) {
+    targets.push_back(new size_t{index});
+  }
+
+  // create a garbage list
+  auto garbage_list = GarbageList<size_t>{};
+
+  // add garbages
+  for (auto &&target : targets) {
+    garbage_list.AddGarbage(target);
+  }
+
+  const auto next_garbage_list = garbage_list.Next();
+  EXPECT_NE(nullptr, next_garbage_list);
+  EXPECT_EQ(1, next_garbage_list->Size());
+}
+
 TEST_F(GarbageListFixture, AddGarbages_TenGarbages_ListSizeCorrectlyIncremented)
 {
   constexpr auto kGarbageNum = 10UL;
@@ -113,6 +136,27 @@ TEST_F(GarbageListFixture, AddGarbages_TenGarbages_ListSizeCorrectlyIncremented)
     garbage_list.AddGarbages(garbages);
     EXPECT_EQ(count + 2, garbage_list.Size());
   }
+}
+
+TEST_F(GarbageListFixture, AddGarbages_ManyGarbages_NextGarbageListIsCreated)
+{
+  constexpr auto kGarbageNum = kGarbageListCapacity + 1;
+
+  // create GC targets
+  std::vector<size_t *> targets;
+  for (size_t index = 0; index < kGarbageNum; ++index) {
+    targets.push_back(new size_t{index});
+  }
+
+  // create a garbage list
+  auto garbage_list = GarbageList<size_t>{};
+
+  // add garbages
+  garbage_list.AddGarbages(targets);
+
+  const auto next_garbage_list = garbage_list.Next();
+  EXPECT_NE(nullptr, next_garbage_list);
+  EXPECT_EQ(1, next_garbage_list->Size());
 }
 
 }  // namespace gc::epoch

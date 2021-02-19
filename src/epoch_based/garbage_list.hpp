@@ -89,10 +89,10 @@ class GarbageList
         reinterpret_cast<GarbageList*>(next)->AddGarbage(target);
         return;
       }
-    } while (current_size_.compare_exchange_weak(current_size, reserved_size));
+    } while (!current_size_.compare_exchange_weak(current_size, reserved_size));
 
     // insert a garbage
-    target_ptrs_[current_size] = reinterpret_cast<uintptr_t>(const_cast<T*>(target));
+    target_ptrs_[reserved_size - 1] = reinterpret_cast<uintptr_t>(const_cast<T*>(target));
     if (reserved_size == kGarbageListCapacity) {
       // if a garbage list becomes full, create a next list
       auto next = new GarbageList{};
@@ -123,7 +123,7 @@ class GarbageList
       } else if (reserved_size > kGarbageListCapacity) {
         reserved_size = kGarbageListCapacity;
       }
-    } while (current_size_.compare_exchange_weak(current_size, reserved_size));
+    } while (!current_size_.compare_exchange_weak(current_size, reserved_size));
 
     // insert garbages
     auto target = targets.begin();
