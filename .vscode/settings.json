@@ -28,7 +28,13 @@
     "-whitespace/newline"
   ],
   "cSpell.words": [
-    "alignas"
+    "DCMAKE",
+    "DSIMPLE",
+    "Wextra",
+    "alignas",
+    "ctest",
+    "gtest",
+    "pthread"
   ],
   "files.associations": {
     "fstream": "cpp",

@@ -21,7 +21,7 @@ set(SIMPLE_GC_BUFFER_SIZE "4096" CACHE STRING
   "the size of epoch/garbage ring buffers"
 )
 set(SIMPLE_GC_PARTITION_NUM "8" CACHE STRING
-  "the number of paritions of epoch/garbage ring buffers"
+  "the number of partitions of epoch/garbage ring buffers"
 )
 set(SIMPLE_GC_INITIAL_GARBAGE_LIST_CAPACITY "128" CACHE STRING
   "the default capacity of garbage lists"
