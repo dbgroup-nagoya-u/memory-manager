@@ -13,8 +13,16 @@
 #include "epoch_based/epoch_manager.hpp"
 #include "epoch_based/garbage_list.hpp"
 
-namespace gc::epoch
+namespace dbagroup::gc
 {
+using epoch::EpochGuard;
+using epoch::EpochManager;
+using epoch::GarbageList;
+using epoch::kBufferSize;
+using epoch::kCacheLineSize;
+using epoch::kPartitionMask;
+using epoch::kPartitionNum;
+
 template <class T>
 class alignas(kCacheLineSize) EpochBasedGC
 {
@@ -181,4 +189,4 @@ class alignas(kCacheLineSize) EpochBasedGC
   }
 };
 
-}  // namespace gc::epoch
+}  // namespace dbagroup::gc

@@ -6,7 +6,7 @@
 #include <cassert>
 #include <cstddef>
 
-namespace gc::epoch
+namespace dbagroup::gc::epoch
 {
 constexpr size_t kCacheLineSize = 64;
 
@@ -41,4 +41,4 @@ constexpr size_t kGarbageListCapacity = INITIAL_GARBAGE_LIST_CAPACITY;
 constexpr size_t kGarbageListCapacity = 128;
 #endif
 
-}  // namespace gc::epoch
+}  // namespace dbagroup::gc::epoch

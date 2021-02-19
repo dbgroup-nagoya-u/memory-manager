@@ -5,7 +5,7 @@
 
 #include "epoch_based/epoch_manager.hpp"
 
-namespace gc::epoch
+namespace dbagroup::gc::epoch
 {
 class EpochGuard
 {
@@ -55,4 +55,4 @@ class EpochGuard
   }
 };
 
-}  // namespace gc::epoch
+}  // namespace dbagroup::gc::epoch

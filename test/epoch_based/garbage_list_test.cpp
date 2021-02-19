@@ -9,7 +9,7 @@
 
 #include "gtest/gtest.h"
 
-namespace gc::epoch
+namespace dbagroup::gc::epoch
 {
 class GarbageListFixture : public ::testing::Test
 {
@@ -348,4 +348,4 @@ TEST_F(GarbageListFixture, AddGarbages_ManyGarbages_NextGarbageListIsCreated)
   EXPECT_EQ(1, next_garbage_list->Size());
 }
 
-}  // namespace gc::epoch
+}  // namespace dbagroup::gc::epoch

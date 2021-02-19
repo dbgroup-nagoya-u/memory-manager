@@ -9,7 +9,7 @@
 
 #include "gtest/gtest.h"
 
-namespace gc::epoch
+namespace dbagroup::gc
 {
 class EpochBasedGCFixture : public ::testing::Test
 {
@@ -107,4 +107,4 @@ TEST_F(EpochBasedGCFixture, RunGC_AddGarbagesFromMultiThreads_AllTargetsAreDelet
   }
 }
 
-}  // namespace gc::epoch
+}  // namespace dbagroup::gc
