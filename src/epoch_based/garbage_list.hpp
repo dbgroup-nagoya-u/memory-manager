@@ -155,8 +155,10 @@ class GarbageList
       target_ptrs_[index] = 0;
     }
 
-    auto next = reinterpret_cast<GarbageList*>(next_.load());
-    next->Clear();
+    auto next = Next();
+    if (next != nullptr) {
+      next->Clear();
+    }
   }
 };
 

@@ -25,7 +25,7 @@ class alignas(kCacheLineSize) EpochBasedGC
    * Internal member variables
    *##############################################################################################*/
 
-  std::array<std::array<GarbageList<T>, kPartitionNum>, kBufferSize> garbage_ring_buffer_;
+  std::array<std::array<uintptr_t, kPartitionNum>, kBufferSize> garbage_ring_buffer_;
 
   EpochManager epoch_manager_;
 
@@ -49,7 +49,9 @@ class alignas(kCacheLineSize) EpochBasedGC
          epoch = (epoch == kBufferSize - 1) ? 0 : epoch + 1)  //
     {
       for (size_t partition = 0; partition < kPartitionNum; ++partition) {
-        garbage_ring_buffer_[epoch][partition].Clear();
+        auto garbage_list =
+            reinterpret_cast<GarbageList<T>*>(garbage_ring_buffer_[epoch][partition]);
+        garbage_list->Clear();
       }
     }
   }
@@ -77,11 +79,11 @@ class alignas(kCacheLineSize) EpochBasedGC
       const bool start_gc = true)
       : epoch_manager_{}, gc_interval_micro_sec_{gc_interval_micro_sec}, gc_is_running_{false}
   {
-    // for (size_t epoch = 0; epoch < kBufferSize; ++epoch) {
-    //   for (size_t partition = 0; partition < kPartitionNum; ++partition) {
-    //     garbage_ring_buffer_[epoch][partition] = GarbageList<T>{};
-    //   }
-    // }
+    for (size_t epoch = 0; epoch < kBufferSize; ++epoch) {
+      for (size_t partition = 0; partition < kPartitionNum; ++partition) {
+        garbage_ring_buffer_[epoch][partition] = reinterpret_cast<uintptr_t>(new GarbageList<T>{});
+      }
+    }
     if (start_gc) {
       StartGC();
     }
@@ -100,8 +102,15 @@ class alignas(kCacheLineSize) EpochBasedGC
       std::this_thread::sleep_for(std::chrono::microseconds(gc_interval_micro_sec_));
       // delete freeable garbages
       std::tie(begin_epoch, end_epoch) = epoch_manager_.ListFreeableEpoch();
-      DeleteGarbages(begin_epoch, end_epoch);
     } while (end_epoch != current_epoch);
+
+    for (size_t epoch = 0; epoch < kBufferSize; ++epoch) {
+      for (size_t partition = 0; partition < kPartitionNum; ++partition) {
+        auto garbage_list =
+            reinterpret_cast<GarbageList<T>*>(garbage_ring_buffer_[epoch][partition]);
+        delete garbage_list;
+      }
+    }
   }
 
   EpochBasedGC(const EpochBasedGC&) = delete;
@@ -126,7 +135,8 @@ class alignas(kCacheLineSize) EpochBasedGC
     const auto partition =
         std::hash<std::thread::id>()(std::this_thread::get_id()) & kPartitionMask;
 
-    garbage_ring_buffer_[epoch][partition].AddGarbage(target_ptr);
+    auto garbage_list = reinterpret_cast<GarbageList<T>*>(garbage_ring_buffer_[epoch][partition]);
+    garbage_list->AddGarbage(target_ptr);
   }
 
   void
@@ -138,7 +148,8 @@ class alignas(kCacheLineSize) EpochBasedGC
     const auto partition =
         std::hash<std::thread::id>()(std::this_thread::get_id()) & kPartitionMask;
 
-    garbage_ring_buffer_[epoch][partition].AddGarbages(target_ptrs);
+    auto garbage_list = reinterpret_cast<GarbageList<T>*>(garbage_ring_buffer_[epoch][partition]);
+    garbage_list->AddGarbages(target_ptrs);
   }
 
   /*################################################################################################
