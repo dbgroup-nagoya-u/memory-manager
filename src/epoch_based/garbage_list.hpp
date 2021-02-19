@@ -21,11 +21,11 @@ class GarbageList
    * Internal member variables
    *##############################################################################################*/
 
+  std::array<uintptr_t, kGarbageListCapacity> target_ptrs_;
+
   std::atomic_size_t current_size_;
 
   std::atomic_uintptr_t next_;
-
-  std::array<uintptr_t, kGarbageListCapacity> target_ptrs_;
 
  public:
   /*################################################################################################
@@ -36,6 +36,11 @@ class GarbageList
 
   ~GarbageList()
   {
+    for (size_t index = 0; index < kGarbageListCapacity; ++index) {
+      auto target = reinterpret_cast<T*>(target_ptrs_[index]);
+      delete target;
+      target_ptrs_[index] = 0;
+    }
     auto next = reinterpret_cast<GarbageList*>(next_.load());
     delete next;
   }
@@ -44,6 +49,16 @@ class GarbageList
   GarbageList& operator=(const GarbageList&) = delete;
   GarbageList(GarbageList&&) = default;
   GarbageList& operator=(GarbageList&&) = default;
+
+  /*################################################################################################
+   * Public getters/setters
+   *##############################################################################################*/
+
+  size_t
+  Size() const
+  {
+    return current_size_.load();
+  }
 
   /*################################################################################################
    * Public utility functions
