@@ -73,6 +73,78 @@ TEST_F(GarbageListFixture, Destruct_AddTenGarbages_AllocatedValueFreed)
   }
 }
 
+TEST_F(GarbageListFixture, Destruct_AddManyGarbages_AllocatedValueFreed)
+{
+  constexpr auto kGarbageNum = kGarbageListCapacity + 1;
+
+  // create GC targets
+  std::vector<size_t *> targets;
+  for (size_t index = 0; index < kGarbageNum; ++index) {
+    targets.push_back(new size_t{index});
+  }
+
+  // create shared/weak pointers
+  std::vector<std::shared_ptr<size_t> *> shared_targets;
+  std::vector<std::weak_ptr<size_t>> weak_targets;
+  for (auto &&target : targets) {
+    const auto shared_target = new std::shared_ptr<size_t>{target};
+    shared_targets.push_back(shared_target);
+    weak_targets.emplace_back(*shared_target);
+  }
+
+  {
+    // create a garbage list
+    auto garbage_list = GarbageList<std::shared_ptr<size_t>>{};
+
+    // add garbages
+    for (auto &&target : shared_targets) {
+      garbage_list.AddGarbage(target);
+    }
+
+    // a garbage list deletes all the GC targets when it leaves this scope
+  }
+
+  // check there is no referece to target pointers
+  for (auto &&weak_ptr : weak_targets) {
+    EXPECT_EQ(0, weak_ptr.use_count());
+  }
+}
+
+TEST_F(GarbageListFixture, Destruct_AddManyGarbagesWithAddGarbages_AllocatedValueFreed)
+{
+  constexpr auto kGarbageNum = kGarbageListCapacity + 1;
+
+  // create GC targets
+  std::vector<size_t *> targets;
+  for (size_t index = 0; index < kGarbageNum; ++index) {
+    targets.push_back(new size_t{index});
+  }
+
+  // create shared/weak pointers
+  std::vector<std::shared_ptr<size_t> *> shared_targets;
+  std::vector<std::weak_ptr<size_t>> weak_targets;
+  for (auto &&target : targets) {
+    const auto shared_target = new std::shared_ptr<size_t>{target};
+    shared_targets.push_back(shared_target);
+    weak_targets.emplace_back(*shared_target);
+  }
+
+  {
+    // create a garbage list
+    auto garbage_list = GarbageList<std::shared_ptr<size_t>>{};
+
+    // add garbages
+    garbage_list.AddGarbages(shared_targets);
+
+    // a garbage list deletes all the GC targets when it leaves this scope
+  }
+
+  // check there is no referece to target pointers
+  for (auto &&weak_ptr : weak_targets) {
+    EXPECT_EQ(0, weak_ptr.use_count());
+  }
+}
+
 TEST_F(GarbageListFixture, AddGarbage_TenGarbages_ListSizeCorrectlyIncremented)
 {
   constexpr auto kGarbageNum = 10UL;
