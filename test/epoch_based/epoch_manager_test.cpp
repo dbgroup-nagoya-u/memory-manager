@@ -8,7 +8,7 @@
 
 #include "gtest/gtest.h"
 
-namespace dbagroup::gc::epoch
+namespace dbgroup::gc::epoch
 {
 class EpochManagerFixture : public ::testing::Test
 {
@@ -143,4 +143,4 @@ TEST_F(EpochManagerFixture, LeaveEpoch_HundredThreads_LeftEpochsBecomeFreeable)
   EXPECT_EQ(end_epoch, freeable_end);
 }
 
-}  // namespace dbagroup::gc::epoch
+}  // namespace dbgroup::gc::epoch

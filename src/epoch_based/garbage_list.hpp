@@ -11,7 +11,7 @@
 
 #include "epoch_based/common.hpp"
 
-namespace dbagroup::gc::epoch
+namespace dbgroup::gc::epoch
 {
 template <class T>
 class GarbageList
@@ -162,4 +162,4 @@ class GarbageList
   }
 };
 
-}  // namespace dbagroup::gc::epoch
+}  // namespace dbgroup::gc::epoch

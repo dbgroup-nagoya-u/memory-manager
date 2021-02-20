@@ -9,7 +9,7 @@
 #include "epoch_based/epoch_manager.hpp"
 #include "gtest/gtest.h"
 
-namespace dbagroup::gc::epoch
+namespace dbgroup::gc::epoch
 {
 class EpochGuardFixture : public ::testing::Test
 {
@@ -65,4 +65,4 @@ TEST_F(EpochGuardFixture, Destruct_HundredThreads_DestructorSuccessfullyLeaveEpo
   EXPECT_EQ(end_epoch, freeable_end);
 }
 
-}  // namespace dbagroup::gc::epoch
+}  // namespace dbgroup::gc::epoch

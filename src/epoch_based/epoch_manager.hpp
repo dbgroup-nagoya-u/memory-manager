@@ -10,7 +10,7 @@
 
 #include "epoch_based/common.hpp"
 
-namespace dbagroup::gc::epoch
+namespace dbgroup::gc::epoch
 {
 class alignas(kCacheLineSize) EpochManager
 {
@@ -109,4 +109,4 @@ class alignas(kCacheLineSize) EpochManager
   }
 };
 
-}  // namespace dbagroup::gc::epoch
+}  // namespace dbgroup::gc::epoch
