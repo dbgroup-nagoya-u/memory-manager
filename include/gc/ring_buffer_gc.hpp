@@ -23,7 +23,7 @@ using epoch::kPartitionMask;
 using epoch::kPartitionNum;
 
 template <class T>
-class alignas(kCacheLineSize) EpochBasedGC
+class alignas(kCacheLineSize) RingBufferBasedGC
 {
   static constexpr size_t kDefaultGCIntervalMicroSec = 100000;
 
@@ -81,7 +81,7 @@ class alignas(kCacheLineSize) EpochBasedGC
    * Public constructors/destructors
    *##############################################################################################*/
 
-  explicit EpochBasedGC(  //
+  explicit RingBufferBasedGC(  //
       const size_t gc_interval_micro_sec = kDefaultGCIntervalMicroSec,
       const bool start_gc = true)
       : epoch_manager_{}, gc_interval_micro_sec_{gc_interval_micro_sec}, gc_is_running_{false}
@@ -96,7 +96,7 @@ class alignas(kCacheLineSize) EpochBasedGC
     }
   }
 
-  ~EpochBasedGC()
+  ~RingBufferBasedGC()
   {
     // stop garbage collection
     StopGC();
@@ -120,10 +120,10 @@ class alignas(kCacheLineSize) EpochBasedGC
     }
   }
 
-  EpochBasedGC(const EpochBasedGC&) = delete;
-  EpochBasedGC& operator=(const EpochBasedGC&) = delete;
-  EpochBasedGC(EpochBasedGC&&) = default;
-  EpochBasedGC& operator=(EpochBasedGC&&) = default;
+  RingBufferBasedGC(const RingBufferBasedGC&) = delete;
+  RingBufferBasedGC& operator=(const RingBufferBasedGC&) = delete;
+  RingBufferBasedGC(RingBufferBasedGC&&) = default;
+  RingBufferBasedGC& operator=(RingBufferBasedGC&&) = default;
 
   /*################################################################################################
    * Public utility functions
@@ -170,7 +170,7 @@ class alignas(kCacheLineSize) EpochBasedGC
       return false;
     } else {
       gc_is_running_ = true;
-      gc_thread_ = std::thread{&EpochBasedGC::RunGC, this};
+      gc_thread_ = std::thread{&RingBufferBasedGC::RunGC, this};
       return true;
     }
   }
