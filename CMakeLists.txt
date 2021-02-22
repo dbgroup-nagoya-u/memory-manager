@@ -14,7 +14,6 @@ project(simple_gc
 
 # define source directories
 set(SIMPLE_GC_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
-set(GOOGLETEST_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/external/googletest")
 
 # set default parameters for GC
 set(SIMPLE_GC_BUFFER_SIZE "4096" CACHE STRING
@@ -53,8 +52,6 @@ target_link_libraries(simple_gc INTERFACE
 option(SIMPLE_GC_BUILD_TESTS, "Build unit tests for simple GC implementations" OFF)
 if(${SIMPLE_GC_BUILD_TESTS})
   enable_testing()
-  # use GoogleTest for unit tests
-  add_subdirectory("${GOOGLETEST_SOURCE_DIR}")
   # include unit tests
   add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/test")
 endif()
