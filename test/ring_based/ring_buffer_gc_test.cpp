@@ -1,13 +1,13 @@
 // Copyright (c) DB Group, Nagoya University. All rights reserved.
 // Licensed under the MIT license.
 
-#include "gc/epoch_based_gc.hpp"
+#include "gc/ring_buffer_gc.hpp"
+
+#include <gtest/gtest.h>
 
 #include <future>
 #include <thread>
 #include <vector>
-
-#include "gtest/gtest.h"
 
 namespace dbgroup::gc
 {
@@ -41,7 +41,7 @@ TEST_F(EpochBasedGCFixture, RunGC_AddGarbagesFromSingleThread_AllTargetsAreDelet
 
   // register garbages to GC
   {
-    auto gc = EpochBasedGC<std::shared_ptr<size_t>>{kDefaultGCInterval};
+    auto gc = RingBufferBasedGC<std::shared_ptr<size_t>>{kDefaultGCInterval};
 
     for (size_t loop = 0; loop < kLoopNum; ++loop) {
       const auto guard = gc.CreateEpochGuard();
@@ -69,7 +69,7 @@ TEST_F(EpochBasedGCFixture, RunGC_AddGarbagesFromMultiThreads_AllTargetsAreDelet
 
   // register garbages to GC
   {
-    auto gc = EpochBasedGC<std::shared_ptr<size_t>>{kDefaultGCInterval};
+    auto gc = RingBufferBasedGC<std::shared_ptr<size_t>>{kDefaultGCInterval};
 
     // a lambda function to add garbages in multi-threads
     auto f = [&](std::promise<std::vector<std::weak_ptr<size_t>>> p) {

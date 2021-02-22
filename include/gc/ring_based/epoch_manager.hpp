@@ -8,7 +8,7 @@
 #include <thread>
 #include <utility>
 
-#include "epoch_based/common.hpp"
+#include "common.hpp"
 
 namespace dbgroup::gc::epoch
 {

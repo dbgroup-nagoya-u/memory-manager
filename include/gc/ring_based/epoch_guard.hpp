@@ -3,7 +3,7 @@
 
 #pragma once
 
-#include "epoch_based/epoch_manager.hpp"
+#include "epoch_manager.hpp"
 
 namespace dbgroup::gc::epoch
 {

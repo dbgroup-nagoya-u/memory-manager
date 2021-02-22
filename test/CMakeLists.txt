@@ -1,3 +1,33 @@
+#--------------------------------------------------------------------------------------#
+# Copy and paste from GoogleTest doc.
+#--------------------------------------------------------------------------------------#
+configure_file(CMakeLists.txt.in googletest-download/CMakeLists.txt)
+execute_process(COMMAND ${CMAKE_COMMAND} -G "${CMAKE_GENERATOR}" .
+  RESULT_VARIABLE result
+  WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/googletest-download )
+if(result)
+  message(FATAL_ERROR "CMake step for googletest failed: ${result}")
+endif()
+execute_process(COMMAND ${CMAKE_COMMAND} --build .
+  RESULT_VARIABLE result
+  WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/googletest-download )
+if(result)
+  message(FATAL_ERROR "Build step for googletest failed: ${result}")
+endif()
+
+# Prevent overriding the parent project's compiler/linker
+# settings on Windows
+set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+
+# Add googletest directly to our build. This defines
+# the gtest and gtest_main targets.
+add_subdirectory(${CMAKE_CURRENT_BINARY_DIR}/googletest-src
+                 ${CMAKE_CURRENT_BINARY_DIR}/googletest-build
+                 EXCLUDE_FROM_ALL)
+#--------------------------------------------------------------------------------------#
+# End of copy and paste
+#--------------------------------------------------------------------------------------#
+
 # define function to add unit tests in the same format
 function(ADD_SIMPLE_GC_TEST SIMPLE_GC_TARGET_DIR SIMPLE_GC_TEST_TARGET)
   add_executable(${SIMPLE_GC_TEST_TARGET}
@@ -17,22 +47,17 @@ function(ADD_SIMPLE_GC_TEST SIMPLE_GC_TARGET_DIR SIMPLE_GC_TEST_TARGET)
     INITIAL_GARBAGE_LIST_CAPACITY=${SIMPLE_GC_INITIAL_GARBAGE_LIST_CAPACITY}
   )
   target_include_directories(${SIMPLE_GC_TEST_TARGET} PRIVATE
-    "${SIMPLE_GC_SOURCE_DIR}/src"
     "${SIMPLE_GC_SOURCE_DIR}/include"
-    "${GOOGLETEST_SOURCE_DIR}/include"
   )
   target_link_libraries(${SIMPLE_GC_TEST_TARGET} PRIVATE
     pthread
-    gtest_main
-  )
-  add_dependencies(${SIMPLE_GC_TEST_TARGET}
     gtest_main
   )
   add_test(NAME ${SIMPLE_GC_TEST_TARGET} COMMAND $<TARGET_FILE:${SIMPLE_GC_TEST_TARGET}>)
 endfunction()
 
 # add unit tests to build targets
-ADD_SIMPLE_GC_TEST("epoch_based" "epoch_manager_test")
-ADD_SIMPLE_GC_TEST("epoch_based" "epoch_guard_test")
-ADD_SIMPLE_GC_TEST("epoch_based" "garbage_list_test")
-ADD_SIMPLE_GC_TEST("epoch_based" "epoch_based_gc_test")
+ADD_SIMPLE_GC_TEST("ring_based" "epoch_manager_test")
+ADD_SIMPLE_GC_TEST("ring_based" "epoch_guard_test")
+ADD_SIMPLE_GC_TEST("ring_based" "garbage_list_test")
+ADD_SIMPLE_GC_TEST("ring_based" "ring_buffer_gc_test")
