@@ -43,7 +43,6 @@ target_compile_definitions(simple_gc INTERFACE
   INITIAL_GARBAGE_LIST_CAPACITY=${SIMPLE_GC_INITIAL_GARBAGE_LIST_CAPACITY}
 )
 target_include_directories(simple_gc INTERFACE
-  "${SIMPLE_GC_SOURCE_DIR}/src"
   "${SIMPLE_GC_SOURCE_DIR}/include"
 )
 target_link_libraries(simple_gc INTERFACE

@@ -17,9 +17,7 @@ function(ADD_SIMPLE_GC_TEST SIMPLE_GC_TARGET_DIR SIMPLE_GC_TEST_TARGET)
     INITIAL_GARBAGE_LIST_CAPACITY=${SIMPLE_GC_INITIAL_GARBAGE_LIST_CAPACITY}
   )
   target_include_directories(${SIMPLE_GC_TEST_TARGET} PRIVATE
-    "${SIMPLE_GC_SOURCE_DIR}/src"
     "${SIMPLE_GC_SOURCE_DIR}/include"
-    "${GOOGLETEST_SOURCE_DIR}/include"
   )
   target_link_libraries(${SIMPLE_GC_TEST_TARGET} PRIVATE
     pthread
@@ -32,7 +30,7 @@ function(ADD_SIMPLE_GC_TEST SIMPLE_GC_TARGET_DIR SIMPLE_GC_TEST_TARGET)
 endfunction()
 
 # add unit tests to build targets
-ADD_SIMPLE_GC_TEST("epoch_based" "epoch_manager_test")
-ADD_SIMPLE_GC_TEST("epoch_based" "epoch_guard_test")
-ADD_SIMPLE_GC_TEST("epoch_based" "garbage_list_test")
-ADD_SIMPLE_GC_TEST("epoch_based" "epoch_based_gc_test")
+ADD_SIMPLE_GC_TEST("ring_based" "epoch_manager_test")
+ADD_SIMPLE_GC_TEST("ring_based" "epoch_guard_test")
+ADD_SIMPLE_GC_TEST("ring_based" "garbage_list_test")
+ADD_SIMPLE_GC_TEST("ring_based" "ring_buffer_gc_test")

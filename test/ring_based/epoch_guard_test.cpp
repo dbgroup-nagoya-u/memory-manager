@@ -1,13 +1,14 @@
 // Copyright (c) DB Group, Nagoya University. All rights reserved.
 // Licensed under the MIT license.
 
-#include "epoch_based/epoch_guard.hpp"
+#include "gc/ring_based/epoch_guard.hpp"
+
+#include <gtest/gtest.h>
 
 #include <thread>
 #include <vector>
 
-#include "epoch_based/epoch_manager.hpp"
-#include "gtest/gtest.h"
+#include "gc/ring_based/epoch_manager.hpp"
 
 namespace dbgroup::gc::epoch
 {

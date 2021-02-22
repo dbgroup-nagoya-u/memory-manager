@@ -8,10 +8,9 @@
 #include <thread>
 #include <vector>
 
-#include "epoch_based/common.hpp"
-#include "epoch_based/epoch_guard.hpp"
-#include "epoch_based/epoch_manager.hpp"
-#include "epoch_based/garbage_list.hpp"
+#include "ring_based/epoch_guard.hpp"
+#include "ring_based/epoch_manager.hpp"
+#include "ring_based/garbage_list.hpp"
 
 namespace dbgroup::gc
 {

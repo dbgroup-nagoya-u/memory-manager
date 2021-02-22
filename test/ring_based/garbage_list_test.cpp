@@ -1,13 +1,13 @@
 // Copyright (c) DB Group, Nagoya University. All rights reserved.
 // Licensed under the MIT license.
 
-#include "epoch_based/garbage_list.hpp"
+#include "gc/ring_based/garbage_list.hpp"
+
+#include <gtest/gtest.h>
 
 #include <future>
 #include <thread>
 #include <vector>
-
-#include "gtest/gtest.h"
 
 namespace dbgroup::gc::epoch
 {

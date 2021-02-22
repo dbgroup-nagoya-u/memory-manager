@@ -1,13 +1,13 @@
 // Copyright (c) DB Group, Nagoya University. All rights reserved.
 // Licensed under the MIT license.
 
-#include "gc/epoch_based_gc.hpp"
+#include "gc/ring_buffer_gc.hpp"
+
+#include <gtest/gtest.h>
 
 #include <future>
 #include <thread>
 #include <vector>
-
-#include "gtest/gtest.h"
 
 namespace dbgroup::gc
 {

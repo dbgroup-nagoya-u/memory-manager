@@ -9,7 +9,7 @@
 #include <thread>
 #include <vector>
 
-#include "epoch_based/common.hpp"
+#include "common.hpp"
 
 namespace dbgroup::gc::epoch
 {
