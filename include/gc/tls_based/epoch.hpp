@@ -47,7 +47,13 @@ class Epoch
   void
   SetCurrentEpoch(const size_t current_epoch)
   {
-    current_ = current_epoch;
+    current_.store(current_epoch);
+  }
+
+  size_t
+  GetProtectedEpoch() const
+  {
+    return entered_.load();
   }
 
   /*################################################################################################
