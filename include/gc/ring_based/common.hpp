@@ -3,28 +3,13 @@
 
 #pragma once
 
-#include <cassert>
-#include <cstddef>
+#include "../common/util.hpp"
 
 namespace dbgroup::gc::epoch
 {
-constexpr size_t kCacheLineSize = 64;
-
-constexpr bool
-HasSingleBit(const uint64_t target)
-{
-  if (target == 0UL) {
-    return false;
-  } else {
-    return (target & (target - 1UL)) == 0UL;
-  }
-}
-
-#ifdef BUFFER_SIZE
-constexpr size_t kBufferSize = BUFFER_SIZE;
-#else
-constexpr size_t kBufferSize = 4096;
-#endif
+using ::dbgroup::gc::HasSingleBit;
+using ::dbgroup::gc::kBufferSize;
+using ::dbgroup::gc::kCacheLineSize;
 
 #ifdef PARTITION_NUM
 static_assert(HasSingleBit(PARTITION_NUM));

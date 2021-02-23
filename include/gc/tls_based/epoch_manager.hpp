@@ -30,7 +30,7 @@ class EpochManager
    * Internal member variables
    *##############################################################################################*/
 
-  size_t current_epoch_;
+  std::atomic_size_t current_epoch_;
 
   std::atomic<EpochList *> epochs_;
 
@@ -49,8 +49,24 @@ class EpochManager
   EpochManager &operator=(EpochManager &&) = default;
 
   /*################################################################################################
+   * Public getters/setters
+   *##############################################################################################*/
+
+  size_t
+  GetCurrentEpoch() const
+  {
+    return current_epoch_.load();
+  }
+
+  /*################################################################################################
    * Public utility functions
    *##############################################################################################*/
+
+  void
+  ForwardEpoch()
+  {
+    current_epoch_.fetch_add(1);
+  }
 
   void
   AddEpoch(const std::shared_ptr<Epoch> epoch)
@@ -64,13 +80,13 @@ class EpochManager
   size_t
   UpdateEpochs()
   {
-    ++current_epoch_;
+    const auto current_epoch = current_epoch_.load();
     auto min_protected_epoch = std::numeric_limits<size_t>::max();
 
     // update the head of an epoch list
     auto previous = epochs_.load();
     if (previous->epoch.use_count() > 1) {
-      previous->epoch->SetCurrentEpoch(current_epoch_);
+      previous->epoch->SetCurrentEpoch(current_epoch);
       const size_t protected_epoch = previous->epoch->GetProtectedEpoch();
       if (protected_epoch < min_protected_epoch) {
         min_protected_epoch = protected_epoch;
@@ -82,7 +98,7 @@ class EpochManager
     while (current != nullptr) {
       if (current->epoch.use_count() > 1) {
         // if an epoch remains, update epoch information
-        current->epoch->SetCurrentEpoch(current_epoch_);
+        current->epoch->SetCurrentEpoch(current_epoch);
         const size_t protected_epoch = current->epoch->GetProtectedEpoch();
         if (protected_epoch < min_protected_epoch) {
           min_protected_epoch = protected_epoch;

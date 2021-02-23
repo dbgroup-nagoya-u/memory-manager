@@ -65,6 +65,14 @@ class GarbageList
    * Public getters/setters
    *##############################################################################################*/
 
+  size_t
+  Size() const
+  {
+    const int64_t current_begin = begin_index_.load();
+    const int64_t current_end = end_index_.load();
+    return std::abs(current_end - current_begin);
+  }
+
   void
   SetCurrentEpoch(const size_t current_epoch)
   {
@@ -96,14 +104,14 @@ class GarbageList
   }
 
   void
-  Clear(const size_t released_epoch)
+  Clear(const size_t protected_epoch)
   {
     const auto current_end = end_index_.load();
 
     auto index = begin_index_.load();
     while (index != current_end) {
       auto [deleted_epoch, garbage] = garbage_ring_buffer_[index];
-      if (deleted_epoch < released_epoch) {
+      if (deleted_epoch < protected_epoch) {
         delete garbage;
         garbage_ring_buffer_[index] = {std::numeric_limits<size_t>::max(), nullptr};
       } else {
