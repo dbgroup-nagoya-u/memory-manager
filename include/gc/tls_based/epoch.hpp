@@ -33,7 +33,7 @@ class Epoch
   {
   }
 
-  ~Epoch() {}
+  ~Epoch() = default;
 
   Epoch(const Epoch &) = delete;
   Epoch &operator=(const Epoch &) = delete;
@@ -44,10 +44,10 @@ class Epoch
    * Public getters/setters
    *##############################################################################################*/
 
-  void
-  SetCurrentEpoch(const size_t current_epoch)
+  size_t
+  GetCurrentEpoch() const
   {
-    current_.store(current_epoch);
+    return current_.load();
   }
 
   size_t
@@ -56,12 +56,18 @@ class Epoch
     return entered_.load();
   }
 
+  void
+  SetCurrentEpoch(const size_t current_epoch)
+  {
+    current_.store(current_epoch);
+  }
+
   /*################################################################################################
    * Public utility functions
    *##############################################################################################*/
 
   void
-  EnterCurrentEpoch()
+  EnterEpoch()
   {
     entered_ = current_.load();
   }

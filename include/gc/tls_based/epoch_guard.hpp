@@ -21,7 +21,7 @@ class EpochGuard
    * Public constructors/destructors
    *##############################################################################################*/
 
-  explicit EpochGuard(Epoch *epoch) : epoch_{epoch} { epoch_->EnterCurrentEpoch(); }
+  explicit EpochGuard(Epoch *epoch) : epoch_{epoch} { epoch_->EnterEpoch(); }
 
   ~EpochGuard() { epoch_->LeaveEpoch(); }
 

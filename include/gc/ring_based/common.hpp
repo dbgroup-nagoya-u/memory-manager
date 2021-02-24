@@ -3,7 +3,7 @@
 
 #pragma once
 
-#include "../common/util.hpp"
+#include "gc/common/util.hpp"
 
 namespace dbgroup::gc::epoch
 {
