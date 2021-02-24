@@ -14,6 +14,9 @@ namespace dbgroup::gc::tls
 {
 class GarbageListFixture : public ::testing::Test
 {
+ public:
+  static constexpr auto kGCInterval = 100UL;
+
  protected:
   void
   SetUp() override
@@ -32,16 +35,33 @@ class GarbageListFixture : public ::testing::Test
 
 TEST_F(GarbageListFixture, Construct_WithArgs_MemberVariablesCorrectlyInitialized)
 {
-  constexpr auto kGCInterval = 100UL;
-
   auto garbage_list = GarbageList<size_t>{0, kGCInterval};
 
   EXPECT_EQ(0, garbage_list.Size());
 }
 
+TEST_F(GarbageListFixture, Destruct_AddTenGarbages_AddedGarbagesCorrectlyFreed)
+{
+  constexpr auto kGarbageNum = 10UL;
+
+  std::vector<std::weak_ptr<size_t>> garbage_references;
+
+  {
+    auto garbage_list = GarbageList<std::shared_ptr<size_t>>{0, kGCInterval};
+    for (size_t count = 0; count < kGarbageNum; ++count) {
+      auto garbage = new std::shared_ptr<size_t>{0};
+      garbage_list.AddGarbage(garbage);
+      garbage_references.emplace_back(*garbage);
+    }
+  }
+
+  for (auto &&garbage_reference : garbage_references) {
+    EXPECT_EQ(0, garbage_reference.use_count());
+  }
+}
+
 TEST_F(GarbageListFixture, AddGarbage_TenGarbages_ListSizeCorrectlyUpdated)
 {
-  constexpr auto kGCInterval = 100UL;
   constexpr auto kGarbageNum = 10UL;
 
   auto garbage_list = GarbageList<size_t>{0, kGCInterval};
