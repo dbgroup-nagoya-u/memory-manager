@@ -87,7 +87,7 @@ class EpochManager
     auto previous = epochs_.load();
     if (previous->epoch.use_count() > 1) {
       previous->epoch->SetCurrentEpoch(current_epoch);
-      const size_t protected_epoch = previous->epoch->GetProtectedEpoch();
+      const auto protected_epoch = previous->epoch->GetProtectedEpoch();
       if (protected_epoch < min_protected_epoch) {
         min_protected_epoch = protected_epoch;
       }
@@ -99,7 +99,7 @@ class EpochManager
       if (current->epoch.use_count() > 1) {
         // if an epoch remains, update epoch information
         current->epoch->SetCurrentEpoch(current_epoch);
-        const size_t protected_epoch = current->epoch->GetProtectedEpoch();
+        const auto protected_epoch = current->epoch->GetProtectedEpoch();
         if (protected_epoch < min_protected_epoch) {
           min_protected_epoch = protected_epoch;
         }

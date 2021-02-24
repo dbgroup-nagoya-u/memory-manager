@@ -13,6 +13,26 @@ namespace dbgroup::gc::tls
 {
 class EpochManagerFixture : public ::testing::Test
 {
+ public:
+  static std::vector<std::shared_ptr<Epoch>>
+  RegisterEpochs(  //
+      const size_t num_epoch,
+      EpochManager &manager)
+  {
+    std::vector<std::shared_ptr<Epoch>> epochs;
+
+    for (size_t count = 0; count < num_epoch; ++count) {
+      // register an epoch to a manager
+      auto epoch = std::make_shared<Epoch>(manager.GetCurrentEpoch());
+      manager.RegisterEpoch(epoch);
+
+      // keep a created epoch
+      epochs.emplace_back(std::move(epoch));
+    }
+
+    return epochs;
+  }
+
  protected:
   void
   SetUp() override
@@ -94,6 +114,44 @@ TEST_F(EpochManagerFixture, ForwardGlobalEpoch_ForwardTenTimes_CurrentEpochCorre
   }
 
   EXPECT_EQ(kLoopNum, manager.GetCurrentEpoch());
+}
+
+TEST_F(EpochManagerFixture, UpdateRegisteredEpochs_SingleThread_RegisteredEpochsCorrectlyUpdated)
+{
+  constexpr auto kLoopNum = 10UL;
+
+  auto manager = EpochManager{};
+  std::vector<std::weak_ptr<Epoch>> epoch_references;
+
+  {
+    // prepare epochs
+    auto epochs = RegisterEpochs(kLoopNum, manager);
+    for (auto &&epoch : epochs) {
+      epoch->EnterEpoch();
+      epoch_references.emplace_back(epoch);
+    }
+
+    // update epoch infomation
+    manager.ForwardGlobalEpoch();
+    const auto protected_epoch = manager.UpdateRegisteredEpochs();
+
+    EXPECT_EQ(0, protected_epoch);
+    for (auto &&epoch : epochs) {
+      EXPECT_EQ(1, epoch->GetCurrentEpoch());
+      epoch->LeaveEpoch();
+    }
+
+    // epochs become out of scope here
+  }
+
+  // add a dummy epoch to delete registered epochs
+  manager.RegisterEpoch(std::make_shared<Epoch>(manager.GetCurrentEpoch()));
+  const auto protected_epoch = manager.UpdateRegisteredEpochs();
+
+  EXPECT_EQ(std::numeric_limits<size_t>::max(), protected_epoch);
+  for (auto &&epoch_reference : epoch_references) {
+    EXPECT_EQ(0, epoch_reference.use_count());
+  }
 }
 
 }  // namespace dbgroup::gc::tls
