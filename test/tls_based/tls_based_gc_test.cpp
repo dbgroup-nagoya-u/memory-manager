@@ -87,7 +87,7 @@ TEST_F(TLSBasedGCFixture, Destruct_SingleThread_GarbagesCorrectlyFreed)
 TEST_F(TLSBasedGCFixture, Destruct_MultiThreads_GarbagesCorrectlyFreed)
 {
   constexpr size_t kLoopNum = 5E3;
-  constexpr size_t kThreadNum = 100;
+  constexpr size_t kThreadNum = 10;
 
   // keep garbage targets
   std::vector<std::weak_ptr<size_t>> target_weak_ptrs;
