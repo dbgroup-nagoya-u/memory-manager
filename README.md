@@ -16,7 +16,7 @@ sudo apt update && sudo apt install -y build-essential cmake
 
 - `SIMPLE_GC_BUFFER_SIZE`: the size of epoch/garbage ring buffers (default: `4096`).
 - `SIMPLE_GC_PARTITION_NUM`: the number of partitions of epoch/garbage ring buffers (default: `8`). This setting affects performance in multi-threads environment.
-- `SIMPLE_GC_INITIAL_GARBAGE_LIST_CAPACITY`: the default capacity of garbage lists (default: `128`).
+- `SIMPLE_GC_INITIAL_GARBAGE_LIST_CAPACITY`: the default capacity of garbage lists (default: `256`).
 - `SIMPLE_GC_BUILD_TESTS`: build unit tests for GC if `on`.
 
 ### Build and Run Unit Tests
