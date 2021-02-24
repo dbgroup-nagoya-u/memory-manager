@@ -93,8 +93,8 @@ class TLSBasedGC
     while (gc_is_running_) {
       // wait for garbages to be out of scope
       std::this_thread::sleep_for(std::chrono::microseconds(gc_interval_micro_sec_));
-      epoch_manager_.ForwardEpoch();
-      const auto protected_epoch = epoch_manager_.UpdateEpochs();
+      epoch_manager_.ForwardGlobalEpoch();
+      const auto protected_epoch = epoch_manager_.UpdateRegisteredEpochs();
 
       // delete freeable garbages
       DeleteGarbages(protected_epoch);
@@ -123,14 +123,14 @@ class TLSBasedGC
   {
     // stop garbage collection
     StopGC();
-    epoch_manager_.ForwardEpoch();
+    epoch_manager_.ForwardGlobalEpoch();
 
     const auto current_epoch = epoch_manager_.GetCurrentEpoch();
     size_t protected_epoch;
     do {
       // wait for garbages to be out of scope
       std::this_thread::sleep_for(std::chrono::microseconds(gc_interval_micro_sec_));
-      protected_epoch = epoch_manager_.UpdateEpochs();
+      protected_epoch = epoch_manager_.UpdateRegisteredEpochs();
     } while (protected_epoch < current_epoch);
 
     delete garbages_;
@@ -151,7 +151,7 @@ class TLSBasedGC
     thread_local std::shared_ptr<Epoch> epoch = nullptr;
     if (epoch == nullptr) {
       epoch = std::make_shared<Epoch>(epoch_manager_.GetCurrentEpoch());
-      epoch_manager_.AddEpoch(epoch);
+      epoch_manager_.RegisterEpoch(epoch);
     }
 
     return EpochGuard{epoch.get()};

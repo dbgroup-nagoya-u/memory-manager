@@ -63,13 +63,13 @@ class EpochManager
    *##############################################################################################*/
 
   void
-  ForwardEpoch()
+  ForwardGlobalEpoch()
   {
     current_epoch_.fetch_add(1);
   }
 
   void
-  AddEpoch(const std::shared_ptr<Epoch> epoch)
+  RegisterEpoch(const std::shared_ptr<Epoch> epoch)
   {
     auto epoch_node = new EpochList{epoch, epochs_.load()};
     while (!epochs_.compare_exchange_weak(epoch_node->next, epoch_node)) {
@@ -78,7 +78,7 @@ class EpochManager
   }
 
   size_t
-  UpdateEpochs()
+  UpdateRegisteredEpochs()
   {
     const auto current_epoch = current_epoch_.load();
     auto min_protected_epoch = std::numeric_limits<size_t>::max();

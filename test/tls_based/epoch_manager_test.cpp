@@ -36,7 +36,7 @@ TEST_F(EpochManagerFixture, Construct_NoArgs_MemberVariablesCorrectlyInitialized
   EXPECT_EQ(0, manager.GetCurrentEpoch());
 }
 
-TEST_F(EpochManagerFixture, Destruct_AfterAddOneEpoch_AddedEpochFreed)
+TEST_F(EpochManagerFixture, Destruct_AfterRegisterOneEpoch_RegisteredEpochFreed)
 {
   std::weak_ptr<Epoch> epoch_reference;
 
@@ -45,7 +45,7 @@ TEST_F(EpochManagerFixture, Destruct_AfterAddOneEpoch_AddedEpochFreed)
     const auto epoch = std::make_shared<Epoch>(manager.GetCurrentEpoch());
 
     // register an epoch to a manager
-    manager.AddEpoch(epoch);
+    manager.RegisterEpoch(epoch);
 
     // keep the reference to an epoch
     epoch_reference = epoch;
@@ -56,7 +56,7 @@ TEST_F(EpochManagerFixture, Destruct_AfterAddOneEpoch_AddedEpochFreed)
   EXPECT_EQ(0, epoch_reference.use_count());
 }
 
-TEST_F(EpochManagerFixture, Destruct_AfterAddTenEpochs_AddedEpochsFreed)
+TEST_F(EpochManagerFixture, Destruct_AfterRegisterTenEpochs_RegisteredEpochsFreed)
 {
   constexpr auto kLoopNum = 10UL;
 
@@ -68,7 +68,7 @@ TEST_F(EpochManagerFixture, Destruct_AfterAddTenEpochs_AddedEpochsFreed)
     for (size_t count = 0; count < kLoopNum; ++count) {
       // register an epoch to a manager
       const auto epoch = std::make_shared<Epoch>(manager.GetCurrentEpoch());
-      manager.AddEpoch(epoch);
+      manager.RegisterEpoch(epoch);
 
       // keep the reference to an epoch
       epoch_references.emplace_back(epoch);
@@ -82,7 +82,7 @@ TEST_F(EpochManagerFixture, Destruct_AfterAddTenEpochs_AddedEpochsFreed)
   }
 }
 
-TEST_F(EpochManagerFixture, ForwardEpoch_ForwardTenTimes_CurrentEpochCorrectlyUpdated)
+TEST_F(EpochManagerFixture, ForwardGlobalEpoch_ForwardTenTimes_CurrentEpochCorrectlyUpdated)
 {
   constexpr auto kLoopNum = 10UL;
 
@@ -90,7 +90,7 @@ TEST_F(EpochManagerFixture, ForwardEpoch_ForwardTenTimes_CurrentEpochCorrectlyUp
 
   for (size_t count = 0; count < kLoopNum; ++count) {
     EXPECT_EQ(count, manager.GetCurrentEpoch());
-    manager.ForwardEpoch();
+    manager.ForwardGlobalEpoch();
   }
 
   EXPECT_EQ(kLoopNum, manager.GetCurrentEpoch());
