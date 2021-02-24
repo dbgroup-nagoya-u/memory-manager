@@ -5,6 +5,7 @@
 
 #include <gtest/gtest.h>
 
+#include <future>
 #include <memory>
 #include <thread>
 #include <vector>
@@ -126,6 +127,63 @@ TEST_F(EpochManagerFixture, UpdateRegisteredEpochs_SingleThread_RegisteredEpochs
   {
     // prepare epochs
     auto epochs = RegisterEpochs(kLoopNum, manager);
+    for (auto &&epoch : epochs) {
+      epoch->EnterEpoch();
+      epoch_references.emplace_back(epoch);
+    }
+
+    // update epoch infomation
+    manager.ForwardGlobalEpoch();
+    const auto protected_epoch = manager.UpdateRegisteredEpochs();
+
+    EXPECT_EQ(0, protected_epoch);
+    for (auto &&epoch : epochs) {
+      EXPECT_EQ(1, epoch->GetCurrentEpoch());
+      epoch->LeaveEpoch();
+    }
+
+    // epochs become out of scope here
+  }
+
+  // add a dummy epoch to delete registered epochs
+  manager.RegisterEpoch(std::make_shared<Epoch>(manager.GetCurrentEpoch()));
+  const auto protected_epoch = manager.UpdateRegisteredEpochs();
+
+  EXPECT_EQ(std::numeric_limits<size_t>::max(), protected_epoch);
+  for (auto &&epoch_reference : epoch_references) {
+    EXPECT_EQ(0, epoch_reference.use_count());
+  }
+}
+
+TEST_F(EpochManagerFixture, UpdateRegisteredEpochs_MultiThreads_RegisteredEpochsCorrectlyUpdated)
+{
+  constexpr auto kLoopNum = 10UL;
+  constexpr auto kThreadNum = 100UL;
+
+  auto manager = EpochManager{};
+  std::vector<std::weak_ptr<Epoch>> epoch_references;
+
+  {
+    // a lambda functions for a multi-threads test
+    auto f = [kLoopNum, &manager](std::promise<std::vector<std::shared_ptr<Epoch>>> p) {
+      p.set_value(RegisterEpochs(kLoopNum, manager));
+    };
+
+    // prepare epochs
+    std::vector<std::shared_ptr<Epoch>> epochs;
+    std::vector<std::future<std::vector<std::shared_ptr<Epoch>>>> futures;
+    for (size_t count = 0; count < kThreadNum; ++count) {
+      std::promise<std::vector<std::shared_ptr<Epoch>>> p;
+      futures.emplace_back(p.get_future());
+      auto t = std::thread{f, std::move(p)};
+      t.detach();
+    }
+    for (auto &&future : futures) {
+      auto shared_ptrs = future.get();
+      epochs.insert(epochs.end(), shared_ptrs.begin(), shared_ptrs.end());
+    }
+
+    // enter protected regions and keep references
     for (auto &&epoch : epochs) {
       epoch->EnterEpoch();
       epoch_references.emplace_back(epoch);
