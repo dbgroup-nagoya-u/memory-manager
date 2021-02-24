@@ -109,4 +109,39 @@ TEST_F(GarbageListFixture, Clear_TenFreeableTenProtectedGarbages_ProtectedGarbag
   }
 }
 
+TEST_F(GarbageListFixture, AddGarbage_AddManyGarbages_RingBufferReturnHead)
+{
+  constexpr auto kGarbageNum = kGarbageListCapacity / 2 + 10;
+
+  auto garbage_list = GarbageList<std::shared_ptr<size_t>>{0, kGCInterval};
+  std::vector<std::weak_ptr<size_t>> garbage_references;
+  const auto protected_epoch = 1UL;
+
+  // add unprotected garbages
+  for (size_t count = 0; count < kGarbageNum; ++count) {
+    auto garbage = new std::shared_ptr<size_t>{new size_t{0}};
+    garbage_list.AddGarbage(garbage);
+    garbage_references.emplace_back(*garbage);
+  }
+
+  garbage_list.SetCurrentEpoch(protected_epoch);
+  garbage_list.Clear(protected_epoch);  // clear garbages to add remaining ones
+
+  // add protected garbages
+  for (size_t count = 0; count < kGarbageNum; ++count) {
+    auto garbage = new std::shared_ptr<size_t>{new size_t{0}};
+    garbage_list.AddGarbage(garbage);
+    garbage_references.emplace_back(*garbage);
+  }
+
+  EXPECT_EQ(kGarbageNum, garbage_list.Size());
+  for (size_t count = 0; count < 2 * kGarbageNum; ++count) {
+    if (count < kGarbageNum) {
+      EXPECT_EQ(0, garbage_references[count].use_count());
+    } else {
+      EXPECT_EQ(1, garbage_references[count].use_count());
+    }
+  }
+}
+
 }  // namespace dbgroup::gc::tls

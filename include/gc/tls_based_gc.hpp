@@ -28,7 +28,7 @@ class TLSBasedGC
    * Internal enum and constants
    *##############################################################################################*/
 
-  static constexpr size_t kDefaultGCIntervalMicroSec = 100000;
+  static constexpr size_t kDefaultGCIntervalMicroSec = 1E6;
 
   /*################################################################################################
    * Internal structs
@@ -71,10 +71,9 @@ class TLSBasedGC
 
     // check the other nodes of a garbage list
     while (current != nullptr) {
-      // delete garbages
-      current->garbage_list->Clear(protected_epoch);
-      if (current->garbage_list.use_count() > 1 || current->garbage_list->Size() == 0) {
-        // keep a garbage list
+      if (current->garbage_list.use_count() > 1) {
+        // delete garbages and check the next one
+        current->garbage_list->Clear(protected_epoch);
         previous = current;
         current = current->next;
       } else {
@@ -99,10 +98,10 @@ class TLSBasedGC
       const auto protected_epoch = epoch_manager_.UpdateRegisteredEpochs();
       auto garbage_node = garbages_.load();
       while (garbage_node != nullptr) {
-        if (garbage_node.garbage_list.use_count() > 1) {
-          garbage_node.garbage_list->SetCurrentEpoch(current_epoch);
+        if (garbage_node->garbage_list.use_count() > 1) {
+          garbage_node->garbage_list->SetCurrentEpoch(current_epoch);
         }
-        garbage_node = garbage_node.next;
+        garbage_node = garbage_node->next;
       }
 
       // delete freeable garbages

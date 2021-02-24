@@ -23,7 +23,7 @@ class GarbageList
    * Internal member variables
    *##############################################################################################*/
 
-  std::array<std::pair<size_t, T*>, kBufferSize> garbage_ring_buffer_;
+  std::array<std::pair<size_t, T*>, kGarbageListCapacity> garbage_ring_buffer_;
 
   std::atomic_size_t begin_index_;
 
@@ -50,9 +50,11 @@ class GarbageList
   ~GarbageList()
   {
     const auto current_end = end_index_.load();
-    for (auto index = begin_index_.load(); index != current_end; ++index) {
+    auto index = begin_index_.load();
+    while (index != current_end) {
       auto [deleted_epoch, garbage] = garbage_ring_buffer_[index];
       delete garbage;
+      index = (index == kGarbageListCapacity - 1) ? 0 : index + 1;
     }
   }
 
@@ -68,9 +70,11 @@ class GarbageList
   size_t
   Size() const
   {
-    const int64_t current_begin = begin_index_.load();
-    const int64_t current_end = end_index_.load();
-    return std::abs(current_end - current_begin);
+    const auto current_begin = begin_index_.load();
+    const auto current_end = end_index_.load();
+    const auto resized_end =
+        (current_begin > current_end) ? current_end + kGarbageListCapacity : current_end;
+    return resized_end - current_begin;
   }
 
   void
@@ -88,11 +92,11 @@ class GarbageList
   {
     // reserve a garbage region
     const auto current_end = end_index_.load();
-    const auto next_end = (current_end == kBufferSize) ? 0 : current_end + 1;
+    const auto next_end = (current_end == kGarbageListCapacity - 1) ? 0 : current_end + 1;
     auto current_begin = begin_index_.load();
     while (next_end == current_begin) {
       // wait GC
-      std::this_thread::sleep_for(std::chrono::microseconds(gc_interval_micro_));
+      std::this_thread::sleep_for(std::chrono::nanoseconds(100));
       current_begin = begin_index_.load();
     }
 
@@ -117,7 +121,7 @@ class GarbageList
       } else {
         break;
       }
-      index = (index + 1 == kBufferSize) ? 0 : index + 1;
+      index = (index == kGarbageListCapacity - 1) ? 0 : index + 1;
     }
 
     begin_index_.store(index);
