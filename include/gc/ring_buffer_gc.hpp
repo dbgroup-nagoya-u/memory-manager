@@ -67,12 +67,17 @@ class alignas(kCacheLineSize) RingBufferBasedGC
   RunGC()
   {
     while (gc_is_running_) {
-      // wait for garbages to be out of scope
-      std::this_thread::sleep_for(std::chrono::microseconds(gc_interval_micro_sec_));
+      const auto sleep_time = std::chrono::high_resolution_clock::now()
+                              + std::chrono::microseconds(gc_interval_micro_sec_);
+
       epoch_manager_.ForwardEpoch();
+
       // delete freeable garbages
       const auto [begin_epoch, end_epoch] = epoch_manager_.ListFreeableEpoch();
       DeleteGarbages(begin_epoch, end_epoch);
+
+      // wait for garbages to be out of scope
+      std::this_thread::sleep_until(sleep_time);
     }
   }
 
