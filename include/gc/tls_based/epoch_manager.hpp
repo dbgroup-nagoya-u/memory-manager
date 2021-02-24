@@ -62,10 +62,10 @@ class EpochManager
    * Public utility functions
    *##############################################################################################*/
 
-  void
+  size_t
   ForwardGlobalEpoch()
   {
-    current_epoch_.fetch_add(1);
+    return current_epoch_.fetch_add(1) + 1;
   }
 
   void

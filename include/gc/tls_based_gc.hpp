@@ -93,8 +93,17 @@ class TLSBasedGC
     while (gc_is_running_) {
       // wait for garbages to be out of scope
       std::this_thread::sleep_for(std::chrono::microseconds(gc_interval_micro_sec_));
-      epoch_manager_.ForwardGlobalEpoch();
+
+      // forward a global epoch and update registered epochs/garbage lists
+      const auto current_epoch = epoch_manager_.ForwardGlobalEpoch();
       const auto protected_epoch = epoch_manager_.UpdateRegisteredEpochs();
+      auto garbage_node = garbages_.load();
+      while (garbage_node != nullptr) {
+        if (garbage_node.garbage_list.use_count() > 1) {
+          garbage_node.garbage_list->SetCurrentEpoch(current_epoch);
+        }
+        garbage_node = garbage_node.next;
+      }
 
       // delete freeable garbages
       DeleteGarbages(protected_epoch);
