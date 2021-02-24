@@ -97,7 +97,7 @@ class GarbageList
     }
 
     // add garbage
-    garbage_ring_buffer_[current_end] = {current_epoch_.load(), garbase};
+    garbage_ring_buffer_[current_end] = {current_epoch_.load(), garbage};
 
     // set incremented index
     end_index_.store(next_end);

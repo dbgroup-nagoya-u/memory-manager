@@ -17,6 +17,12 @@ constexpr size_t kBufferSize = BUFFER_SIZE;
 constexpr size_t kBufferSize = 4096;
 #endif
 
+#ifdef INITIAL_GARBAGE_LIST_CAPACITY
+constexpr size_t kGarbageListCapacity = INITIAL_GARBAGE_LIST_CAPACITY;
+#else
+constexpr size_t kGarbageListCapacity = 256;
+#endif
+
 constexpr bool
 HasSingleBit(const uint64_t target)
 {

@@ -9,4 +9,5 @@ namespace dbgroup::gc::tls
 {
 using ::dbgroup::gc::kBufferSize;
 using ::dbgroup::gc::kCacheLineSize;
+using ::dbgroup::gc::kGarbageListCapacity;
 }  // namespace dbgroup::gc::tls
