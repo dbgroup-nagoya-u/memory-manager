@@ -49,7 +49,7 @@ TEST_F(GarbageListFixture, Destruct_AddTenGarbages_AddedGarbagesCorrectlyFreed)
   {
     auto garbage_list = GarbageList<std::shared_ptr<size_t>>{0, kGCInterval};
     for (size_t count = 0; count < kGarbageNum; ++count) {
-      auto garbage = new std::shared_ptr<size_t>{0};
+      auto garbage = new std::shared_ptr<size_t>{new size_t{0}};
       garbage_list.AddGarbage(garbage);
       garbage_references.emplace_back(*garbage);
     }
@@ -71,6 +71,42 @@ TEST_F(GarbageListFixture, AddGarbage_TenGarbages_ListSizeCorrectlyUpdated)
   }
 
   EXPECT_EQ(kGarbageNum, garbage_list.Size());
+}
+
+TEST_F(GarbageListFixture, Clear_TenFreeableTenProtectedGarbages_ProtectedGarbagesRemain)
+{
+  constexpr auto kGarbageNum = 10UL;
+
+  auto garbage_list = GarbageList<std::shared_ptr<size_t>>{0, kGCInterval};
+  std::vector<std::weak_ptr<size_t>> garbage_references;
+  const auto protected_epoch = 1UL;
+
+  // add unprotected garbages
+  for (size_t count = 0; count < kGarbageNum; ++count) {
+    auto garbage = new std::shared_ptr<size_t>{new size_t{0}};
+    garbage_list.AddGarbage(garbage);
+    garbage_references.emplace_back(*garbage);
+  }
+
+  garbage_list.SetCurrentEpoch(protected_epoch);
+
+  // add protected garbages
+  for (size_t count = 0; count < kGarbageNum; ++count) {
+    auto garbage = new std::shared_ptr<size_t>{new size_t{0}};
+    garbage_list.AddGarbage(garbage);
+    garbage_references.emplace_back(*garbage);
+  }
+
+  garbage_list.Clear(protected_epoch);
+
+  EXPECT_EQ(kGarbageNum, garbage_list.Size());
+  for (size_t count = 0; count < 2 * kGarbageNum; ++count) {
+    if (count < kGarbageNum) {
+      EXPECT_EQ(0, garbage_references[count].use_count());
+    } else {
+      EXPECT_EQ(1, garbage_references[count].use_count());
+    }
+  }
 }
 
 }  // namespace dbgroup::gc::tls
