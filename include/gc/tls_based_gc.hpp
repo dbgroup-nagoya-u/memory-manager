@@ -7,6 +7,7 @@
 #include <atomic>
 #include <memory>
 #include <thread>
+#include <utility>
 #include <vector>
 
 #include "tls_based/epoch_guard.hpp"
@@ -39,6 +40,14 @@ class TLSBasedGC
     GarbageNode* next = nullptr;
 
     ~GarbageNode() { delete next; }
+  };
+
+  template <class Tp>
+  struct DoNothing {
+    void
+    operator()(Tp* ptr) const
+    {
+    }
   };
 
   /*################################################################################################
@@ -159,13 +168,15 @@ class TLSBasedGC
   EpochGuard
   CreateEpochGuard()
   {
-    thread_local std::shared_ptr<Epoch> epoch = nullptr;
-    if (epoch == nullptr) {
-      epoch = std::make_shared<Epoch>(epoch_manager_.GetCurrentEpoch());
-      epoch_manager_.RegisterEpoch(epoch);
+    thread_local std::shared_ptr<Epoch> registering_epoch = nullptr;
+    thread_local auto epoch = Epoch{epoch_manager_.GetCurrentEpoch()};
+
+    if (registering_epoch == nullptr) {
+      registering_epoch = std::shared_ptr<Epoch>{&epoch, DoNothing<Epoch>{}};
+      epoch_manager_.RegisterEpoch(registering_epoch);
     }
 
-    return EpochGuard{epoch.get()};
+    return EpochGuard{&epoch};
   }
 
   void
