@@ -10,7 +10,7 @@
 #include <thread>
 #include <vector>
 
-namespace dbgroup::gc::tls
+namespace dbgroup::memory::tls_based
 {
 class EpochManagerFixture : public ::testing::Test
 {
@@ -212,4 +212,4 @@ TEST_F(EpochManagerFixture, UpdateRegisteredEpochs_MultiThreads_RegisteredEpochs
   }
 }
 
-}  // namespace dbgroup::gc::tls
+}  // namespace dbgroup::memory::tls_based

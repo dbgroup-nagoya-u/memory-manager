@@ -7,10 +7,11 @@
 
 namespace dbgroup::memory::ring_buffer_based
 {
-using ::dbgroup::gc::HasSingleBit;
-using ::dbgroup::gc::kBufferSize;
-using ::dbgroup::gc::kCacheLineSize;
-using ::dbgroup::gc::kGarbageListCapacity;
+#ifdef BUFFER_SIZE
+constexpr size_t kBufferSize = BUFFER_SIZE;
+#else
+constexpr size_t kBufferSize = 4096;
+#endif
 
 #ifdef PARTITION_NUM
 static_assert(HasSingleBit(PARTITION_NUM));

@@ -18,7 +18,6 @@ using ring_buffer_based::EpochGuard;
 using ring_buffer_based::EpochManager;
 using ring_buffer_based::GarbageList;
 using ring_buffer_based::kBufferSize;
-using ring_buffer_based::kCacheLineSize;
 using ring_buffer_based::kPartitionMask;
 using ring_buffer_based::kPartitionNum;
 

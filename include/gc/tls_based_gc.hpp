@@ -14,12 +14,12 @@
 #include "tls_based/epoch_manager.hpp"
 #include "tls_based/garbage_list.hpp"
 
-namespace dbgroup::gc
+namespace dbgroup::memory
 {
-using tls::Epoch;
-using tls::EpochGuard;
-using tls::EpochManager;
-using tls::GarbageList;
+using tls_based::Epoch;
+using tls_based::EpochGuard;
+using tls_based::EpochManager;
+using tls_based::GarbageList;
 
 template <class T>
 class TLSBasedGC
@@ -216,4 +216,4 @@ class TLSBasedGC
   }
 };
 
-}  // namespace dbgroup::gc
+}  // namespace dbgroup::memory

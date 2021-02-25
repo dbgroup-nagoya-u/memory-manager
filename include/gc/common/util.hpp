@@ -7,16 +7,10 @@
 #include <cstddef>
 #include <cstdint>
 
-namespace dbgroup::gc
+namespace dbgroup::memory
 {
 constexpr std::memory_order mo_relax = std::memory_order_relaxed;
 constexpr size_t kCacheLineSize = 64;
-
-#ifdef BUFFER_SIZE
-constexpr size_t kBufferSize = BUFFER_SIZE;
-#else
-constexpr size_t kBufferSize = 4096;
-#endif
 
 #ifdef INITIAL_GARBAGE_LIST_CAPACITY
 constexpr size_t kGarbageListCapacity = INITIAL_GARBAGE_LIST_CAPACITY;
@@ -34,4 +28,4 @@ HasSingleBit(const uint64_t target)
   }
 }
 
-}  // namespace dbgroup::gc
+}  // namespace dbgroup::memory

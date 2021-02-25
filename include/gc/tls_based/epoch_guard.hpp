@@ -5,7 +5,7 @@
 
 #include "epoch.hpp"
 
-namespace dbgroup::gc::tls
+namespace dbgroup::memory::tls_based
 {
 class EpochGuard
 {
@@ -31,4 +31,4 @@ class EpochGuard
   EpochGuard &operator=(EpochGuard &&) = default;
 };
 
-}  // namespace dbgroup::gc::tls
+}  // namespace dbgroup::memory::tls_based

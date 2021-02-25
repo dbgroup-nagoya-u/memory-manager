@@ -13,7 +13,7 @@
 
 #include "common.hpp"
 
-namespace dbgroup::gc::tls
+namespace dbgroup::memory::tls_based
 {
 template <class T>
 class GarbageList
@@ -128,4 +128,4 @@ class GarbageList
   }
 };
 
-}  // namespace dbgroup::gc::tls
+}  // namespace dbgroup::memory::tls_based

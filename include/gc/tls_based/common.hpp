@@ -5,9 +5,6 @@
 
 #include "gc/common/util.hpp"
 
-namespace dbgroup::gc::tls
+namespace dbgroup::memory::tls_based
 {
-using ::dbgroup::gc::kBufferSize;
-using ::dbgroup::gc::kCacheLineSize;
-using ::dbgroup::gc::kGarbageListCapacity;
-}  // namespace dbgroup::gc::tls
+}  // namespace dbgroup::memory::tls_based

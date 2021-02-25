@@ -10,7 +10,7 @@
 #include <thread>
 #include <vector>
 
-namespace dbgroup::gc::tls
+namespace dbgroup::memory
 {
 class TLSBasedGCFixture : public ::testing::Test
 {
@@ -133,4 +133,4 @@ TEST_F(TLSBasedGCFixture, Destruct_MultiThreads_GarbagesCorrectlyFreed)
   }
 }
 
-}  // namespace dbgroup::gc::tls
+}  // namespace dbgroup::memory

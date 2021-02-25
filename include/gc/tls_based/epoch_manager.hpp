@@ -10,7 +10,7 @@
 
 #include "epoch_guard.hpp"
 
-namespace dbgroup::gc::tls
+namespace dbgroup::memory::tls_based
 {
 class EpochManager
 {
@@ -118,4 +118,4 @@ class EpochManager
   }
 };
 
-}  // namespace dbgroup::gc::tls
+}  // namespace dbgroup::memory::tls_based
