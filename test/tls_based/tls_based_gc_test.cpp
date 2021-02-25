@@ -15,7 +15,7 @@ namespace dbgroup::gc::tls
 class TLSBasedGCFixture : public ::testing::Test
 {
  public:
-  static constexpr auto kGCInterval = 100UL;
+  static constexpr size_t kGCInterval = 1E2;
 
  protected:
   void
@@ -53,7 +53,7 @@ TEST_F(TLSBasedGCFixture, Construct_GCStopped_MemberVariablesCorrectlyInitialize
 
 TEST_F(TLSBasedGCFixture, Destruct_SingleThread_GarbagesCorrectlyFreed)
 {
-  constexpr size_t kLoopNum = 5E3;
+  constexpr size_t kLoopNum = 1E5;
 
   // keep garbage targets
   std::vector<std::weak_ptr<size_t>> target_weak_ptrs;
@@ -64,12 +64,13 @@ TEST_F(TLSBasedGCFixture, Destruct_SingleThread_GarbagesCorrectlyFreed)
 
     auto f = [&]() {
       for (size_t loop = 0; loop < kLoopNum; ++loop) {
-        const auto guard = gc.CreateEpochGuard();
-        const auto target_shared = new std::shared_ptr<size_t>(new size_t{loop});
-        target_weak_ptrs.emplace_back(*target_shared);
+        std::shared_ptr<size_t> *target_shared;
+        {
+          const auto guard = gc.CreateEpochGuard();
+          target_shared = new std::shared_ptr<size_t>(new size_t{loop});
+          target_weak_ptrs.emplace_back(*target_shared);
+        }
         gc.AddGarbage(target_shared);
-
-        std::this_thread::sleep_for(std::chrono::microseconds(50));
       }
     };
 
@@ -86,7 +87,7 @@ TEST_F(TLSBasedGCFixture, Destruct_SingleThread_GarbagesCorrectlyFreed)
 
 TEST_F(TLSBasedGCFixture, Destruct_MultiThreads_GarbagesCorrectlyFreed)
 {
-  constexpr size_t kLoopNum = 5E3;
+  constexpr size_t kLoopNum = 1E5;
   constexpr size_t kThreadNum = 10;
 
   // keep garbage targets
@@ -100,12 +101,13 @@ TEST_F(TLSBasedGCFixture, Destruct_MultiThreads_GarbagesCorrectlyFreed)
       std::vector<std::weak_ptr<size_t>> weak_ptrs;
 
       for (size_t loop = 0; loop < kLoopNum; ++loop) {
-        const auto guard = gc.CreateEpochGuard();
-        const auto target_shared = new std::shared_ptr<size_t>(new size_t{loop});
-        weak_ptrs.emplace_back(*target_shared);
+        std::shared_ptr<size_t> *target_shared;
+        {
+          const auto guard = gc.CreateEpochGuard();
+          target_shared = new std::shared_ptr<size_t>(new size_t{loop});
+          weak_ptrs.emplace_back(*target_shared);
+        }
         gc.AddGarbage(target_shared);
-
-        std::this_thread::sleep_for(std::chrono::microseconds(50));
       }
 
       p.set_value(weak_ptrs);
