@@ -42,14 +42,6 @@ class TLSBasedGC
     ~GarbageNode() { delete next; }
   };
 
-  template <class Tp>
-  struct DoNothing {
-    void
-    operator()([[maybe_unused]] Tp* ptr) const
-    {
-    }
-  };
-
   /*################################################################################################
    * Internal member variables
    *##############################################################################################*/
@@ -168,34 +160,31 @@ class TLSBasedGC
   EpochGuard
   CreateEpochGuard()
   {
-    thread_local std::shared_ptr<Epoch> registering_epoch = nullptr;
-    thread_local auto epoch = Epoch{epoch_manager_.GetCurrentEpoch()};
+    thread_local std::shared_ptr<Epoch> epoch = nullptr;
 
-    if (registering_epoch == nullptr) {
-      registering_epoch = std::shared_ptr<Epoch>{&epoch, DoNothing<Epoch>{}};
-      epoch_manager_.RegisterEpoch(registering_epoch);
+    if (epoch == nullptr) {
+      epoch = std::make_shared<Epoch>(epoch_manager_.GetCurrentEpoch());
+      epoch_manager_.RegisterEpoch(epoch);
     }
 
-    return EpochGuard{&epoch};
+    return EpochGuard{epoch.get()};
   }
 
   void
   AddGarbage(const T* target_ptr)
   {
-    thread_local std::shared_ptr<GarbageList<T>> registering_garbage_list = nullptr;
-    thread_local auto garbage_list =
-        GarbageList<T>{epoch_manager_.GetCurrentEpoch(), gc_interval_micro_sec_};
+    thread_local std::shared_ptr<GarbageList<T>> garbage_list = nullptr;
 
-    if (registering_garbage_list == nullptr) {
-      registering_garbage_list =
-          std::shared_ptr<GarbageList<T>>{&garbage_list, DoNothing<GarbageList<T>>{}};
-      auto garbage_node = new GarbageNode{registering_garbage_list, garbages_.load(mo_relax)};
+    if (garbage_list == nullptr) {
+      garbage_list = std::make_shared<GarbageList<T>>(epoch_manager_.GetCurrentEpoch(),
+                                                      gc_interval_micro_sec_);
+      auto garbage_node = new GarbageNode{garbage_list, garbages_.load(mo_relax)};
       while (!garbages_.compare_exchange_weak(garbage_node->next, garbage_node, mo_relax)) {
         // continue until inserting succeeds
       }
     }
 
-    garbage_list.AddGarbage(target_ptr);
+    garbage_list->AddGarbage(target_ptr);
   }
 
   /*################################################################################################
