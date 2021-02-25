@@ -65,7 +65,7 @@ class EpochManager
   size_t
   ForwardGlobalEpoch()
   {
-    return current_epoch_.fetch_add(1) + 1;
+    return current_epoch_.fetch_add(1, mo_relax) + 1;
   }
 
   void

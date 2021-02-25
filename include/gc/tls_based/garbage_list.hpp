@@ -80,7 +80,7 @@ class GarbageList
   void
   SetCurrentEpoch(const size_t current_epoch)
   {
-    current_epoch_.store(current_epoch);
+    current_epoch_.store(current_epoch, mo_relax);
   }
 
   /*################################################################################################
@@ -104,7 +104,7 @@ class GarbageList
     garbage_ring_buffer_[current_end] = {current_epoch_.load(mo_relax), const_cast<T*>(garbage)};
 
     // set incremented index
-    end_index_.store(next_end);
+    end_index_.store(next_end, mo_relax);
   }
 
   void
@@ -124,7 +124,7 @@ class GarbageList
       index = (index == kGarbageListCapacity - 1) ? 0 : index + 1;
     }
 
-    begin_index_.store(index);
+    begin_index_.store(index, mo_relax);
   }
 };
 

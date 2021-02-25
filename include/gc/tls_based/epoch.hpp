@@ -59,7 +59,7 @@ class Epoch
   void
   SetCurrentEpoch(const size_t current_epoch)
   {
-    current_.store(current_epoch);
+    current_.store(current_epoch, mo_relax);
   }
 
   /*################################################################################################
@@ -69,13 +69,13 @@ class Epoch
   void
   EnterEpoch()
   {
-    entered_ = current_.load(mo_relax);
+    entered_.store(current_.load(mo_relax), mo_relax);
   }
 
   void
   LeaveEpoch()
   {
-    entered_ = std::numeric_limits<size_t>::max();
+    entered_.store(std::numeric_limits<size_t>::max(), mo_relax);
   }
 };
 
