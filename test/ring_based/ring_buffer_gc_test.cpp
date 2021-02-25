@@ -9,7 +9,7 @@
 #include <thread>
 #include <vector>
 
-namespace dbgroup::gc
+namespace dbgroup::memory
 {
 class EpochBasedGCFixture : public ::testing::Test
 {
@@ -34,7 +34,7 @@ class EpochBasedGCFixture : public ::testing::Test
 
 TEST_F(EpochBasedGCFixture, RunGC_AddGarbagesFromSingleThread_AllTargetsAreDeleted)
 {
-  constexpr auto kLoopNum = 5E3;
+  constexpr auto kLoopNum = 1E5;
 
   // keep garbage targets
   std::vector<std::weak_ptr<size_t>> target_weak_ptrs;
@@ -44,12 +44,13 @@ TEST_F(EpochBasedGCFixture, RunGC_AddGarbagesFromSingleThread_AllTargetsAreDelet
     auto gc = RingBufferBasedGC<std::shared_ptr<size_t>>{kDefaultGCInterval};
 
     for (size_t loop = 0; loop < kLoopNum; ++loop) {
-      const auto guard = gc.CreateEpochGuard();
-      const auto target_shared = new std::shared_ptr<size_t>(new size_t{loop});
-      target_weak_ptrs.emplace_back(*target_shared);
+      std::shared_ptr<size_t> *target_shared;
+      {
+        const auto guard = gc.CreateEpochGuard();
+        target_shared = new std::shared_ptr<size_t>(new size_t{loop});
+        target_weak_ptrs.emplace_back(*target_shared);
+      }
       gc.AddGarbage(target_shared);
-
-      std::this_thread::sleep_for(std::chrono::microseconds(50));
     }
 
     // GC deletes all targets when it leaves this scope
@@ -65,7 +66,7 @@ TEST_F(EpochBasedGCFixture, RunGC_AddGarbagesFromMultiThreads_AllTargetsAreDelet
 {
   // keep garbage targets
   constexpr auto kThreadNum = 10;
-  constexpr auto kLoopNum = 5E3;
+  constexpr auto kLoopNum = 1E5;
   std::vector<std::weak_ptr<size_t>> target_weak_ptrs;
 
   // register garbages to GC
@@ -74,16 +75,17 @@ TEST_F(EpochBasedGCFixture, RunGC_AddGarbagesFromMultiThreads_AllTargetsAreDelet
 
     // a lambda function to add garbages in multi-threads
     auto f = [&](std::promise<std::vector<std::weak_ptr<size_t>>> p) {
-      std::vector<std::weak_ptr<size_t>> target_vec;
+      std::vector<std::weak_ptr<size_t>> weak_ptrs;
       for (size_t loop = 0; loop < kLoopNum; ++loop) {
-        const auto guard = gc.CreateEpochGuard();
-        const auto target_shared = new std::shared_ptr<size_t>(new size_t{loop});
-        target_vec.emplace_back(*target_shared);
+        std::shared_ptr<size_t> *target_shared;
+        {
+          const auto guard = gc.CreateEpochGuard();
+          target_shared = new std::shared_ptr<size_t>(new size_t{loop});
+          weak_ptrs.emplace_back(*target_shared);
+        }
         gc.AddGarbage(target_shared);
-
-        std::this_thread::sleep_for(std::chrono::microseconds(50));
       }
-      p.set_value(target_vec);
+      p.set_value(weak_ptrs);
     };
 
     // add garbages and catch original targets via promise/future
@@ -108,4 +110,4 @@ TEST_F(EpochBasedGCFixture, RunGC_AddGarbagesFromMultiThreads_AllTargetsAreDelet
   }
 }
 
-}  // namespace dbgroup::gc
+}  // namespace dbgroup::memory

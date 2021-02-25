@@ -11,7 +11,7 @@
 
 #include "common.hpp"
 
-namespace dbgroup::gc::epoch
+namespace dbgroup::memory::ring_buffer_based
 {
 template <class T>
 class GarbageList
@@ -162,4 +162,4 @@ class GarbageList
   }
 };
 
-}  // namespace dbgroup::gc::epoch
+}  // namespace dbgroup::memory::ring_buffer_based

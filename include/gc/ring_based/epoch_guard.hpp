@@ -5,7 +5,7 @@
 
 #include "epoch_manager.hpp"
 
-namespace dbgroup::gc::epoch
+namespace dbgroup::memory::ring_buffer_based
 {
 class EpochGuard
 {
@@ -55,4 +55,4 @@ class EpochGuard
   }
 };
 
-}  // namespace dbgroup::gc::epoch
+}  // namespace dbgroup::memory::ring_buffer_based

@@ -9,7 +9,7 @@
 #include <thread>
 #include <vector>
 
-namespace dbgroup::gc::epoch
+namespace dbgroup::memory::ring_buffer_based
 {
 class GarbageListFixture : public ::testing::Test
 {
@@ -348,4 +348,4 @@ TEST_F(GarbageListFixture, AddGarbages_ManyGarbages_NextGarbageListIsCreated)
   EXPECT_EQ(1, next_garbage_list->Size());
 }
 
-}  // namespace dbgroup::gc::epoch
+}  // namespace dbgroup::memory::ring_buffer_based

@@ -8,7 +8,7 @@
 #include <thread>
 #include <vector>
 
-namespace dbgroup::gc::epoch
+namespace dbgroup::memory::ring_buffer_based
 {
 class EpochManagerFixture : public ::testing::Test
 {
@@ -143,4 +143,4 @@ TEST_F(EpochManagerFixture, LeaveEpoch_HundredThreads_LeftEpochsBecomeFreeable)
   EXPECT_EQ(end_epoch, freeable_end);
 }
 
-}  // namespace dbgroup::gc::epoch
+}  // namespace dbgroup::memory::ring_buffer_based

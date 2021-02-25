@@ -5,7 +5,7 @@
 
 #include "gc/common/util.hpp"
 
-namespace dbgroup::gc::epoch
+namespace dbgroup::memory::ring_buffer_based
 {
 using ::dbgroup::gc::HasSingleBit;
 using ::dbgroup::gc::kBufferSize;
@@ -21,4 +21,4 @@ constexpr size_t kPartitionNum = 8;
 constexpr size_t kPartitionMask = 0x7;
 #endif
 
-}  // namespace dbgroup::gc::epoch
+}  // namespace dbgroup::memory::ring_buffer_based

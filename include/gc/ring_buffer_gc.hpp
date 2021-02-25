@@ -12,15 +12,15 @@
 #include "ring_based/epoch_manager.hpp"
 #include "ring_based/garbage_list.hpp"
 
-namespace dbgroup::gc
+namespace dbgroup::memory
 {
-using epoch::EpochGuard;
-using epoch::EpochManager;
-using epoch::GarbageList;
-using epoch::kBufferSize;
-using epoch::kCacheLineSize;
-using epoch::kPartitionMask;
-using epoch::kPartitionNum;
+using ring_buffer_based::EpochGuard;
+using ring_buffer_based::EpochManager;
+using ring_buffer_based::GarbageList;
+using ring_buffer_based::kBufferSize;
+using ring_buffer_based::kCacheLineSize;
+using ring_buffer_based::kPartitionMask;
+using ring_buffer_based::kPartitionNum;
 
 template <class T>
 class alignas(kCacheLineSize) RingBufferBasedGC
@@ -193,4 +193,4 @@ class alignas(kCacheLineSize) RingBufferBasedGC
   }
 };
 
-}  // namespace dbgroup::gc
+}  // namespace dbgroup::memory

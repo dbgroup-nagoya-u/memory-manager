@@ -10,7 +10,7 @@
 
 #include "gc/ring_based/epoch_manager.hpp"
 
-namespace dbgroup::gc::epoch
+namespace dbgroup::memory::ring_buffer_based
 {
 class EpochGuardFixture : public ::testing::Test
 {
@@ -66,4 +66,4 @@ TEST_F(EpochGuardFixture, Destruct_HundredThreads_DestructorSuccessfullyLeaveEpo
   EXPECT_EQ(end_epoch, freeable_end);
 }
 
-}  // namespace dbgroup::gc::epoch
+}  // namespace dbgroup::memory::ring_buffer_based
