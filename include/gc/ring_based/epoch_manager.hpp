@@ -53,7 +53,7 @@ class alignas(kCacheLineSize) EpochManager
   size_t
   GetCurrentEpoch() const
   {
-    return current_index_.load();
+    return current_index_.load(mo_relax);
   }
 
   /*################################################################################################
@@ -65,7 +65,7 @@ class alignas(kCacheLineSize) EpochManager
   {
     const auto thread_id = std::this_thread::get_id();
     const auto partition_id = std::hash<std::thread::id>()(thread_id) & kPartitionMask;
-    const auto current_epoch = current_index_.load();
+    const auto current_epoch = current_index_.load(mo_relax);
 
     ++epoch_ring_buffer_[current_epoch][partition_id];
 
@@ -83,10 +83,10 @@ class alignas(kCacheLineSize) EpochManager
   void
   ForwardEpoch()
   {
-    const auto previous_index = current_index_.load();
+    const auto previous_index = current_index_.load(mo_relax);
     const auto next_index = (previous_index == kBufferSize - 1) ? 0 : previous_index + 1;
 
-    current_index_ = next_index;
+    current_index_.store(next_index, mo_relax);
   }
 
   std::pair<size_t, size_t>
@@ -94,7 +94,7 @@ class alignas(kCacheLineSize) EpochManager
   {
     const size_t freeable_begin_index = check_begin_index_;
     size_t index = freeable_begin_index;
-    while (index != current_index_) {
+    while (index != current_index_.load(mo_relax)) {
       // check each epoch has no entering thread
       for (size_t partition = 0; partition < kPartitionNum; ++partition) {
         if (epoch_ring_buffer_[index][partition].load() != 0) {

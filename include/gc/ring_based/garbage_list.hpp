@@ -41,7 +41,7 @@ class GarbageList
       delete target;
       target_ptrs_[index] = 0;
     }
-    auto next = reinterpret_cast<GarbageList*>(next_.load());
+    auto next = reinterpret_cast<GarbageList*>(next_.load(mo_relax));
     delete next;
   }
 
@@ -57,13 +57,13 @@ class GarbageList
   size_t
   Size() const
   {
-    return current_size_.load();
+    return current_size_.load(mo_relax);
   }
 
   GarbageList*
   Next() const
   {
-    return reinterpret_cast<GarbageList*>(next_.load());
+    return reinterpret_cast<GarbageList*>(next_.load(mo_relax));
   }
 
   /*################################################################################################
@@ -74,29 +74,29 @@ class GarbageList
   AddGarbage(const T* target)
   {
     // reserve a garbage region
-    auto current_size = current_size_.load();
+    auto current_size = current_size_.load(mo_relax);
     size_t reserved_size;
     do {
       reserved_size = current_size + 1;
       if (current_size == kGarbageListCapacity) {
         // if this garbage list is full, go to the next one
-        auto next = next_.load();
+        auto next = next_.load(mo_relax);
         while (next == 0) {
           // a current thread may be inserting a next pointer
           std::this_thread::sleep_for(std::chrono::nanoseconds(100));
-          next = next_.load();
+          next = next_.load(mo_relax);
         }
         reinterpret_cast<GarbageList*>(next)->AddGarbage(target);
         return;
       }
-    } while (!current_size_.compare_exchange_weak(current_size, reserved_size));
+    } while (!current_size_.compare_exchange_weak(current_size, reserved_size, mo_relax));
 
     // insert a garbage
     target_ptrs_[reserved_size - 1] = reinterpret_cast<uintptr_t>(const_cast<T*>(target));
     if (reserved_size == kGarbageListCapacity) {
       // if a garbage list becomes full, create a next list
       auto next = new GarbageList{};
-      next_.store(reinterpret_cast<uintptr_t>(next));  // only this thread sets a next pointer
+      next_.store(reinterpret_cast<uintptr_t>(next), mo_relax);
     }
   }
 
@@ -106,24 +106,24 @@ class GarbageList
     const auto target_num = targets.size();
 
     // reserve a garbage region
-    auto current_size = current_size_.load();
+    auto current_size = current_size_.load(mo_relax);
     size_t reserved_size;
     do {
       reserved_size = current_size + target_num;
       if (current_size == kGarbageListCapacity) {
         // if this garbage list is full, go to the next one
-        auto next = next_.load();
+        auto next = next_.load(mo_relax);
         while (next == 0) {
           // a current thread may be inserting a next pointer
           std::this_thread::sleep_for(std::chrono::nanoseconds(100));
-          next = next_.load();
+          next = next_.load(mo_relax);
         }
         reinterpret_cast<GarbageList*>(next)->AddGarbages(targets);
         return;
       } else if (reserved_size > kGarbageListCapacity) {
         reserved_size = kGarbageListCapacity;
       }
-    } while (!current_size_.compare_exchange_weak(current_size, reserved_size));
+    } while (!current_size_.compare_exchange_weak(current_size, reserved_size, mo_relax));
 
     // insert garbages
     auto target = targets.begin();
@@ -134,7 +134,7 @@ class GarbageList
     if (reserved_size == kGarbageListCapacity) {
       // if a garbage list becomes full, create a next list
       auto next = new GarbageList{};
-      next_.store(reinterpret_cast<uintptr_t>(next));  // only this thread sets a next pointer
+      next_.store(reinterpret_cast<uintptr_t>(next), mo_relax);
 
       if (target != targets.end()) {
         // if garbages remian, add them to a next list
@@ -148,7 +148,7 @@ class GarbageList
   void
   Clear()
   {
-    const auto current_size = current_size_.load();
+    const auto current_size = current_size_.load(mo_relax);
     for (size_t index = 0; index < current_size; ++index) {
       auto target = reinterpret_cast<T*>(target_ptrs_[index]);
       delete target;
