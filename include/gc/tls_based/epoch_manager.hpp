@@ -55,7 +55,7 @@ class EpochManager
   size_t
   GetCurrentEpoch() const
   {
-    return current_epoch_.load();
+    return current_epoch_.load(mo_relax);
   }
 
   /*################################################################################################
@@ -71,8 +71,8 @@ class EpochManager
   void
   RegisterEpoch(const std::shared_ptr<Epoch> epoch)
   {
-    auto epoch_node = new EpochList{epoch, epochs_.load()};
-    while (!epochs_.compare_exchange_weak(epoch_node->next, epoch_node)) {
+    auto epoch_node = new EpochList{epoch, epochs_.load(mo_relax)};
+    while (!epochs_.compare_exchange_weak(epoch_node->next, epoch_node, mo_relax)) {
       // continue until inserting succeeds
     }
   }
@@ -80,11 +80,11 @@ class EpochManager
   size_t
   UpdateRegisteredEpochs()
   {
-    const auto current_epoch = current_epoch_.load();
+    const auto current_epoch = current_epoch_.load(mo_relax);
     auto min_protected_epoch = std::numeric_limits<size_t>::max();
 
     // update the head of an epoch list
-    auto previous = epochs_.load();
+    auto previous = epochs_.load(mo_relax);
     if (previous->epoch.use_count() > 1) {
       previous->epoch->SetCurrentEpoch(current_epoch);
       const auto protected_epoch = previous->epoch->GetProtectedEpoch();

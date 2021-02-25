@@ -7,6 +7,7 @@
 #include <atomic>
 #include <memory>
 #include <thread>
+#include <utility>
 #include <vector>
 
 #include "tls_based/epoch_guard.hpp"
@@ -41,6 +42,14 @@ class TLSBasedGC
     ~GarbageNode() { delete next; }
   };
 
+  template <class Tp>
+  struct DoNothing {
+    void
+    operator()([[maybe_unused]] Tp* ptr) const
+    {
+    }
+  };
+
   /*################################################################################################
    * Internal member variables
    *##############################################################################################*/
@@ -63,7 +72,7 @@ class TLSBasedGC
   DeleteGarbages(const size_t protected_epoch)
   {
     // check the head of a garbage list
-    auto previous = garbages_.load();
+    auto previous = garbages_.load(mo_relax);
     if (previous->garbage_list.use_count() > 1) {
       previous->garbage_list->Clear(protected_epoch);
     }
@@ -96,7 +105,7 @@ class TLSBasedGC
       // forward a global epoch and update registered epochs/garbage lists
       const auto current_epoch = epoch_manager_.ForwardGlobalEpoch();
       const auto protected_epoch = epoch_manager_.UpdateRegisteredEpochs();
-      auto garbage_node = garbages_.load();
+      auto garbage_node = garbages_.load(mo_relax);
       while (garbage_node != nullptr) {
         if (garbage_node->garbage_list.use_count() > 1) {
           garbage_node->garbage_list->SetCurrentEpoch(current_epoch);
@@ -159,29 +168,34 @@ class TLSBasedGC
   EpochGuard
   CreateEpochGuard()
   {
-    thread_local std::shared_ptr<Epoch> epoch = nullptr;
-    if (epoch == nullptr) {
-      epoch = std::make_shared<Epoch>(epoch_manager_.GetCurrentEpoch());
-      epoch_manager_.RegisterEpoch(epoch);
+    thread_local std::shared_ptr<Epoch> registering_epoch = nullptr;
+    thread_local auto epoch = Epoch{epoch_manager_.GetCurrentEpoch()};
+
+    if (registering_epoch == nullptr) {
+      registering_epoch = std::shared_ptr<Epoch>{&epoch, DoNothing<Epoch>{}};
+      epoch_manager_.RegisterEpoch(registering_epoch);
     }
 
-    return EpochGuard{epoch.get()};
+    return EpochGuard{&epoch};
   }
 
   void
   AddGarbage(const T* target_ptr)
   {
-    thread_local std::shared_ptr<GarbageList<T>> garbage_list = nullptr;
-    if (garbage_list == nullptr) {
-      garbage_list = std::make_shared<GarbageList<T>>(epoch_manager_.GetCurrentEpoch(),
-                                                      gc_interval_micro_sec_);
-      auto garbage_node = new GarbageNode{garbage_list, garbages_.load()};
-      while (!garbages_.compare_exchange_weak(garbage_node->next, garbage_node)) {
+    thread_local std::shared_ptr<GarbageList<T>> registering_garbage_list = nullptr;
+    thread_local auto garbage_list =
+        GarbageList<T>{epoch_manager_.GetCurrentEpoch(), gc_interval_micro_sec_};
+
+    if (registering_garbage_list == nullptr) {
+      registering_garbage_list =
+          std::shared_ptr<GarbageList<T>>{&garbage_list, DoNothing<GarbageList<T>>{}};
+      auto garbage_node = new GarbageNode{registering_garbage_list, garbages_.load(mo_relax)};
+      while (!garbages_.compare_exchange_weak(garbage_node->next, garbage_node, mo_relax)) {
         // continue until inserting succeeds
       }
     }
 
-    garbage_list->AddGarbage(target_ptr);
+    garbage_list.AddGarbage(target_ptr);
   }
 
   /*################################################################################################

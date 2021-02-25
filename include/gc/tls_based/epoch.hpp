@@ -47,13 +47,13 @@ class Epoch
   size_t
   GetCurrentEpoch() const
   {
-    return current_.load();
+    return current_.load(mo_relax);
   }
 
   size_t
   GetProtectedEpoch() const
   {
-    return entered_.load();
+    return entered_.load(mo_relax);
   }
 
   void
@@ -69,7 +69,7 @@ class Epoch
   void
   EnterEpoch()
   {
-    entered_ = current_.load();
+    entered_ = current_.load(mo_relax);
   }
 
   void
