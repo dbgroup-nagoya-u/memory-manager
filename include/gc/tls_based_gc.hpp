@@ -63,7 +63,7 @@ class TLSBasedGC
   DeleteGarbages(const size_t protected_epoch)
   {
     // check the head of a garbage list
-    auto previous = garbages_.load();
+    auto previous = garbages_.load(mo_relax);
     if (previous->garbage_list.use_count() > 1) {
       previous->garbage_list->Clear(protected_epoch);
     }
@@ -96,7 +96,7 @@ class TLSBasedGC
       // forward a global epoch and update registered epochs/garbage lists
       const auto current_epoch = epoch_manager_.ForwardGlobalEpoch();
       const auto protected_epoch = epoch_manager_.UpdateRegisteredEpochs();
-      auto garbage_node = garbages_.load();
+      auto garbage_node = garbages_.load(mo_relax);
       while (garbage_node != nullptr) {
         if (garbage_node->garbage_list.use_count() > 1) {
           garbage_node->garbage_list->SetCurrentEpoch(current_epoch);
@@ -175,8 +175,8 @@ class TLSBasedGC
     if (garbage_list == nullptr) {
       garbage_list = std::make_shared<GarbageList<T>>(epoch_manager_.GetCurrentEpoch(),
                                                       gc_interval_micro_sec_);
-      auto garbage_node = new GarbageNode{garbage_list, garbages_.load()};
-      while (!garbages_.compare_exchange_weak(garbage_node->next, garbage_node)) {
+      auto garbage_node = new GarbageNode{garbage_list, garbages_.load(mo_relax)};
+      while (!garbages_.compare_exchange_weak(garbage_node->next, garbage_node, mo_relax)) {
         // continue until inserting succeeds
       }
     }

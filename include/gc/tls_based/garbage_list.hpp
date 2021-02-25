@@ -49,8 +49,8 @@ class GarbageList
 
   ~GarbageList()
   {
-    const auto current_end = end_index_.load();
-    auto index = begin_index_.load();
+    const auto current_end = end_index_.load(mo_relax);
+    auto index = begin_index_.load(mo_relax);
     while (index != current_end) {
       auto [deleted_epoch, garbage] = garbage_ring_buffer_[index];
       delete garbage;
@@ -70,8 +70,8 @@ class GarbageList
   size_t
   Size() const
   {
-    const auto current_begin = begin_index_.load();
-    const auto current_end = end_index_.load();
+    const auto current_begin = begin_index_.load(mo_relax);
+    const auto current_end = end_index_.load(mo_relax);
     const auto resized_end =
         (current_begin > current_end) ? current_end + kGarbageListCapacity : current_end;
     return resized_end - current_begin;
@@ -91,17 +91,17 @@ class GarbageList
   AddGarbage(const T* garbage)
   {
     // reserve a garbage region
-    const auto current_end = end_index_.load();
+    const auto current_end = end_index_.load(mo_relax);
     const auto next_end = (current_end == kGarbageListCapacity - 1) ? 0 : current_end + 1;
-    auto current_begin = begin_index_.load();
+    auto current_begin = begin_index_.load(mo_relax);
     while (next_end == current_begin) {
       // wait GC
       std::this_thread::sleep_for(std::chrono::nanoseconds(100));
-      current_begin = begin_index_.load();
+      current_begin = begin_index_.load(mo_relax);
     }
 
     // add garbage
-    garbage_ring_buffer_[current_end] = {current_epoch_.load(), const_cast<T*>(garbage)};
+    garbage_ring_buffer_[current_end] = {current_epoch_.load(mo_relax), const_cast<T*>(garbage)};
 
     // set incremented index
     end_index_.store(next_end);
@@ -110,9 +110,9 @@ class GarbageList
   void
   Clear(const size_t protected_epoch)
   {
-    const auto current_end = end_index_.load();
+    const auto current_end = end_index_.load(mo_relax);
 
-    auto index = begin_index_.load();
+    auto index = begin_index_.load(mo_relax);
     while (index != current_end) {
       auto [deleted_epoch, garbage] = garbage_ring_buffer_[index];
       if (deleted_epoch < protected_epoch) {

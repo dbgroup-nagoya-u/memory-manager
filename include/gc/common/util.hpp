@@ -9,6 +9,7 @@
 
 namespace dbgroup::gc
 {
+constexpr std::memory_order mo_relax = std::memory_order_relaxed;
 constexpr size_t kCacheLineSize = 64;
 
 #ifdef BUFFER_SIZE
