@@ -182,17 +182,20 @@ class TLSBasedGC
   void
   AddGarbage(const T* target_ptr)
   {
-    thread_local std::shared_ptr<GarbageList<T>> garbage_list = nullptr;
-    if (garbage_list == nullptr) {
-      garbage_list = std::make_shared<GarbageList<T>>(epoch_manager_.GetCurrentEpoch(),
-                                                      gc_interval_micro_sec_);
-      auto garbage_node = new GarbageNode{garbage_list, garbages_.load(mo_relax)};
+    thread_local std::shared_ptr<GarbageList<T>> registering_garbage_list = nullptr;
+    thread_local auto garbage_list =
+        GarbageList<T>{epoch_manager_.GetCurrentEpoch(), gc_interval_micro_sec_};
+
+    if (registering_garbage_list == nullptr) {
+      registering_garbage_list =
+          std::shared_ptr<GarbageList<T>>{&garbage_list, DoNothing<GarbageList<T>>{}};
+      auto garbage_node = new GarbageNode{registering_garbage_list, garbages_.load(mo_relax)};
       while (!garbages_.compare_exchange_weak(garbage_node->next, garbage_node, mo_relax)) {
         // continue until inserting succeeds
       }
     }
 
-    garbage_list->AddGarbage(target_ptr);
+    garbage_list.AddGarbage(target_ptr);
   }
 
   /*################################################################################################
