@@ -45,7 +45,7 @@ class TLSBasedGC
   template <class Tp>
   struct DoNothing {
     void
-    operator()(Tp* ptr) const
+    operator()([[maybe_unused]] Tp* ptr) const
     {
     }
   };
