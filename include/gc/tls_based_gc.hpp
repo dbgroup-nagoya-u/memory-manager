@@ -10,6 +10,7 @@
 #include <utility>
 #include <vector>
 
+#include "common/memory_keeper.hpp"
 #include "tls_based/epoch_guard.hpp"
 #include "tls_based/epoch_manager.hpp"
 #include "tls_based/garbage_list.hpp"
@@ -22,7 +23,7 @@ using tls_based::EpochManager;
 using tls_based::GarbageList;
 
 template <class T>
-class TLSBasedGC
+class TLSBasedMemoryManager
 {
  private:
   /*################################################################################################
@@ -46,15 +47,17 @@ class TLSBasedGC
    * Internal member variables
    *##############################################################################################*/
 
-  std::atomic<GarbageNode*> garbages_;
-
   EpochManager epoch_manager_;
+
+  std::atomic<GarbageNode*> garbages_;
 
   const size_t gc_interval_micro_sec_;
 
   std::thread gc_thread_;
 
   std::atomic_bool gc_is_running_;
+
+  std::unique_ptr<MemoryKeeper<T>> memory_keeper_;
 
   /*################################################################################################
    * Internal utility functions
@@ -118,20 +121,25 @@ class TLSBasedGC
    * Public constructors/destructors
    *##############################################################################################*/
 
-  explicit TLSBasedGC(  //
+  explicit TLSBasedMemoryManager(  //
       const size_t gc_interval_micro_sec = kDefaultGCIntervalMicroSec,
-      const bool start_gc = true)
-      : garbages_{new GarbageNode{}},
-        epoch_manager_{},
+      const bool reserve_memory = false,
+      const size_t page_num = 4096,
+      const size_t partition_num = 8)
+      : epoch_manager_{},
+        garbages_{new GarbageNode{}},
         gc_interval_micro_sec_{gc_interval_micro_sec},
-        gc_is_running_{false}
+        gc_is_running_{false},
+        memory_keeper_{nullptr}
   {
-    if (start_gc) {
-      StartGC();
+    if (reserve_memory) {
+      memory_keeper_.reset(new MemoryKeeper<T>{page_num, partition_num});
     }
+
+    StartGC();
   }
 
-  ~TLSBasedGC()
+  ~TLSBasedMemoryManager()
   {
     // stop garbage collection
     StopGC();
@@ -148,10 +156,10 @@ class TLSBasedGC
     delete garbages_;
   }
 
-  TLSBasedGC(const TLSBasedGC&) = delete;
-  TLSBasedGC& operator=(const TLSBasedGC&) = delete;
-  TLSBasedGC(TLSBasedGC&&) = default;
-  TLSBasedGC& operator=(TLSBasedGC&&) = default;
+  TLSBasedMemoryManager(const TLSBasedMemoryManager&) = delete;
+  TLSBasedMemoryManager& operator=(const TLSBasedMemoryManager&) = delete;
+  TLSBasedMemoryManager(TLSBasedMemoryManager&&) = delete;
+  TLSBasedMemoryManager& operator=(TLSBasedMemoryManager&&) = delete;
 
   /*################################################################################################
    * Public utility functions
@@ -177,7 +185,7 @@ class TLSBasedGC
 
     if (garbage_list == nullptr) {
       garbage_list = std::make_shared<GarbageList<T>>(epoch_manager_.GetCurrentEpoch(),
-                                                      gc_interval_micro_sec_);
+                                                      gc_interval_micro_sec_, memory_keeper_.get());
       auto garbage_node = new GarbageNode{garbage_list, garbages_.load(mo_relax)};
       while (!garbages_.compare_exchange_weak(garbage_node->next, garbage_node, mo_relax)) {
         // continue until inserting succeeds
@@ -198,7 +206,7 @@ class TLSBasedGC
       return false;
     } else {
       gc_is_running_ = true;
-      gc_thread_ = std::thread{&TLSBasedGC::RunGC, this};
+      gc_thread_ = std::thread{&TLSBasedMemoryManager::RunGC, this};
       return true;
     }
   }

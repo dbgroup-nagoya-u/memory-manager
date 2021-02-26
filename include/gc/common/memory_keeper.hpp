@@ -5,6 +5,7 @@
 
 #include <atomic>
 #include <limits>
+#include <memory>
 #include <vector>
 
 #include "lock_free_ring_buffer.hpp"
@@ -28,7 +29,7 @@ class MemoryKeeper
 
   T* pages_;
 
-  std::vector<LockFreeRingBuffer<size_t>> partitioned_pages_;
+  std::vector<std::unique_ptr<LockFreeRingBuffer<size_t>>> partitioned_pages_;
 
  public:
   /*################################################################################################
@@ -58,7 +59,7 @@ class MemoryKeeper
       for (size_t i = 0; i < pages_per_partition; ++i) {
         partitioned.emplace_back(count++);
       }
-      partitioned_pages_.emplace_back(partitioned);
+      partitioned_pages_.emplace_back(new LockFreeRingBuffer<size_t>(partitioned));
     }
   }
 
@@ -80,7 +81,7 @@ class MemoryKeeper
   T*
   GetPage(const size_t partition)
   {
-    const auto index = partitioned_pages_[partition].Pop();
+    const auto index = partitioned_pages_[partition]->Pop();
     return &pages_[index];
   }
 
@@ -94,7 +95,7 @@ class MemoryKeeper
     size_t min_partition;
     size_t min_page_num = std::numeric_limits<size_t>::max();
     for (size_t partition = 0; partition < partition_num_; ++partition) {
-      const auto remaining_page_num = partitioned_pages_[partition].Size();
+      const auto remaining_page_num = partitioned_pages_[partition]->Size();
       if (remaining_page_num < min_page_num) {
         min_page_num = remaining_page_num;
         min_partition = partition;
@@ -103,7 +104,7 @@ class MemoryKeeper
 
     // return a page
     const size_t index = (pages_ - page) / page_size_;
-    partitioned_pages_[min_partition].Push(index);
+    partitioned_pages_[min_partition]->Push(index);
   }
 };
 

@@ -12,7 +12,7 @@
 
 namespace dbgroup::memory
 {
-class TLSBasedGCFixture : public ::testing::Test
+class TLSBasedMemoryManagerFixture : public ::testing::Test
 {
  public:
   static constexpr size_t kGCInterval = 1E2;
@@ -33,25 +33,16 @@ class TLSBasedGCFixture : public ::testing::Test
  * Public utility tests
  *------------------------------------------------------------------------------------------------*/
 
-TEST_F(TLSBasedGCFixture, Construct_GCStarted_MemberVariablesCorrectlyInitialized)
+TEST_F(TLSBasedMemoryManagerFixture, Construct_GCStarted_MemberVariablesCorrectlyInitialized)
 {
-  auto gc = TLSBasedGC<size_t>{kGCInterval, true};
+  auto gc = TLSBasedMemoryManager<size_t>{kGCInterval, true};
 
   auto gc_is_running = gc.StopGC();
 
   EXPECT_TRUE(gc_is_running);
 }
 
-TEST_F(TLSBasedGCFixture, Construct_GCStopped_MemberVariablesCorrectlyInitialized)
-{
-  auto gc = TLSBasedGC<size_t>{kGCInterval, false};
-
-  auto gc_is_stopped = gc.StartGC();
-
-  EXPECT_TRUE(gc_is_stopped);
-}
-
-TEST_F(TLSBasedGCFixture, Destruct_SingleThread_GarbagesCorrectlyFreed)
+TEST_F(TLSBasedMemoryManagerFixture, Destruct_SingleThread_GarbagesCorrectlyFreed)
 {
   constexpr size_t kLoopNum = 1E5;
 
@@ -60,7 +51,7 @@ TEST_F(TLSBasedGCFixture, Destruct_SingleThread_GarbagesCorrectlyFreed)
 
   // register garbages to GC
   {
-    auto gc = TLSBasedGC<std::shared_ptr<size_t>>{kGCInterval};
+    auto gc = TLSBasedMemoryManager<std::shared_ptr<size_t>>{kGCInterval};
 
     auto f = [&]() {
       for (size_t loop = 0; loop < kLoopNum; ++loop) {
@@ -85,7 +76,7 @@ TEST_F(TLSBasedGCFixture, Destruct_SingleThread_GarbagesCorrectlyFreed)
   }
 }
 
-TEST_F(TLSBasedGCFixture, Destruct_MultiThreads_GarbagesCorrectlyFreed)
+TEST_F(TLSBasedMemoryManagerFixture, Destruct_MultiThreads_GarbagesCorrectlyFreed)
 {
   constexpr size_t kLoopNum = 1E5;
   constexpr size_t kThreadNum = 10;
@@ -95,7 +86,7 @@ TEST_F(TLSBasedGCFixture, Destruct_MultiThreads_GarbagesCorrectlyFreed)
 
   // register garbages to GC
   {
-    auto gc = TLSBasedGC<std::shared_ptr<size_t>>{kGCInterval};
+    auto gc = TLSBasedMemoryManager<std::shared_ptr<size_t>>{kGCInterval};
 
     auto f = [&gc](std::promise<std::vector<std::weak_ptr<size_t>>> p) {
       std::vector<std::weak_ptr<size_t>> weak_ptrs;

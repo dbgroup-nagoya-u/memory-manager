@@ -86,7 +86,7 @@ class GarbageList
     const auto current_begin = begin_index_.load(mo_relax);
     const auto current_end = end_index_.load(mo_relax);
 
-    if (current_begin < current_end) {
+    if (current_begin <= current_end) {
       return current_end - current_begin;
     } else {
       return kGarbageListCapacity - (current_begin - current_end);
