@@ -12,9 +12,12 @@
 #include <vector>
 
 #include "common.hpp"
+#include "gc/common/memory_keeper.hpp"
 
 namespace dbgroup::memory::tls_based
 {
+using dbgroup::memory::MemoryKeeper;
+
 template <class T>
 class GarbageList
 {
@@ -33,16 +36,22 @@ class GarbageList
 
   const size_t gc_interval_micro_;
 
+  MemoryKeeper<T>* memory_keeper_;
+
  public:
   /*################################################################################################
    * Public constructors/destructors
    *##############################################################################################*/
 
-  GarbageList(const size_t current_epoch, const size_t gc_interval_micro)
+  GarbageList(  //
+      const size_t current_epoch,
+      const size_t gc_interval_micro,
+      MemoryKeeper<T>* memory_keeper = nullptr)
       : begin_index_{0},
         end_index_{0},
         current_epoch_{current_epoch},
-        gc_interval_micro_{gc_interval_micro}
+        gc_interval_micro_{gc_interval_micro},
+        memory_keeper_{memory_keeper}
   {
     garbage_ring_buffer_.fill({std::numeric_limits<size_t>::max(), nullptr});
   }
@@ -53,7 +62,11 @@ class GarbageList
     auto index = begin_index_.load(mo_relax);
     while (index != current_end) {
       auto [deleted_epoch, garbage] = garbage_ring_buffer_[index];
-      delete garbage;
+      if (memory_keeper_ == nullptr) {
+        delete garbage;
+      } else {
+        memory_keeper_->ReturnPage(garbage);
+      }
       index = (index == kGarbageListCapacity - 1) ? 0 : index + 1;
     }
   }
@@ -72,9 +85,12 @@ class GarbageList
   {
     const auto current_begin = begin_index_.load(mo_relax);
     const auto current_end = end_index_.load(mo_relax);
-    const auto resized_end =
-        (current_begin > current_end) ? current_end + kGarbageListCapacity : current_end;
-    return resized_end - current_begin;
+
+    if (current_begin < current_end) {
+      return current_end - current_begin;
+    } else {
+      return kGarbageListCapacity - (current_begin - current_end);
+    }
   }
 
   void
@@ -116,8 +132,12 @@ class GarbageList
     while (index != current_end) {
       auto [deleted_epoch, garbage] = garbage_ring_buffer_[index];
       if (deleted_epoch < protected_epoch) {
-        delete garbage;
         garbage_ring_buffer_[index] = {std::numeric_limits<size_t>::max(), nullptr};
+        if (memory_keeper_ == nullptr) {
+          delete garbage;
+        } else {
+          memory_keeper_->ReturnPage(garbage);
+        }
       } else {
         break;
       }
