@@ -37,8 +37,21 @@ class Epoch
 
   Epoch(const Epoch &) = delete;
   Epoch &operator=(const Epoch &) = delete;
-  Epoch(Epoch &&) = default;
-  Epoch &operator=(Epoch &&) = default;
+
+  Epoch(Epoch &&orig)
+  {
+    this->current_.store(orig.current_.load(mo_relax), mo_relax);
+    this->entered_.store(orig.entered_.load(mo_relax), mo_relax);
+  }
+
+  Epoch &
+  operator=(Epoch &&orig)
+  {
+    this->current_.store(orig.current_.load(mo_relax), mo_relax);
+    this->entered_.store(orig.entered_.load(mo_relax), mo_relax);
+
+    return *this;
+  }
 
   /*################################################################################################
    * Public getters/setters
