@@ -58,10 +58,6 @@ function(ADD_SIMPLE_GC_TEST SIMPLE_GC_TARGET_DIR SIMPLE_GC_TEST_TARGET)
 endfunction()
 
 # add unit tests to build targets
-ADD_SIMPLE_GC_TEST("ring_based" "epoch_manager_test")
-ADD_SIMPLE_GC_TEST("ring_based" "epoch_guard_test")
-ADD_SIMPLE_GC_TEST("ring_based" "garbage_list_test")
-ADD_SIMPLE_GC_TEST("ring_based" "ring_buffer_gc_test")
 ADD_SIMPLE_GC_TEST("tls_based" "epoch_test")
 ADD_SIMPLE_GC_TEST("tls_based" "epoch_guard_test")
 ADD_SIMPLE_GC_TEST("tls_based" "epoch_manager_test")
