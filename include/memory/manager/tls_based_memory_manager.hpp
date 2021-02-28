@@ -65,24 +65,23 @@ class TLSBasedMemoryManager
   {
     // check the head of a garbage list
     auto previous = garbages_.load(mo_relax);
-    if (previous->garbage_list.use_count() > 1) {
-      previous->garbage_list->Clear(protected_epoch);
-    }
+    previous->garbage_list->Clear(protected_epoch);
     auto current = previous->next;
 
     // check the other nodes of a garbage list
     while (current != nullptr) {
-      if (current->garbage_list.use_count() > 1) {
-        // delete garbages and check the next one
-        current->garbage_list->Clear(protected_epoch);
-        previous = current;
-        current = current->next;
-      } else {
+      current->garbage_list->Clear(protected_epoch);
+
+      if (current->garbage_list.use_count() == 1 && current->garbage_list->Size() == 0) {
         // delete a garbage list
         previous->next = current->next;
         current->next = nullptr;
         delete current;
         current = previous->next;
+      } else {
+        // check a next garbage list
+        previous = current;
+        current = current->next;
       }
     }
   }
@@ -126,7 +125,7 @@ class TLSBasedMemoryManager
       const size_t partition_num = 8)
       : epoch_manager_{},
         garbage_list_size_{garbage_list_size},
-        garbages_{new GarbageNode{}},
+        garbages_{new GarbageNode{std::make_shared<GarbageList<T>>(), nullptr}},
         gc_interval_micro_sec_{gc_interval_micro_sec},
         gc_is_running_{false},
         memory_keeper_{nullptr}
