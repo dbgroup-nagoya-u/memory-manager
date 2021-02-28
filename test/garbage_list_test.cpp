@@ -15,7 +15,8 @@ namespace dbgroup::memory::manager::component
 class GarbageListFixture : public ::testing::Test
 {
  public:
-  static constexpr auto kGCInterval = 100UL;
+  static constexpr size_t kBufferSize = 256;
+  static constexpr size_t kGCInterval = 100;
 
  protected:
   void
@@ -35,7 +36,7 @@ class GarbageListFixture : public ::testing::Test
 
 TEST_F(GarbageListFixture, Construct_WithArgs_MemberVariablesCorrectlyInitialized)
 {
-  auto garbage_list = GarbageList<size_t>{0, kGCInterval};
+  auto garbage_list = GarbageList<size_t>{kBufferSize, 0, kGCInterval};
 
   EXPECT_EQ(0, garbage_list.Size());
 }
@@ -47,7 +48,7 @@ TEST_F(GarbageListFixture, Destruct_AddTenGarbages_AddedGarbagesCorrectlyFreed)
   std::vector<std::weak_ptr<size_t>> garbage_references;
 
   {
-    auto garbage_list = GarbageList<std::shared_ptr<size_t>>{0, kGCInterval};
+    auto garbage_list = GarbageList<std::shared_ptr<size_t>>{kBufferSize, 0, kGCInterval};
     for (size_t count = 0; count < kGarbageNum; ++count) {
       auto garbage = new std::shared_ptr<size_t>{new size_t{0}};
       garbage_list.AddGarbage(garbage);
@@ -64,7 +65,7 @@ TEST_F(GarbageListFixture, AddGarbage_TenGarbages_ListSizeCorrectlyUpdated)
 {
   constexpr auto kGarbageNum = 10UL;
 
-  auto garbage_list = GarbageList<size_t>{0, kGCInterval};
+  auto garbage_list = GarbageList<size_t>{kBufferSize, 0, kGCInterval};
   for (size_t count = 0; count < kGarbageNum; ++count) {
     auto garbage = new size_t{0};
     garbage_list.AddGarbage(garbage);
@@ -77,7 +78,7 @@ TEST_F(GarbageListFixture, Clear_TenFreeableTenProtectedGarbages_ProtectedGarbag
 {
   constexpr auto kGarbageNum = 10UL;
 
-  auto garbage_list = GarbageList<std::shared_ptr<size_t>>{0, kGCInterval};
+  auto garbage_list = GarbageList<std::shared_ptr<size_t>>{kBufferSize, 0, kGCInterval};
   std::vector<std::weak_ptr<size_t>> garbage_references;
   const auto protected_epoch = 1UL;
 
@@ -111,9 +112,9 @@ TEST_F(GarbageListFixture, Clear_TenFreeableTenProtectedGarbages_ProtectedGarbag
 
 TEST_F(GarbageListFixture, AddGarbage_AddManyGarbages_RingBufferReturnHead)
 {
-  constexpr auto kGarbageNum = kGarbageListCapacity / 2 + 10;
+  constexpr auto kGarbageNum = kBufferSize / 2 + 10;
 
-  auto garbage_list = GarbageList<std::shared_ptr<size_t>>{0, kGCInterval};
+  auto garbage_list = GarbageList<std::shared_ptr<size_t>>{kBufferSize, 0, kGCInterval};
   std::vector<std::weak_ptr<size_t>> garbage_references;
   const auto protected_epoch = 1UL;
 

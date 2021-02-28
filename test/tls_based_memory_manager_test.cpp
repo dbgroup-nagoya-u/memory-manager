@@ -15,6 +15,7 @@ namespace dbgroup::memory::manager::component
 class TLSBasedMemoryManagerFixture : public ::testing::Test
 {
  public:
+  static constexpr size_t kGarbageListSize = 256;
   static constexpr size_t kGCInterval = 1E2;
 
  protected:
@@ -35,7 +36,7 @@ class TLSBasedMemoryManagerFixture : public ::testing::Test
 
 TEST_F(TLSBasedMemoryManagerFixture, Construct_GCStarted_MemberVariablesCorrectlyInitialized)
 {
-  auto gc = TLSBasedMemoryManager<size_t>{kGCInterval, true};
+  auto gc = TLSBasedMemoryManager<size_t>{kGarbageListSize, kGCInterval};
 
   auto gc_is_running = gc.StopGC();
 
@@ -51,7 +52,7 @@ TEST_F(TLSBasedMemoryManagerFixture, Destruct_SingleThread_GarbagesCorrectlyFree
 
   // register garbages to GC
   {
-    auto gc = TLSBasedMemoryManager<std::shared_ptr<size_t>>{kGCInterval};
+    auto gc = TLSBasedMemoryManager<std::shared_ptr<size_t>>{kGarbageListSize, kGCInterval};
 
     auto f = [&]() {
       for (size_t loop = 0; loop < kLoopNum; ++loop) {
@@ -86,7 +87,7 @@ TEST_F(TLSBasedMemoryManagerFixture, Destruct_MultiThreads_GarbagesCorrectlyFree
 
   // register garbages to GC
   {
-    auto gc = TLSBasedMemoryManager<std::shared_ptr<size_t>>{kGCInterval};
+    auto gc = TLSBasedMemoryManager<std::shared_ptr<size_t>>{kGarbageListSize, kGCInterval};
 
     auto f = [&gc](std::promise<std::vector<std::weak_ptr<size_t>>> p) {
       std::vector<std::weak_ptr<size_t>> weak_ptrs;
@@ -134,7 +135,7 @@ TEST_F(TLSBasedMemoryManagerFixture, CreateEpochGuard_MultiThreads_TLSCorrectlyI
 
   // register garbages to GC
   {
-    auto gc = TLSBasedMemoryManager<std::shared_ptr<size_t>>{kGCInterval};
+    auto gc = TLSBasedMemoryManager<std::shared_ptr<size_t>>{kGarbageListSize, kGCInterval};
 
     auto f = [&gc](std::promise<std::vector<std::weak_ptr<size_t>>> p) {
       std::vector<std::weak_ptr<size_t>> weak_ptrs;

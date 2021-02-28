@@ -28,12 +28,6 @@ class TLSBasedMemoryManager
 {
  private:
   /*################################################################################################
-   * Internal enum and constants
-   *##############################################################################################*/
-
-  static constexpr size_t kDefaultGCIntervalMicroSec = 1E6;
-
-  /*################################################################################################
    * Internal structs
    *##############################################################################################*/
 
@@ -49,6 +43,8 @@ class TLSBasedMemoryManager
    *##############################################################################################*/
 
   EpochManager epoch_manager_;
+
+  const size_t garbage_list_size_;
 
   std::atomic<GarbageNode*> garbages_;
 
@@ -123,11 +119,13 @@ class TLSBasedMemoryManager
    *##############################################################################################*/
 
   TLSBasedMemoryManager(  //
-      const size_t gc_interval_micro_sec = kDefaultGCIntervalMicroSec,
+      const size_t garbage_list_size,
+      const size_t gc_interval_micro_sec,
       const bool reserve_memory = false,
       const size_t page_num = 4096,
       const size_t partition_num = 8)
       : epoch_manager_{},
+        garbage_list_size_{garbage_list_size},
         garbages_{new GarbageNode{}},
         gc_interval_micro_sec_{gc_interval_micro_sec},
         gc_is_running_{false},
@@ -186,8 +184,9 @@ class TLSBasedMemoryManager
     thread_local std::shared_ptr<GarbageList<T>> garbage_list = nullptr;
 
     if (garbage_list == nullptr) {
-      garbage_list = std::make_shared<GarbageList<T>>(epoch_manager_.GetCurrentEpoch(),
-                                                      gc_interval_micro_sec_, memory_keeper_.get());
+      garbage_list =
+          std::make_shared<GarbageList<T>>(garbage_list_size_, epoch_manager_.GetCurrentEpoch(),
+                                           gc_interval_micro_sec_, memory_keeper_.get());
       auto garbage_node = new GarbageNode{garbage_list, garbages_.load(mo_relax)};
       while (!garbages_.compare_exchange_weak(garbage_node->next, garbage_node, mo_relax)) {
         // continue until inserting succeeds
