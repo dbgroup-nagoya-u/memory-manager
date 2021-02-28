@@ -34,7 +34,7 @@ class GarbageList
 
   const size_t gc_interval_micro_;
 
-  MemoryKeeper<T>* memory_keeper_;
+  MemoryKeeper* memory_keeper_;
 
  public:
   /*################################################################################################
@@ -55,7 +55,7 @@ class GarbageList
       const size_t buffer_size,
       const size_t current_epoch,
       const size_t gc_interval_micro,
-      MemoryKeeper<T>* memory_keeper = nullptr)
+      MemoryKeeper* memory_keeper = nullptr)
       : buffer_size_{buffer_size},
         begin_index_{0},
         end_index_{0},

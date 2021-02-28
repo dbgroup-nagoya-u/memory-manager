@@ -54,7 +54,7 @@ class TLSBasedMemoryManager
 
   std::atomic_bool gc_is_running_;
 
-  std::unique_ptr<MemoryKeeper<T>> memory_keeper_;
+  std::unique_ptr<MemoryKeeper> memory_keeper_;
 
   /*################################################################################################
    * Internal utility functions
@@ -120,9 +120,10 @@ class TLSBasedMemoryManager
   TLSBasedMemoryManager(  //
       const size_t garbage_list_size,
       const size_t gc_interval_micro_sec,
-      const bool reserve_memory = false,
-      const size_t page_num = 4096,
-      const size_t partition_num = 8)
+      const size_t page_size = 0,
+      const size_t page_num = 0,
+      const size_t partition_num = 0,
+      const bool reserve_memory = false)
       : epoch_manager_{},
         garbage_list_size_{garbage_list_size},
         garbages_{new GarbageNode{std::make_shared<GarbageList<T>>(), nullptr}},
@@ -131,7 +132,7 @@ class TLSBasedMemoryManager
         memory_keeper_{nullptr}
   {
     if (reserve_memory) {
-      memory_keeper_.reset(new MemoryKeeper<T>{page_num, partition_num});
+      memory_keeper_.reset(new MemoryKeeper{page_size, page_num, partition_num});
     }
 
     StartGC();
