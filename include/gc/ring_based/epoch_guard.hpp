@@ -35,8 +35,8 @@ class EpochGuard
 
   EpochGuard(const EpochGuard &) = delete;
   EpochGuard &operator=(const EpochGuard &) = delete;
-  EpochGuard(EpochGuard &&) = default;
-  EpochGuard &operator=(EpochGuard &&) = default;
+  EpochGuard(EpochGuard &&) = delete;
+  EpochGuard &operator=(EpochGuard &&) = delete;
 
   /*################################################################################################
    * Public getters/setters

@@ -26,7 +26,7 @@ class Epoch
    * Public constructors/destructors
    *##############################################################################################*/
 
-  Epoch() {}
+  constexpr Epoch() : current_{0}, entered_{std::numeric_limits<size_t>::max()} {}
 
   explicit Epoch(const size_t current_epoch)
       : current_{current_epoch}, entered_{std::numeric_limits<size_t>::max()}

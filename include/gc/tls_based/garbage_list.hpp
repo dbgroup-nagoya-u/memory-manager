@@ -43,6 +43,16 @@ class GarbageList
    * Public constructors/destructors
    *##############################################################################################*/
 
+  constexpr GarbageList()
+      : garbage_ring_buffer_{},
+        begin_index_{0},
+        end_index_{0},
+        current_epoch_{0},
+        gc_interval_micro_{std::numeric_limits<size_t>::max()},
+        memory_keeper_{nullptr}
+  {
+  }
+
   GarbageList(  //
       const size_t current_epoch,
       const size_t gc_interval_micro,
@@ -73,8 +83,8 @@ class GarbageList
 
   GarbageList(const GarbageList&) = delete;
   GarbageList& operator=(const GarbageList&) = delete;
-  GarbageList(GarbageList&&) = default;
-  GarbageList& operator=(GarbageList&&) = default;
+  GarbageList(GarbageList&&) = delete;
+  GarbageList& operator=(GarbageList&&) = delete;
 
   /*################################################################################################
    * Public getters/setters

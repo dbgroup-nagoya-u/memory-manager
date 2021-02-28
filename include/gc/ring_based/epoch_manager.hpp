@@ -30,7 +30,7 @@ class alignas(kCacheLineSize) EpochManager
    * Public constructors/destructors
    *##############################################################################################*/
 
-  EpochManager() : current_index_{0}, check_begin_index_{0}
+  constexpr EpochManager() : epoch_ring_buffer_{}, current_index_{0}, check_begin_index_{0}
   {
     for (size_t epoch = 0; epoch < kBufferSize; ++epoch) {
       for (size_t partition = 0; partition < kPartitionNum; ++partition) {

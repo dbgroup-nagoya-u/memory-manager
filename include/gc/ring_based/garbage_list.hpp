@@ -32,7 +32,7 @@ class GarbageList
    * Public constructors/destructors
    *##############################################################################################*/
 
-  GarbageList() : current_size_{0}, next_{0} { target_ptrs_.fill(0); }
+  constexpr GarbageList() : target_ptrs_{}, current_size_{0}, next_{0} { target_ptrs_.fill(0); }
 
   ~GarbageList()
   {
@@ -47,8 +47,8 @@ class GarbageList
 
   GarbageList(const GarbageList&) = delete;
   GarbageList& operator=(const GarbageList&) = delete;
-  GarbageList(GarbageList&&) = default;
-  GarbageList& operator=(GarbageList&&) = default;
+  GarbageList(GarbageList&&) = delete;
+  GarbageList& operator=(GarbageList&&) = delete;
 
   /*################################################################################################
    * Public getters/setters

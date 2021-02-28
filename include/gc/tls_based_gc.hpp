@@ -121,7 +121,7 @@ class TLSBasedMemoryManager
    * Public constructors/destructors
    *##############################################################################################*/
 
-  explicit TLSBasedMemoryManager(  //
+  TLSBasedMemoryManager(  //
       const size_t gc_interval_micro_sec = kDefaultGCIntervalMicroSec,
       const bool reserve_memory = false,
       const size_t page_num = 4096,
