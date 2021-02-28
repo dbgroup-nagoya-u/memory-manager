@@ -3,7 +3,6 @@
 
 #pragma once
 
-#include <array>
 #include <atomic>
 #include <limits>
 #include <memory>
@@ -11,9 +10,9 @@
 #include <utility>
 #include <vector>
 
-#include "common.hpp"
+#include "memory_keeper.hpp"
 
-namespace dbgroup::gc::tls
+namespace dbgroup::memory::manager::component
 {
 template <class T>
 class GarbageList
@@ -23,7 +22,9 @@ class GarbageList
    * Internal member variables
    *##############################################################################################*/
 
-  std::array<std::pair<size_t, T*>, kGarbageListCapacity> garbage_ring_buffer_;
+  const size_t buffer_size_;
+
+  std::vector<std::pair<size_t, T*>> garbage_ring_buffer_;
 
   std::atomic_size_t begin_index_;
 
@@ -33,18 +34,38 @@ class GarbageList
 
   const size_t gc_interval_micro_;
 
+  MemoryKeeper<T>* memory_keeper_;
+
  public:
   /*################################################################################################
    * Public constructors/destructors
    *##############################################################################################*/
 
-  GarbageList(const size_t current_epoch, const size_t gc_interval_micro)
+  constexpr GarbageList()
       : begin_index_{0},
         end_index_{0},
-        current_epoch_{current_epoch},
-        gc_interval_micro_{gc_interval_micro}
+        current_epoch_{0},
+        gc_interval_micro_{std::numeric_limits<size_t>::max()},
+        memory_keeper_{nullptr}
   {
-    garbage_ring_buffer_.fill({std::numeric_limits<size_t>::max(), nullptr});
+  }
+
+  GarbageList(  //
+      const size_t buffer_size,
+      const size_t current_epoch,
+      const size_t gc_interval_micro,
+      MemoryKeeper<T>* memory_keeper = nullptr)
+      : buffer_size_{buffer_size},
+        begin_index_{0},
+        end_index_{0},
+        current_epoch_{current_epoch},
+        gc_interval_micro_{gc_interval_micro},
+        memory_keeper_{memory_keeper}
+  {
+    garbage_ring_buffer_.reserve(buffer_size_);
+    for (size_t i = 0; i < buffer_size_; ++i) {
+      garbage_ring_buffer_.emplace_back(std::numeric_limits<size_t>::max(), nullptr);
+    }
   }
 
   ~GarbageList()
@@ -53,15 +74,19 @@ class GarbageList
     auto index = begin_index_.load(mo_relax);
     while (index != current_end) {
       auto [deleted_epoch, garbage] = garbage_ring_buffer_[index];
-      delete garbage;
-      index = (index == kGarbageListCapacity - 1) ? 0 : index + 1;
+      if (memory_keeper_ == nullptr) {
+        delete garbage;
+      } else {
+        memory_keeper_->ReturnPage(garbage);
+      }
+      index = (index == buffer_size_ - 1) ? 0 : index + 1;
     }
   }
 
   GarbageList(const GarbageList&) = delete;
   GarbageList& operator=(const GarbageList&) = delete;
-  GarbageList(GarbageList&&) = default;
-  GarbageList& operator=(GarbageList&&) = default;
+  GarbageList(GarbageList&&) = delete;
+  GarbageList& operator=(GarbageList&&) = delete;
 
   /*################################################################################################
    * Public getters/setters
@@ -72,9 +97,12 @@ class GarbageList
   {
     const auto current_begin = begin_index_.load(mo_relax);
     const auto current_end = end_index_.load(mo_relax);
-    const auto resized_end =
-        (current_begin > current_end) ? current_end + kGarbageListCapacity : current_end;
-    return resized_end - current_begin;
+
+    if (current_begin <= current_end) {
+      return current_end - current_begin;
+    } else {
+      return buffer_size_ - (current_begin - current_end);
+    }
   }
 
   void
@@ -92,11 +120,11 @@ class GarbageList
   {
     // reserve a garbage region
     const auto current_end = end_index_.load(mo_relax);
-    const auto next_end = (current_end == kGarbageListCapacity - 1) ? 0 : current_end + 1;
+    const auto next_end = (current_end == buffer_size_ - 1) ? 0 : current_end + 1;
     auto current_begin = begin_index_.load(mo_relax);
     while (next_end == current_begin) {
       // wait GC
-      std::this_thread::sleep_for(std::chrono::nanoseconds(100));
+      std::this_thread::sleep_for(std::chrono::microseconds(gc_interval_micro_));
       current_begin = begin_index_.load(mo_relax);
     }
 
@@ -116,16 +144,20 @@ class GarbageList
     while (index != current_end) {
       auto [deleted_epoch, garbage] = garbage_ring_buffer_[index];
       if (deleted_epoch < protected_epoch) {
-        delete garbage;
         garbage_ring_buffer_[index] = {std::numeric_limits<size_t>::max(), nullptr};
+        if (memory_keeper_ == nullptr) {
+          delete garbage;
+        } else {
+          memory_keeper_->ReturnPage(garbage);
+        }
       } else {
         break;
       }
-      index = (index == kGarbageListCapacity - 1) ? 0 : index + 1;
+      index = (index == buffer_size_ - 1) ? 0 : index + 1;
     }
 
     begin_index_.store(index, mo_relax);
   }
 };
 
-}  // namespace dbgroup::gc::tls
+}  // namespace dbgroup::memory::manager::component

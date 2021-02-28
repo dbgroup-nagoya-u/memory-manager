@@ -1,11 +1,11 @@
 // Copyright (c) DB Group, Nagoya University. All rights reserved.
 // Licensed under the MIT license.
 
-#include "gc/tls_based/epoch.hpp"
+#include "memory/manager/component/epoch.hpp"
 
 #include <gtest/gtest.h>
 
-namespace dbgroup::gc::tls
+namespace dbgroup::memory::manager::component
 {
 class EpochFixture : public ::testing::Test
 {
@@ -58,4 +58,4 @@ TEST_F(EpochFixture, LeaveEpoch_AfterEntered_ProtectedEpochCorrectlyUpdated)
   EXPECT_EQ(std::numeric_limits<size_t>::max(), epoch.GetProtectedEpoch());
 }
 
-}  // namespace dbgroup::gc::tls
+}  // namespace dbgroup::memory::manager::component

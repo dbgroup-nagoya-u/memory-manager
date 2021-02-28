@@ -8,7 +8,7 @@
 
 #include "common.hpp"
 
-namespace dbgroup::gc::tls
+namespace dbgroup::memory::manager::component
 {
 class Epoch
 {
@@ -26,7 +26,7 @@ class Epoch
    * Public constructors/destructors
    *##############################################################################################*/
 
-  Epoch() {}
+  constexpr Epoch() : current_{0}, entered_{std::numeric_limits<size_t>::max()} {}
 
   explicit Epoch(const size_t current_epoch)
       : current_{current_epoch}, entered_{std::numeric_limits<size_t>::max()}
@@ -37,8 +37,21 @@ class Epoch
 
   Epoch(const Epoch &) = delete;
   Epoch &operator=(const Epoch &) = delete;
-  Epoch(Epoch &&) = default;
-  Epoch &operator=(Epoch &&) = default;
+
+  Epoch(Epoch &&orig)
+  {
+    this->current_.store(orig.current_.load(mo_relax), mo_relax);
+    this->entered_.store(orig.entered_.load(mo_relax), mo_relax);
+  }
+
+  Epoch &
+  operator=(Epoch &&orig)
+  {
+    this->current_.store(orig.current_.load(mo_relax), mo_relax);
+    this->entered_.store(orig.entered_.load(mo_relax), mo_relax);
+
+    return *this;
+  }
 
   /*################################################################################################
    * Public getters/setters
@@ -79,4 +92,4 @@ class Epoch
   }
 };
 
-}  // namespace dbgroup::gc::tls
+}  // namespace dbgroup::memory::manager::component

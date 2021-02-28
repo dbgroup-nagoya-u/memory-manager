@@ -10,7 +10,7 @@
 
 #include "epoch_guard.hpp"
 
-namespace dbgroup::gc::tls
+namespace dbgroup::memory::manager::component
 {
 class EpochManager
 {
@@ -20,7 +20,8 @@ class EpochManager
    *##############################################################################################*/
 
   struct EpochList {
-    std::shared_ptr<Epoch> epoch;
+    Epoch *epoch;
+    std::weak_ptr<uint64_t> reference;
     EpochList *next = nullptr;
 
     ~EpochList() { delete next; }
@@ -69,9 +70,11 @@ class EpochManager
   }
 
   void
-  RegisterEpoch(const std::shared_ptr<Epoch> epoch)
+  RegisterEpoch(  //
+      Epoch *epoch,
+      const std::shared_ptr<uint64_t> reference)
   {
-    auto epoch_node = new EpochList{epoch, epochs_.load(mo_relax)};
+    auto epoch_node = new EpochList{epoch, reference, epochs_.load(mo_relax)};
     while (!epochs_.compare_exchange_weak(epoch_node->next, epoch_node, mo_relax)) {
       // continue until inserting succeeds
     }
@@ -85,7 +88,7 @@ class EpochManager
 
     // update the head of an epoch list
     auto previous = epochs_.load(mo_relax);
-    if (previous->epoch.use_count() > 1) {
+    if (!previous->reference.expired()) {
       previous->epoch->SetCurrentEpoch(current_epoch);
       const auto protected_epoch = previous->epoch->GetProtectedEpoch();
       if (protected_epoch < min_protected_epoch) {
@@ -96,7 +99,7 @@ class EpochManager
 
     // update the other nodes of an epoch list
     while (current != nullptr) {
-      if (current->epoch.use_count() > 1) {
+      if (!current->reference.expired()) {
         // if an epoch remains, update epoch information
         current->epoch->SetCurrentEpoch(current_epoch);
         const auto protected_epoch = current->epoch->GetProtectedEpoch();
@@ -118,4 +121,4 @@ class EpochManager
   }
 };
 
-}  // namespace dbgroup::gc::tls
+}  // namespace dbgroup::memory::manager::component

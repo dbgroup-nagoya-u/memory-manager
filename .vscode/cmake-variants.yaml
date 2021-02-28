@@ -7,16 +7,16 @@ buildType:
       long: Include debugging information without optimizations
       buildType: Debug
       settings:
-        SIMPLE_GC_BUILD_TESTS: on
+        MEMORY_MANAGER_BUILD_TESTS: on
     relWithDebInfo:
       short: RelWithDebInfo
       long: Perform optimizations and include debugging informatin
       buildType: RelWithDebInfo
       settings:
-        SIMPLE_GC_BUILD_TESTS: on
+        MEMORY_MANAGER_BUILD_TESTS: on
     release:
       short: Release
       long: Perform optimizations and omit debugging informatin
       buildType: Release
       settings:
-        SIMPLE_GC_BUILD_TESTS: on
+        MEMORY_MANAGER_BUILD_TESTS: on

@@ -16,6 +16,7 @@
     "**/pmwcas/**": true
   },
   "testMate.cpp.test.runtimeLimit": 60,
+  "testMate.cpp.test.executables": "build/**/test/*_test",
   "[cmake]": {
     "editor.formatOnPaste": false,
     "editor.formatOnSave": false,
@@ -30,6 +31,7 @@
   ],
   "cSpell.words": [
     "DCMAKE",
+    "DMEMORY",
     "DSIMPLE",
     "Wextra",
     "alignas",
@@ -109,6 +111,7 @@
     "any": "cpp",
     "cstring": "cpp",
     "future": "cpp",
-    "variant": "cpp"
+    "variant": "cpp",
+    "shared_mutex": "cpp"
   },
 }
