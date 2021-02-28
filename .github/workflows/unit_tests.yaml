@@ -26,7 +26,7 @@ jobs:
     - name: Configure CMake
       shell: bash
       working-directory: ${{github.workspace}}/build
-      run: cmake $GITHUB_WORKSPACE -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DSIMPLE_GC_BUILD_TESTS=on
+      run: cmake $GITHUB_WORKSPACE -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DMEMORY_MANAGER_BUILD_TESTS=on
 
     - name: Build
       shell: bash
