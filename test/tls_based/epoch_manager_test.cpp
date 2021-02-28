@@ -7,6 +7,7 @@
 
 #include <future>
 #include <memory>
+#include <mutex>
 #include <thread>
 #include <vector>
 
@@ -17,26 +18,77 @@ using EpochPairs = std::pair<std::vector<Epoch>, std::vector<std::shared_ptr<uin
 class EpochManagerFixture : public ::testing::Test
 {
  public:
-  static EpochPairs
-  RegisterEpochs(  //
-      const size_t num_epoch,
-      EpochManager &manager)
+  static constexpr size_t kLoopNum = 10;
+
+  std::mutex mtx;
+
+  void
+  CreateEpoch(  //
+      std::promise<std::pair<Epoch *, std::shared_ptr<uint64_t>>> p,
+      EpochManager *manager)
   {
-    std::vector<Epoch> epochs;
-    std::vector<std::shared_ptr<uint64_t>> epoch_keepers;
+    thread_local auto epoch = Epoch{manager->GetCurrentEpoch()};
+    thread_local auto epoch_keeper = std::make_shared<uint64_t>(0);
 
-    for (size_t count = 0; count < num_epoch; ++count) {
-      // register an epoch to a manager
-      auto epoch_keeper = std::make_shared<uint64_t>(0);
-      auto epoch = Epoch{manager.GetCurrentEpoch()};
-      manager.RegisterEpoch(&epoch, epoch_keeper);
+    manager->RegisterEpoch(&epoch, epoch_keeper);
 
-      // keep a created epoch
-      epochs.emplace_back(std::move(epoch));
-      epoch_keepers.emplace_back(std::move(epoch_keeper));
+    const auto guard = EpochGuard{&epoch};
+
+    // return epoch and its reference
+    p.set_value(std::make_pair(&epoch, epoch_keeper));
+
+    // wait until a main thread finishes tests
+    const auto lock = std::unique_lock<std::mutex>(mtx);
+  }
+
+  void
+  TestUpdateRegisteredEpochs(const size_t thread_num)
+  {
+    auto manager = EpochManager{};
+    std::vector<std::weak_ptr<uint64_t>> epoch_keepers;
+
+    {
+      // create a lock to prevent destruction of epochs
+      auto lock = std::unique_lock<std::mutex>(mtx);
+
+      // create threads and gather their epochs
+      std::vector<Epoch *> epochs;
+      std::vector<std::future<std::pair<Epoch *, std::shared_ptr<uint64_t>>>> futures;
+      for (size_t i = 0; i < thread_num; ++i) {
+        std::promise<std::pair<Epoch *, std::shared_ptr<uint64_t>>> p;
+        futures.emplace_back(p.get_future());
+        std::thread{&EpochManagerFixture::CreateEpoch, this, std::move(p), &manager}.detach();
+      }
+      for (auto &&future : futures) {
+        auto [epoch, epoch_keeper] = future.get();
+        epochs.emplace_back(epoch);
+        epoch_keepers.emplace_back(epoch_keeper);
+      }
+
+      // check whether epochs are correclty updated
+      for (size_t i = 0; i < kLoopNum; ++i) {
+        for (auto &&epoch : epochs) {
+          EXPECT_EQ(i, epoch->GetCurrentEpoch());
+        }
+        manager.ForwardGlobalEpoch();
+        const auto protected_epoch = manager.UpdateRegisteredEpochs();
+        EXPECT_EQ(0, protected_epoch);
+      }
+
+      // release a lock
     }
 
-    return {std::move(epochs), std::move(epoch_keepers)};
+    // wait all the threads leave
+    bool all_thread_exit;
+    do {
+      all_thread_exit = true;
+      for (auto &&epoch_keeper : epoch_keepers) {
+        all_thread_exit &= epoch_keeper.expired();
+      }
+    } while (!all_thread_exit);
+
+    // there is no protecting epoch
+    EXPECT_EQ(std::numeric_limits<size_t>::max(), manager.UpdateRegisteredEpochs());
   }
 
  protected:
@@ -85,8 +137,6 @@ TEST_F(EpochManagerFixture, Destruct_AfterRegisterOneEpoch_RegisteredEpochFreed)
 
 TEST_F(EpochManagerFixture, Destruct_AfterRegisterTenEpochs_RegisteredEpochsFreed)
 {
-  constexpr auto kLoopNum = 10UL;
-
   std::vector<std::weak_ptr<uint64_t>> epoch_references;
 
   {
@@ -112,8 +162,6 @@ TEST_F(EpochManagerFixture, Destruct_AfterRegisterTenEpochs_RegisteredEpochsFree
 
 TEST_F(EpochManagerFixture, ForwardGlobalEpoch_ForwardTenTimes_CurrentEpochCorrectlyUpdated)
 {
-  constexpr auto kLoopNum = 10UL;
-
   auto manager = EpochManager{};
 
   for (size_t count = 0; count < kLoopNum; ++count) {
@@ -126,109 +174,16 @@ TEST_F(EpochManagerFixture, ForwardGlobalEpoch_ForwardTenTimes_CurrentEpochCorre
 
 TEST_F(EpochManagerFixture, UpdateRegisteredEpochs_SingleThread_RegisteredEpochsCorrectlyUpdated)
 {
-  constexpr auto kLoopNum = 10UL;
+  constexpr size_t kThreadNum = 1;
 
-  auto manager = EpochManager{};
-  std::vector<std::weak_ptr<uint64_t>> epoch_references;
-
-  {
-    // prepare epochs
-    auto [epochs, epoch_keepers] = RegisterEpochs(kLoopNum, manager);
-    for (auto &&epoch : epochs) {
-      epoch.EnterEpoch();
-    }
-    for (auto &&epoch_keeper : epoch_keepers) {
-      epoch_references.emplace_back(epoch_keeper);
-    }
-
-    // update epoch infomation
-    manager.ForwardGlobalEpoch();
-    const auto protected_epoch = manager.UpdateRegisteredEpochs();
-
-    EXPECT_EQ(0, protected_epoch);
-    for (auto &&epoch : epochs) {
-      EXPECT_EQ(1, epoch.GetCurrentEpoch());
-      epoch.LeaveEpoch();
-    }
-
-    // epochs become out of scope here
-  }
-
-  // add a dummy epoch to delete registered epochs
-  auto dummy_keeper = std::make_shared<uint64_t>(0);
-  auto dummy_epoch = Epoch{manager.GetCurrentEpoch()};
-  manager.RegisterEpoch(&dummy_epoch, dummy_keeper);
-  const auto protected_epoch = manager.UpdateRegisteredEpochs();
-
-  EXPECT_EQ(std::numeric_limits<size_t>::max(), protected_epoch);
-  for (auto &&epoch_reference : epoch_references) {
-    EXPECT_EQ(0, epoch_reference.use_count());
-  }
+  TestUpdateRegisteredEpochs(kThreadNum);
 }
 
 TEST_F(EpochManagerFixture, UpdateRegisteredEpochs_MultiThreads_RegisteredEpochsCorrectlyUpdated)
 {
-  constexpr auto kLoopNum = 10UL;
-  constexpr auto kThreadNum = 100UL;
+  constexpr size_t kThreadNum = 100;
 
-  auto manager = EpochManager{};
-  std::vector<std::weak_ptr<uint64_t>> epoch_references;
-
-  {
-    // a lambda functions for a multi-threads test
-    auto f = [kLoopNum, &manager](std::promise<EpochPairs> p) {
-      p.set_value(RegisterEpochs(kLoopNum, manager));
-    };
-
-    // prepare epochs
-    std::vector<Epoch> epochs;
-    std::vector<std::shared_ptr<uint64_t>> epoch_keepers;
-    std::vector<std::future<EpochPairs>> futures;
-    for (size_t count = 0; count < kThreadNum; ++count) {
-      std::promise<EpochPairs> p;
-      futures.emplace_back(p.get_future());
-      auto t = std::thread{f, std::move(p)};
-      t.detach();
-    }
-    for (auto &&future : futures) {
-      auto [f_epochs, f_keepers] = future.get();
-      for (auto &&epoch : f_epochs) {
-        epochs.emplace_back(std::move(epoch));
-      }
-      epoch_keepers.insert(epoch_keepers.end(), f_keepers.begin(), f_keepers.end());
-    }
-
-    // enter protected regions and keep references
-    for (auto &&epoch : epochs) {
-      epoch.EnterEpoch();
-    }
-    for (auto &&epoch_keeper : epoch_keepers) {
-      epoch_references.emplace_back(epoch_keeper);
-    }
-
-    // update epoch infomation
-    manager.ForwardGlobalEpoch();
-    const auto protected_epoch = manager.UpdateRegisteredEpochs();
-
-    EXPECT_EQ(0, protected_epoch);
-    for (auto &&epoch : epochs) {
-      EXPECT_EQ(1, epoch.GetCurrentEpoch());
-      epoch.LeaveEpoch();
-    }
-
-    // epochs become out of scope here
-  }
-
-  // add a dummy epoch to delete registered epochs
-  auto dummy_keeper = std::make_shared<uint64_t>(0);
-  auto dummy_epoch = Epoch{manager.GetCurrentEpoch()};
-  manager.RegisterEpoch(&dummy_epoch, dummy_keeper);
-  const auto protected_epoch = manager.UpdateRegisteredEpochs();
-
-  EXPECT_EQ(std::numeric_limits<size_t>::max(), protected_epoch);
-  for (auto &&epoch_reference : epoch_references) {
-    EXPECT_EQ(0, epoch_reference.use_count());
-  }
+  TestUpdateRegisteredEpochs(kThreadNum);
 }
 
 }  // namespace dbgroup::memory::tls_based
