@@ -1,7 +1,7 @@
 // Copyright (c) DB Group, Nagoya University. All rights reserved.
 // Licensed under the MIT license.
 
-#include "gc/tls_based_gc.hpp"
+#include "memory/manager/tls_based_memory_manager.hpp"
 
 #include <gtest/gtest.h>
 

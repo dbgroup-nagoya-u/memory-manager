@@ -6,7 +6,7 @@
 #include <atomic>
 #include <vector>
 
-#include "util.hpp"
+#include "common.hpp"
 
 namespace dbgroup::memory::manager::component
 {

@@ -1,7 +1,7 @@
 // Copyright (c) DB Group, Nagoya University. All rights reserved.
 // Licensed under the MIT license.
 
-#include "gc/tls_based/garbage_list.hpp"
+#include "memory/manager/component/garbage_list.hpp"
 
 #include <gtest/gtest.h>
 

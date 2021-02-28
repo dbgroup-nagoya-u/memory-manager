@@ -9,7 +9,6 @@
 #include <vector>
 
 #include "lock_free_ring_buffer.hpp"
-#include "util.hpp"
 
 namespace dbgroup::memory::manager::component
 {

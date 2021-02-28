@@ -1,7 +1,7 @@
 // Copyright (c) DB Group, Nagoya University. All rights reserved.
 // Licensed under the MIT license.
 
-#include "gc/tls_based/epoch.hpp"
+#include "memory/manager/component/epoch.hpp"
 
 #include <gtest/gtest.h>
 

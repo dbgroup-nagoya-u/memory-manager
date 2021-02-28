@@ -10,10 +10,10 @@
 #include <utility>
 #include <vector>
 
-#include "common/memory_keeper.hpp"
-#include "tls_based/epoch_guard.hpp"
-#include "tls_based/epoch_manager.hpp"
-#include "tls_based/garbage_list.hpp"
+#include "component/epoch_guard.hpp"
+#include "component/epoch_manager.hpp"
+#include "component/garbage_list.hpp"
+#include "component/memory_keeper.hpp"
 
 namespace dbgroup::memory::manager
 {

@@ -12,7 +12,7 @@
 #include <vector>
 
 #include "common.hpp"
-#include "gc/common/memory_keeper.hpp"
+#include "memory_keeper.hpp"
 
 namespace dbgroup::memory::manager::component
 {
