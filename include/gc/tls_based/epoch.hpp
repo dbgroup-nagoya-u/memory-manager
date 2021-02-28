@@ -8,7 +8,7 @@
 
 #include "common.hpp"
 
-namespace dbgroup::memory::tls_based
+namespace dbgroup::memory::manager::component
 {
 class Epoch
 {
@@ -92,4 +92,4 @@ class Epoch
   }
 };
 
-}  // namespace dbgroup::memory::tls_based
+}  // namespace dbgroup::memory::manager::component

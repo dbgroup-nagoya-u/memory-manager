@@ -8,7 +8,7 @@
 
 #include "util.hpp"
 
-namespace dbgroup::memory
+namespace dbgroup::memory::manager::component
 {
 template <class T>
 class LockFreeRingBuffer
@@ -141,4 +141,4 @@ class LockFreeRingBuffer
   }
 };
 
-}  // namespace dbgroup::memory
+}  // namespace dbgroup::memory::manager::component

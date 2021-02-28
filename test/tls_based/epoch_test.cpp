@@ -5,7 +5,7 @@
 
 #include <gtest/gtest.h>
 
-namespace dbgroup::memory::tls_based
+namespace dbgroup::memory::manager::component
 {
 class EpochFixture : public ::testing::Test
 {
@@ -58,4 +58,4 @@ TEST_F(EpochFixture, LeaveEpoch_AfterEntered_ProtectedEpochCorrectlyUpdated)
   EXPECT_EQ(std::numeric_limits<size_t>::max(), epoch.GetProtectedEpoch());
 }
 
-}  // namespace dbgroup::memory::tls_based
+}  // namespace dbgroup::memory::manager::component

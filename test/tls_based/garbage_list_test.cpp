@@ -10,7 +10,7 @@
 #include <thread>
 #include <vector>
 
-namespace dbgroup::memory::tls_based
+namespace dbgroup::memory::manager::component
 {
 class GarbageListFixture : public ::testing::Test
 {
@@ -144,4 +144,4 @@ TEST_F(GarbageListFixture, AddGarbage_AddManyGarbages_RingBufferReturnHead)
   }
 }
 
-}  // namespace dbgroup::memory::tls_based
+}  // namespace dbgroup::memory::manager::component

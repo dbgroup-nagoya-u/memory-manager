@@ -11,7 +11,7 @@
 #include "lock_free_ring_buffer.hpp"
 #include "util.hpp"
 
-namespace dbgroup::memory
+namespace dbgroup::memory::manager::component
 {
 template <class T>
 class MemoryKeeper
@@ -108,4 +108,4 @@ class MemoryKeeper
   }
 };
 
-}  // namespace dbgroup::memory
+}  // namespace dbgroup::memory::manager::component

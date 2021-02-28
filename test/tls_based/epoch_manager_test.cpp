@@ -11,7 +11,7 @@
 #include <thread>
 #include <vector>
 
-namespace dbgroup::memory::tls_based
+namespace dbgroup::memory::manager::component
 {
 using EpochPairs = std::pair<std::vector<Epoch>, std::vector<std::shared_ptr<uint64_t>>>;
 
@@ -186,4 +186,4 @@ TEST_F(EpochManagerFixture, UpdateRegisteredEpochs_MultiThreads_RegisteredEpochs
   TestUpdateRegisteredEpochs(kThreadNum);
 }
 
-}  // namespace dbgroup::memory::tls_based
+}  // namespace dbgroup::memory::manager::component

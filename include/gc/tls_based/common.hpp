@@ -5,6 +5,6 @@
 
 #include "gc/common/util.hpp"
 
-namespace dbgroup::memory::tls_based
+namespace dbgroup::memory::manager::component
 {
-}  // namespace dbgroup::memory::tls_based
+}  // namespace dbgroup::memory::manager::component

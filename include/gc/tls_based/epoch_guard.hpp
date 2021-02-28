@@ -5,7 +5,7 @@
 
 #include "epoch.hpp"
 
-namespace dbgroup::memory::tls_based
+namespace dbgroup::memory::manager::component
 {
 class EpochGuard
 {
@@ -31,4 +31,4 @@ class EpochGuard
   EpochGuard &operator=(EpochGuard &&) = delete;
 };
 
-}  // namespace dbgroup::memory::tls_based
+}  // namespace dbgroup::memory::manager::component

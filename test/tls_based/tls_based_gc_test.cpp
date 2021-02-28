@@ -10,7 +10,7 @@
 #include <thread>
 #include <vector>
 
-namespace dbgroup::memory
+namespace dbgroup::memory::manager::component
 {
 class TLSBasedMemoryManagerFixture : public ::testing::Test
 {
@@ -174,4 +174,4 @@ TEST_F(TLSBasedMemoryManagerFixture, CreateEpochGuard_MultiThreads_TLSCorrectlyI
   }
 }
 
-}  // namespace dbgroup::memory
+}  // namespace dbgroup::memory::manager::component

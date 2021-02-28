@@ -7,7 +7,7 @@
 #include <cstddef>
 #include <cstdint>
 
-namespace dbgroup::memory
+namespace dbgroup::memory::manager
 {
 constexpr std::memory_order mo_relax = std::memory_order_relaxed;
 constexpr size_t kCacheLineSize = 64;
@@ -28,4 +28,4 @@ HasSingleBit(const uint64_t target)
   }
 }
 
-}  // namespace dbgroup::memory
+}  // namespace dbgroup::memory::manager

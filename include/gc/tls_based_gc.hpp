@@ -15,12 +15,13 @@
 #include "tls_based/epoch_manager.hpp"
 #include "tls_based/garbage_list.hpp"
 
-namespace dbgroup::memory
+namespace dbgroup::memory::manager
 {
-using tls_based::Epoch;
-using tls_based::EpochGuard;
-using tls_based::EpochManager;
-using tls_based::GarbageList;
+using component::Epoch;
+using component::EpochGuard;
+using component::EpochManager;
+using component::GarbageList;
+using component::MemoryKeeper;
 
 template <class T>
 class TLSBasedMemoryManager
@@ -225,4 +226,4 @@ class TLSBasedMemoryManager
   }
 };
 
-}  // namespace dbgroup::memory
+}  // namespace dbgroup::memory::manager

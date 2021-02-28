@@ -14,10 +14,8 @@
 #include "common.hpp"
 #include "gc/common/memory_keeper.hpp"
 
-namespace dbgroup::memory::tls_based
+namespace dbgroup::memory::manager::component
 {
-using dbgroup::memory::MemoryKeeper;
-
 template <class T>
 class GarbageList
 {
@@ -158,4 +156,4 @@ class GarbageList
   }
 };
 
-}  // namespace dbgroup::memory::tls_based
+}  // namespace dbgroup::memory::manager::component
