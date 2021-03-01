@@ -107,6 +107,11 @@ class TLSBasedMemoryManager
       // delete freeable garbages
       DeleteGarbages(protected_epoch);
 
+      if (memory_keeper_ != nullptr) {
+        // check a remaining memory capacity, and reserve memory if needed
+        memory_keeper_->ReservePagesIfNeeded();
+      }
+
       // wait for garbages to be out of scope
       std::this_thread::sleep_until(sleep_time);
     }
@@ -120,10 +125,11 @@ class TLSBasedMemoryManager
   TLSBasedMemoryManager(  //
       const size_t garbage_list_size,
       const size_t gc_interval_micro_sec,
-      const size_t page_size = 0,
-      const size_t page_num = 0,
-      const size_t partition_num = 0,
-      const bool reserve_memory = false)
+      const bool reserve_memory = false,
+      const size_t page_size = sizeof(T),
+      const size_t page_num = 4096,
+      const size_t partition_num = 8,
+      const size_t page_alignment = 8)
       : epoch_manager_{},
         garbage_list_size_{garbage_list_size},
         garbages_{new GarbageNode{std::make_shared<GarbageList<T>>(), nullptr}},
@@ -132,7 +138,7 @@ class TLSBasedMemoryManager
         memory_keeper_{nullptr}
   {
     if (reserve_memory) {
-      memory_keeper_.reset(new MemoryKeeper{page_size, page_num, partition_num});
+      memory_keeper_.reset(new MemoryKeeper{page_size, page_num, page_alignment, partition_num});
     }
 
     StartGC();
