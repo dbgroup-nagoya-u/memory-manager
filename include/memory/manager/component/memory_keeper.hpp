@@ -81,7 +81,7 @@ class MemoryKeeper
 
     page_stacks_.reserve(partition_num_);
     for (size_t partition = 0; partition < partition_num_; ++partition) {
-      page_stacks_.emplace_back();
+      page_stacks_.emplace_back(std::make_unique<PageStack>());
     }
 
     ReservePages();
@@ -100,6 +100,16 @@ class MemoryKeeper
   MemoryKeeper& operator=(MemoryKeeper&&) = delete;
 
   /*################################################################################################
+   * Public getters/setters
+   *##############################################################################################*/
+
+  size_t
+  GetCurrentCapacity() const
+  {
+    return current_capacity_.load(mo_relax);
+  }
+
+  /*################################################################################################
    * Public utility functions
    *##############################################################################################*/
 
@@ -107,9 +117,9 @@ class MemoryKeeper
   GetPage()
   {
     thread_local auto partition =
-        (std::hash<std::thread::id>()(std::this_thread::get_id())) % page_num_;
+        (std::hash<std::thread::id>()(std::this_thread::get_id())) % partition_num_;
 
-    current_capacity_.fetch_add(1, mo_relax);
+    current_capacity_.fetch_sub(1, mo_relax);
     return page_stacks_[partition]->GetPage();
   }
 
@@ -131,15 +141,26 @@ class MemoryKeeper
     // return a page
     page->~T();
     page_stacks_[min_partition]->AddPage(page);
-    current_capacity_.fetch_sub(1, mo_relax);
+    current_capacity_.fetch_add(1, mo_relax);
   }
 
   void
   ReservePagesIfNeeded()
   {
+    // if entire capacity is small, reserve pages
     const auto current_capacity = current_capacity_.load(mo_relax);
     if (current_capacity < page_num_ * 0.7) {
       ReservePages();
+      return;
+    }
+
+    // if there is an empty stack, reserve pages
+    for (auto&& stack : page_stacks_) {
+      const auto stack_capacity = stack->Size();
+      if (stack_capacity == 0) {
+        ReservePages();
+        return;
+      }
     }
   }
 };

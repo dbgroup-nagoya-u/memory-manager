@@ -101,14 +101,15 @@ class PageStack
   GetPage()
   {
     auto page_node = pages_.load(mo_relax);
-    do {
+    while (true) {
       if (page_node == nullptr) {
         // wait other threads to free pages
         std::this_thread::sleep_for(std::chrono::microseconds(200));
         page_node = pages_.load(mo_relax);
-        continue;
+      } else if (pages_.compare_exchange_weak(page_node, page_node->next, mo_relax)) {
+        break;
       }
-    } while (!pages_.compare_exchange_weak(page_node, page_node->next, mo_relax));
+    }
     size_.fetch_sub(1, mo_relax);
 
     auto reserved_page = page_node->page_addr;
