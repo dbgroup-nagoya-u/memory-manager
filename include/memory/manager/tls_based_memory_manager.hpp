@@ -167,6 +167,24 @@ class TLSBasedMemoryManager
   TLSBasedMemoryManager& operator=(TLSBasedMemoryManager&&) = delete;
 
   /*################################################################################################
+   * Public getters/setters
+   *##############################################################################################*/
+
+  size_t
+  GetRegisteredGarbageSize() const
+  {
+    size_t size = 0;
+
+    auto current = garbages_.load(mo_relax);
+    while (current != nullptr) {
+      size += current->garbage_list->Size();
+      current = current->next;
+    }
+
+    return size;
+  }
+
+  /*################################################################################################
    * Public utility functions
    *##############################################################################################*/
 
@@ -200,6 +218,14 @@ class TLSBasedMemoryManager
     }
 
     garbage_list->AddGarbage(target_ptr);
+  }
+
+  void*
+  GetPage()
+  {
+    assert(memory_keeper_ != nullptr);
+
+    return memory_keeper_->GetPage();
   }
 
   /*################################################################################################

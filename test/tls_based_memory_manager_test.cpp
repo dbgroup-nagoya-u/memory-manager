@@ -12,11 +12,54 @@
 
 namespace dbgroup::memory::manager::component
 {
+using Target = size_t;
+
 class TLSBasedMemoryManagerFixture : public ::testing::Test
 {
  public:
   static constexpr size_t kGarbageListSize = 256;
   static constexpr size_t kGCInterval = 1E2;
+  static constexpr size_t kThreadNum = 8;
+  static constexpr size_t kLoopNum = 1E5;
+
+  void
+  AddGarbages(  //
+      std::promise<std::vector<std::weak_ptr<Target>>> p,
+      TLSBasedMemoryManager<std::shared_ptr<Target>> *gc)
+  {
+    std::vector<std::weak_ptr<Target>> target_weak_ptrs;
+    for (size_t loop = 0; loop < kLoopNum; ++loop) {
+      std::shared_ptr<Target> *target_shared;
+      {
+        const auto guard = gc->CreateEpochGuard();
+        target_shared = new std::shared_ptr<Target>(new Target{loop});
+        target_weak_ptrs.emplace_back(*target_shared);
+      }
+      gc->AddGarbage(target_shared);
+    }
+    p.set_value(std::move(target_weak_ptrs));
+  }
+
+  std::vector<std::weak_ptr<Target>>
+  TestGC(  //
+      TLSBasedMemoryManager<std::shared_ptr<Target>> *gc,
+      const size_t thread_num)
+  {
+    std::vector<std::future<std::vector<std::weak_ptr<Target>>>> futures;
+    for (size_t i = 0; i < thread_num; ++i) {
+      std::promise<std::vector<std::weak_ptr<Target>>> p;
+      futures.emplace_back(p.get_future());
+      std::thread{&TLSBasedMemoryManagerFixture::AddGarbages, this, std::move(p), gc}.detach();
+    }
+
+    std::vector<std::weak_ptr<Target>> target_weak_ptrs;
+    for (auto &&future : futures) {
+      auto weak_ptrs = future.get();
+      target_weak_ptrs.insert(target_weak_ptrs.end(), weak_ptrs.begin(), weak_ptrs.end());
+    }
+
+    return target_weak_ptrs;
+  }
 
  protected:
   void
@@ -45,28 +88,13 @@ TEST_F(TLSBasedMemoryManagerFixture, Construct_GCStarted_MemberVariablesCorrectl
 
 TEST_F(TLSBasedMemoryManagerFixture, Destruct_SingleThread_GarbagesCorrectlyFreed)
 {
-  constexpr size_t kLoopNum = 1E5;
-
   // keep garbage targets
   std::vector<std::weak_ptr<size_t>> target_weak_ptrs;
 
   // register garbages to GC
   {
     auto gc = TLSBasedMemoryManager<std::shared_ptr<size_t>>{kGarbageListSize, kGCInterval};
-
-    auto f = [&]() {
-      for (size_t loop = 0; loop < kLoopNum; ++loop) {
-        std::shared_ptr<size_t> *target_shared;
-        {
-          const auto guard = gc.CreateEpochGuard();
-          target_shared = new std::shared_ptr<size_t>(new size_t{loop});
-          target_weak_ptrs.emplace_back(*target_shared);
-        }
-        gc.AddGarbage(target_shared);
-      }
-    };
-
-    std::thread{f}.join();
+    target_weak_ptrs = TestGC(&gc, 1);
 
     // GC deletes all targets when it leaves this scope
   }
@@ -79,42 +107,13 @@ TEST_F(TLSBasedMemoryManagerFixture, Destruct_SingleThread_GarbagesCorrectlyFree
 
 TEST_F(TLSBasedMemoryManagerFixture, Destruct_MultiThreads_GarbagesCorrectlyFreed)
 {
-  constexpr size_t kLoopNum = 1E5;
-  constexpr size_t kThreadNum = 10;
-
   // keep garbage targets
   std::vector<std::weak_ptr<size_t>> target_weak_ptrs;
 
   // register garbages to GC
   {
     auto gc = TLSBasedMemoryManager<std::shared_ptr<size_t>>{kGarbageListSize, kGCInterval};
-
-    auto f = [&gc](std::promise<std::vector<std::weak_ptr<size_t>>> p) {
-      std::vector<std::weak_ptr<size_t>> weak_ptrs;
-
-      for (size_t loop = 0; loop < kLoopNum; ++loop) {
-        std::shared_ptr<size_t> *target_shared;
-        {
-          const auto guard = gc.CreateEpochGuard();
-          target_shared = new std::shared_ptr<size_t>(new size_t{loop});
-          weak_ptrs.emplace_back(*target_shared);
-        }
-        gc.AddGarbage(target_shared);
-      }
-
-      p.set_value(weak_ptrs);
-    };
-
-    std::vector<std::future<std::vector<std::weak_ptr<size_t>>>> futures;
-    for (size_t count = 0; count < kThreadNum; ++count) {
-      std::promise<std::vector<std::weak_ptr<size_t>>> p;
-      futures.emplace_back(p.get_future());
-      std::thread{f, std::move(p)}.detach();
-    }
-    for (auto &&future : futures) {
-      auto weak_ptrs = future.get();
-      target_weak_ptrs.insert(target_weak_ptrs.end(), weak_ptrs.begin(), weak_ptrs.end());
-    }
+    target_weak_ptrs = TestGC(&gc, kThreadNum);
 
     // GC deletes all targets when it leaves this scope
   }
@@ -125,48 +124,36 @@ TEST_F(TLSBasedMemoryManagerFixture, Destruct_MultiThreads_GarbagesCorrectlyFree
   }
 }
 
-TEST_F(TLSBasedMemoryManagerFixture, CreateEpochGuard_MultiThreads_TLSCorrectlyInitialized)
+TEST_F(TLSBasedMemoryManagerFixture, RunGC_SingleThread_GarbagesCorrectlyFreed)
 {
-  constexpr size_t kLoopNum = 1E4;
-  constexpr size_t kThreadNum = 10;
+  auto gc = TLSBasedMemoryManager<std::shared_ptr<size_t>>{kGarbageListSize, kGCInterval};
 
   // keep garbage targets
   std::vector<std::weak_ptr<size_t>> target_weak_ptrs;
 
   // register garbages to GC
-  {
-    auto gc = TLSBasedMemoryManager<std::shared_ptr<size_t>>{kGarbageListSize, kGCInterval};
+  target_weak_ptrs = TestGC(&gc, 1);
+  while (gc.GetRegisteredGarbageSize() > 0) {
+    // wait all garbages are freed
+  }
 
-    auto f = [&gc](std::promise<std::vector<std::weak_ptr<size_t>>> p) {
-      std::vector<std::weak_ptr<size_t>> weak_ptrs;
+  // check there is no referece to target pointers
+  for (auto &&target_weak : target_weak_ptrs) {
+    EXPECT_EQ(0, target_weak.use_count());
+  }
+}
 
-      for (size_t loop = 0; loop < kLoopNum; ++loop) {
-        std::shared_ptr<size_t> *target_shared;
-        {
-          const auto guard = gc.CreateEpochGuard();
-          target_shared = new std::shared_ptr<size_t>(new size_t{loop});
-          weak_ptrs.emplace_back(*target_shared);
-        }
-        gc.AddGarbage(target_shared);
-      }
+TEST_F(TLSBasedMemoryManagerFixture, RunGC_MultiThreads_GarbagesCorrectlyFreed)
+{
+  auto gc = TLSBasedMemoryManager<std::shared_ptr<size_t>>{kGarbageListSize, kGCInterval};
 
-      p.set_value(weak_ptrs);
-    };
+  // keep garbage targets
+  std::vector<std::weak_ptr<size_t>> target_weak_ptrs;
 
-    for (size_t loop = 0; loop < 10; ++loop) {
-      std::vector<std::future<std::vector<std::weak_ptr<size_t>>>> futures;
-      for (size_t count = 0; count < kThreadNum; ++count) {
-        std::promise<std::vector<std::weak_ptr<size_t>>> p;
-        futures.emplace_back(p.get_future());
-        std::thread{f, std::move(p)}.detach();
-      }
-      for (auto &&future : futures) {
-        auto weak_ptrs = future.get();
-        target_weak_ptrs.insert(target_weak_ptrs.end(), weak_ptrs.begin(), weak_ptrs.end());
-      }
-    }
-
-    // GC deletes all targets when it leaves this scope
+  // register garbages to GC
+  target_weak_ptrs = TestGC(&gc, kThreadNum);
+  while (gc.GetRegisteredGarbageSize() > 0) {
+    // wait all garbages are freed
   }
 
   // check there is no referece to target pointers
