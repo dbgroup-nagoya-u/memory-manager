@@ -281,7 +281,7 @@ TEST_F(TLSBasedMemoryManagerFixture, GetPage_WithMemoryKeeper_ReuseReservedPages
     std::this_thread::sleep_for(std::chrono::microseconds(kGCInterval));
   }
 
-  EXPECT_EQ(kPageNum, memory_manager.GetAvailablePageSize());
+  EXPECT_EQ(0, memory_manager.GetAvailablePageSize() % kPageNum);
 }
 
 }  // namespace dbgroup::memory::manager
