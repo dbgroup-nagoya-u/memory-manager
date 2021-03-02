@@ -41,7 +41,7 @@ class MemoryKeeper
   ReservePages()
   {
     // reserve target pages
-    auto page_addr = malloc(page_size_ * page_num_);
+    auto page_addr = aligned_alloc(page_alignment_, page_size_ * page_num_);
     reserved_pages_.emplace_back(page_addr);
 
     // divide pages into partitions
