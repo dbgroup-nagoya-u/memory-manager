@@ -20,7 +20,11 @@ class TLSBasedMemoryManagerFixture : public ::testing::Test
  public:
   static constexpr size_t kGarbageListSize = 256;
   static constexpr size_t kGCInterval = 500;
+#ifdef MEMORY_MANAGER_TEST_THREAD_NUM
+  static constexpr size_t kThreadNum = MEMORY_MANAGER_TEST_THREAD_NUM;
+#else
   static constexpr size_t kThreadNum = 8;
+#endif
   static constexpr size_t kGarbageNumLarge = 1E5;
   static constexpr size_t kGarbageNumSmall = 10;
 
@@ -281,7 +285,7 @@ TEST_F(TLSBasedMemoryManagerFixture, GetPage_WithMemoryKeeper_ReuseReservedPages
     std::this_thread::sleep_for(std::chrono::microseconds(kGCInterval));
   }
 
-  // EXPECT_EQ(0, memory_manager.GetAvailablePageSize() % kPageNum);
+  EXPECT_EQ(0, memory_manager.GetAvailablePageSize() % kPageNum);
 }
 
 }  // namespace dbgroup::memory::manager
