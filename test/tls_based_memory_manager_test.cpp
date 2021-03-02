@@ -45,6 +45,26 @@ class TLSBasedMemoryManagerFixture : public ::testing::Test
     p.set_value(std::move(target_weak_ptrs));
   }
 
+  void
+  GetAndReturnPage(  //
+      TLSBasedMemoryManager<Target> *memory_manager,
+      const size_t page_num)
+  {
+    for (size_t i = 0; i < page_num; ++i) {
+      auto page_addr = memory_manager->GetPage();
+      auto page = new (page_addr) Target{0};
+      memory_manager->AddGarbage(page);
+    }
+  }
+
+  void
+  KeepEpochGuard(  //
+      TLSBasedMemoryManager<std::shared_ptr<Target>> *gc)
+  {
+    const auto guard = gc->CreateEpochGuard();
+    std::unique_lock<std::mutex>{mtx};
+  }
+
   std::vector<std::weak_ptr<Target>>
   TestGC(  //
       TLSBasedMemoryManager<std::shared_ptr<Target>> *gc,
@@ -69,11 +89,19 @@ class TLSBasedMemoryManagerFixture : public ::testing::Test
   }
 
   void
-  KeepEpochGuard(  //
-      TLSBasedMemoryManager<std::shared_ptr<Target>> *gc)
+  TestMemoryManager(  //
+      TLSBasedMemoryManager<Target> *memory_manager,
+      const size_t thread_num,
+      const size_t page_num)
   {
-    const auto guard = gc->CreateEpochGuard();
-    std::unique_lock<std::mutex>{mtx};
+    std::vector<std::thread> threads;
+    for (size_t i = 0; i < thread_num; ++i) {
+      threads.emplace_back(std::thread{&TLSBasedMemoryManagerFixture::GetAndReturnPage, this,
+                                       memory_manager, page_num});
+    }
+    for (auto &&thread : threads) {
+      thread.join();
+    }
   }
 
  protected:
@@ -233,6 +261,27 @@ TEST_F(TLSBasedMemoryManagerFixture, CreateEpochGuard_MultiThreads_PreventGarbag
   }
 
   guarder.join();
+}
+
+TEST_F(TLSBasedMemoryManagerFixture, GetPage_WithMemoryKeeper_ReuseReservedPages)
+{
+  constexpr size_t kPageNum = 4096;
+  constexpr size_t kLoopNum = 100;
+
+  auto memory_manager = TLSBasedMemoryManager<Target>{kGarbageListSize, kGCInterval, true, kPageNum,
+                                                      sizeof(Target),   kThreadNum,  8};
+
+  for (size_t loop = 0; loop < kLoopNum; ++loop) {
+    TestMemoryManager(&memory_manager, kThreadNum, kGarbageListSize / 2);
+    std::this_thread::sleep_for(std::chrono::microseconds(kGCInterval));
+  }
+
+  // wait GC
+  while (memory_manager.GetRegisteredGarbageSize() > 0) {
+    std::this_thread::sleep_for(std::chrono::microseconds(kGCInterval));
+  }
+
+  EXPECT_EQ(kPageNum, memory_manager.GetAvailablePageSize());
 }
 
 }  // namespace dbgroup::memory::manager

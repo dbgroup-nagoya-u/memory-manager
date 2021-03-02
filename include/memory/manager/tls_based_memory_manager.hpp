@@ -184,6 +184,12 @@ class TLSBasedMemoryManager
     return size;
   }
 
+  size_t
+  GetAvailablePageSize() const
+  {
+    return memory_keeper_->GetCurrentCapacity();
+  }
+
   /*################################################################################################
    * Public utility functions
    *##############################################################################################*/
