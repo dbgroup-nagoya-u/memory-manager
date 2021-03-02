@@ -34,7 +34,7 @@ class GarbageList
 
   const size_t gc_interval_micro_;
 
-  MemoryKeeper<T>* memory_keeper_;
+  MemoryKeeper* memory_keeper_;
 
  public:
   /*################################################################################################
@@ -42,7 +42,8 @@ class GarbageList
    *##############################################################################################*/
 
   constexpr GarbageList()
-      : begin_index_{0},
+      : buffer_size_{0},
+        begin_index_{0},
         end_index_{0},
         current_epoch_{0},
         gc_interval_micro_{std::numeric_limits<size_t>::max()},
@@ -54,7 +55,7 @@ class GarbageList
       const size_t buffer_size,
       const size_t current_epoch,
       const size_t gc_interval_micro,
-      MemoryKeeper<T>* memory_keeper = nullptr)
+      MemoryKeeper* memory_keeper = nullptr)
       : buffer_size_{buffer_size},
         begin_index_{0},
         end_index_{0},

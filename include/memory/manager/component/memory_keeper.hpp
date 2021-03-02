@@ -8,11 +8,10 @@
 #include <memory>
 #include <vector>
 
-#include "lock_free_ring_buffer.hpp"
+#include "page_stack.hpp"
 
 namespace dbgroup::memory::manager::component
 {
-template <class T>
 class MemoryKeeper
 {
  private:
@@ -20,15 +19,45 @@ class MemoryKeeper
    * Internal member variables
    *##############################################################################################*/
 
-  size_t page_num_;
+  const size_t page_num_;
 
-  size_t page_size_;
+  const size_t page_size_;
 
-  size_t partition_num_;
+  const size_t page_alignment_;
 
-  T* pages_;
+  const size_t partition_num_;
 
-  std::vector<std::unique_ptr<LockFreeRingBuffer<size_t>>> partitioned_pages_;
+  std::atomic_size_t current_capacity_;
+
+  std::vector<void*> reserved_pages_;
+
+  std::vector<std::unique_ptr<PageStack>> page_stacks_;
+
+  /*################################################################################################
+   * Internal utility functions
+   *##############################################################################################*/
+
+  void
+  ReservePages()
+  {
+    // reserve target pages
+    auto page_addr = malloc(page_size_ * page_num_);
+    reserved_pages_.emplace_back(page_addr);
+
+    // divide pages into partitions
+    const auto pages_per_partition = page_num_ / partition_num_;
+    for (size_t partition = 0; partition < partition_num_; ++partition) {
+      std::vector<void*> addresses;
+      addresses.reserve(pages_per_partition);
+      for (size_t i = 0; i < pages_per_partition; ++i) {
+        addresses.emplace_back(page_addr);
+        page_addr = static_cast<std::byte*>(page_addr) + page_size_;
+      }
+      page_stacks_[partition]->AddPages(addresses);
+    }
+
+    current_capacity_.fetch_add(page_num_, mo_relax);
+  }
 
  public:
   /*################################################################################################
@@ -37,32 +66,33 @@ class MemoryKeeper
 
   MemoryKeeper(  //
       const size_t page_num,
+      const size_t page_size,
+      const size_t page_alignment,
       const size_t partition_num)
-      : page_num_{page_num}, partition_num_{partition_num}
+      : page_num_{page_num},
+        page_size_{page_size},
+        page_alignment_{page_alignment},
+        partition_num_{partition_num},
+        current_capacity_{0}
   {
     assert(page_num_ > 0);
     assert(partition_num_ > 0);
     assert(page_num_ % partition_num_ == 0);
 
-    // reserve target pages
-    pages_ = new T[page_num_];
-    page_size_ = (pages_ + 1) - pages_;
-
-    // divide pages into partitions
-    partitioned_pages_.reserve(partition_num_);
-    const auto pages_per_partition = page_num_ / partition_num_;
-    size_t count = 0;
+    page_stacks_.reserve(partition_num_);
     for (size_t partition = 0; partition < partition_num_; ++partition) {
-      std::vector<size_t> partitioned;
-      partitioned.reserve(pages_per_partition);
-      for (size_t i = 0; i < pages_per_partition; ++i) {
-        partitioned.emplace_back(count++);
-      }
-      partitioned_pages_.emplace_back(new LockFreeRingBuffer<size_t>(partitioned));
+      page_stacks_.emplace_back(std::make_unique<PageStack>());
     }
+
+    ReservePages();
   }
 
-  ~MemoryKeeper() { delete pages_; }
+  ~MemoryKeeper()
+  {
+    for (auto&& reserved_page : reserved_pages_) {
+      free(reserved_page);
+    }
+  }
 
   MemoryKeeper(const MemoryKeeper&) = delete;
   MemoryKeeper& operator=(const MemoryKeeper&) = delete;
@@ -73,28 +103,35 @@ class MemoryKeeper
    * Public getters/setters
    *##############################################################################################*/
 
+  size_t
+  GetCurrentCapacity() const
+  {
+    return current_capacity_.load(mo_relax);
+  }
+
   /*################################################################################################
    * Public utility functions
    *##############################################################################################*/
 
-  T*
-  GetPage(const size_t partition)
+  void*
+  GetPage()
   {
-    const auto index = partitioned_pages_[partition]->Pop();
-    return &pages_[index];
+    thread_local auto partition =
+        (std::hash<std::thread::id>()(std::this_thread::get_id())) % partition_num_;
+
+    current_capacity_.fetch_sub(1, mo_relax);
+    return page_stacks_[partition]->GetPage();
   }
 
+  template <class T>
   void
   ReturnPage(T* page)
   {
-    // eagerly initialize a page
-    *page = T{};
-
     // check the capacity of each partition
     size_t min_partition;
-    size_t min_page_num = std::numeric_limits<size_t>::max();
+    auto min_page_num = std::numeric_limits<size_t>::max();
     for (size_t partition = 0; partition < partition_num_; ++partition) {
-      const auto remaining_page_num = partitioned_pages_[partition]->Size();
+      const auto remaining_page_num = page_stacks_[partition]->Size();
       if (remaining_page_num < min_page_num) {
         min_page_num = remaining_page_num;
         min_partition = partition;
@@ -102,8 +139,29 @@ class MemoryKeeper
     }
 
     // return a page
-    const size_t index = (pages_ - page) / page_size_;
-    partitioned_pages_[min_partition]->Push(index);
+    page->~T();
+    page_stacks_[min_partition]->AddPage(page);
+    current_capacity_.fetch_add(1, mo_relax);
+  }
+
+  void
+  ReservePagesIfNeeded()
+  {
+    // if entire capacity is small, reserve pages
+    const auto current_capacity = current_capacity_.load(mo_relax);
+    if (current_capacity < page_num_ * 0.7) {
+      ReservePages();
+      return;
+    }
+
+    // if there is an empty stack, reserve pages
+    for (auto&& stack : page_stacks_) {
+      const auto stack_capacity = stack->Size();
+      if (stack_capacity == 0) {
+        ReservePages();
+        return;
+      }
+    }
   }
 };
 

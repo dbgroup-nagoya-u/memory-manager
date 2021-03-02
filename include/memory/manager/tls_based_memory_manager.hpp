@@ -54,7 +54,7 @@ class TLSBasedMemoryManager
 
   std::atomic_bool gc_is_running_;
 
-  std::unique_ptr<MemoryKeeper<T>> memory_keeper_;
+  std::unique_ptr<MemoryKeeper> memory_keeper_;
 
   /*################################################################################################
    * Internal utility functions
@@ -65,24 +65,23 @@ class TLSBasedMemoryManager
   {
     // check the head of a garbage list
     auto previous = garbages_.load(mo_relax);
-    if (previous->garbage_list.use_count() > 1) {
-      previous->garbage_list->Clear(protected_epoch);
-    }
+    previous->garbage_list->Clear(protected_epoch);
     auto current = previous->next;
 
     // check the other nodes of a garbage list
     while (current != nullptr) {
-      if (current->garbage_list.use_count() > 1) {
-        // delete garbages and check the next one
-        current->garbage_list->Clear(protected_epoch);
-        previous = current;
-        current = current->next;
-      } else {
+      current->garbage_list->Clear(protected_epoch);
+
+      if (current->garbage_list.use_count() == 1 && current->garbage_list->Size() == 0) {
         // delete a garbage list
         previous->next = current->next;
         current->next = nullptr;
         delete current;
         current = previous->next;
+      } else {
+        // check a next garbage list
+        previous = current;
+        current = current->next;
       }
     }
   }
@@ -108,6 +107,11 @@ class TLSBasedMemoryManager
       // delete freeable garbages
       DeleteGarbages(protected_epoch);
 
+      if (memory_keeper_ != nullptr) {
+        // check a remaining memory capacity, and reserve memory if needed
+        memory_keeper_->ReservePagesIfNeeded();
+      }
+
       // wait for garbages to be out of scope
       std::this_thread::sleep_until(sleep_time);
     }
@@ -122,17 +126,19 @@ class TLSBasedMemoryManager
       const size_t garbage_list_size,
       const size_t gc_interval_micro_sec,
       const bool reserve_memory = false,
+      const size_t page_size = sizeof(T),
       const size_t page_num = 4096,
-      const size_t partition_num = 8)
+      const size_t partition_num = 8,
+      const size_t page_alignment = 8)
       : epoch_manager_{},
         garbage_list_size_{garbage_list_size},
-        garbages_{new GarbageNode{}},
+        garbages_{new GarbageNode{std::make_shared<GarbageList<T>>(), nullptr}},
         gc_interval_micro_sec_{gc_interval_micro_sec},
         gc_is_running_{false},
         memory_keeper_{nullptr}
   {
     if (reserve_memory) {
-      memory_keeper_.reset(new MemoryKeeper<T>{page_num, partition_num});
+      memory_keeper_.reset(new MemoryKeeper{page_size, page_num, page_alignment, partition_num});
     }
 
     StartGC();
@@ -159,6 +165,30 @@ class TLSBasedMemoryManager
   TLSBasedMemoryManager& operator=(const TLSBasedMemoryManager&) = delete;
   TLSBasedMemoryManager(TLSBasedMemoryManager&&) = delete;
   TLSBasedMemoryManager& operator=(TLSBasedMemoryManager&&) = delete;
+
+  /*################################################################################################
+   * Public getters/setters
+   *##############################################################################################*/
+
+  size_t
+  GetRegisteredGarbageSize() const
+  {
+    size_t size = 0;
+
+    auto current = garbages_.load(mo_relax);
+    while (current != nullptr) {
+      size += current->garbage_list->Size();
+      current = current->next;
+    }
+
+    return size;
+  }
+
+  size_t
+  GetAvailablePageSize() const
+  {
+    return memory_keeper_->GetCurrentCapacity();
+  }
 
   /*################################################################################################
    * Public utility functions
@@ -194,6 +224,14 @@ class TLSBasedMemoryManager
     }
 
     garbage_list->AddGarbage(target_ptr);
+  }
+
+  void*
+  GetPage()
+  {
+    assert(memory_keeper_ != nullptr);
+
+    return memory_keeper_->GetPage();
   }
 
   /*################################################################################################
