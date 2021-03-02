@@ -20,7 +20,11 @@ class TLSBasedMemoryManagerFixture : public ::testing::Test
  public:
   static constexpr size_t kGarbageListSize = 256;
   static constexpr size_t kGCInterval = 500;
+#ifdef MEMORY_MANAGER_TEST_THREAD_NUM
+  static constexpr size_t kThreadNum = MEMORY_MANAGER_TEST_THREAD_NUM;
+#else
   static constexpr size_t kThreadNum = 8;
+#endif
   static constexpr size_t kGarbageNumLarge = 1E5;
   static constexpr size_t kGarbageNumSmall = 10;
 
@@ -59,10 +63,12 @@ class TLSBasedMemoryManagerFixture : public ::testing::Test
 
   void
   KeepEpochGuard(  //
+      std::promise<Target> p,
       TLSBasedMemoryManager<std::shared_ptr<Target>> *gc)
   {
     const auto guard = gc->CreateEpochGuard();
-    std::unique_lock<std::mutex>{mtx};
+    p.set_value(0);  // set promise to notice
+    const auto lock = std::unique_lock<std::mutex>{mtx};
   }
 
   std::vector<std::weak_ptr<Target>>
@@ -217,7 +223,10 @@ TEST_F(TLSBasedMemoryManagerFixture, CreateEpochGuard_SingleThread_PreventGarbag
 
   {
     const auto thread_lock = std::unique_lock<std::mutex>{mtx};
-    guarder = std::thread{&TLSBasedMemoryManagerFixture::KeepEpochGuard, this, &gc};
+    std::promise<Target> p;
+    auto f = p.get_future();
+    guarder = std::thread{&TLSBasedMemoryManagerFixture::KeepEpochGuard, this, std::move(p), &gc};
+    f.get();
 
     // register garbages to GC
     target_weak_ptrs = TestGC(&gc, 1, kGarbageNumSmall);
@@ -246,7 +255,10 @@ TEST_F(TLSBasedMemoryManagerFixture, CreateEpochGuard_MultiThreads_PreventGarbag
 
   {
     const auto thread_lock = std::unique_lock<std::mutex>{mtx};
-    guarder = std::thread{&TLSBasedMemoryManagerFixture::KeepEpochGuard, this, &gc};
+    std::promise<Target> p;
+    auto f = p.get_future();
+    guarder = std::thread{&TLSBasedMemoryManagerFixture::KeepEpochGuard, this, std::move(p), &gc};
+    f.get();
 
     // register garbages to GC
     target_weak_ptrs = TestGC(&gc, kThreadNum, kGarbageNumSmall);
@@ -281,7 +293,7 @@ TEST_F(TLSBasedMemoryManagerFixture, GetPage_WithMemoryKeeper_ReuseReservedPages
     std::this_thread::sleep_for(std::chrono::microseconds(kGCInterval));
   }
 
-  EXPECT_EQ(kPageNum, memory_manager.GetAvailablePageSize());
+  EXPECT_EQ(0, memory_manager.GetAvailablePageSize() % kPageNum);
 }
 
 }  // namespace dbgroup::memory::manager
