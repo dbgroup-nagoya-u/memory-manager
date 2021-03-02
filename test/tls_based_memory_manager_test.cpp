@@ -236,6 +236,7 @@ TEST_F(TLSBasedMemoryManagerFixture, CreateEpochGuard_SingleThread_PreventGarbag
   }
 
   guarder.join();
+  std::this_thread::sleep_for(std::chrono::microseconds(kGCInterval * 2));
 }
 
 TEST_F(TLSBasedMemoryManagerFixture, CreateEpochGuard_MultiThreads_PreventGarbagesFromDeleeting)
@@ -260,11 +261,12 @@ TEST_F(TLSBasedMemoryManagerFixture, CreateEpochGuard_MultiThreads_PreventGarbag
 
     // check target pointers remain
     for (auto &&target_weak : target_weak_ptrs) {
-      // EXPECT_EQ(1, target_weak.use_count());
+      EXPECT_EQ(1, target_weak.use_count());
     }
   }
 
   guarder.join();
+  std::this_thread::sleep_for(std::chrono::microseconds(kGCInterval * 2));
 }
 
 TEST_F(TLSBasedMemoryManagerFixture, GetPage_WithMemoryKeeper_ReuseReservedPages)
