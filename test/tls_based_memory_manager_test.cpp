@@ -66,7 +66,7 @@ class TLSBasedMemoryManagerFixture : public ::testing::Test
       TLSBasedMemoryManager<std::shared_ptr<Target>> *gc)
   {
     const auto guard = gc->CreateEpochGuard();
-    std::unique_lock<std::mutex>{mtx};
+    const auto lock = std::unique_lock<std::mutex>{mtx};
   }
 
   std::vector<std::weak_ptr<Target>>
