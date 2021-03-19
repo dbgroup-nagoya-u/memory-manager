@@ -32,7 +32,8 @@ class TLSBasedMemoryManager
    *##############################################################################################*/
 
   struct GarbageNode {
-    std::shared_ptr<GarbageList<T>> garbage_list;
+    std::shared_ptr<GarbageList<T>> garbage_list = std::make_shared<GarbageList<T>>();
+    std::shared_ptr<std::atomic_bool> reference = std::make_shared<std::atomic_bool>(false);
     GarbageNode* next = nullptr;
 
     ~GarbageNode() { delete next; }
@@ -132,7 +133,7 @@ class TLSBasedMemoryManager
       const size_t page_alignment = 8)
       : epoch_manager_{},
         garbage_list_size_{garbage_list_size},
-        garbages_{new GarbageNode{std::make_shared<GarbageList<T>>(), nullptr}},
+        garbages_{new GarbageNode{}},
         gc_interval_micro_sec_{gc_interval_micro_sec},
         gc_is_running_{false},
         memory_keeper_{nullptr}
@@ -211,13 +212,13 @@ class TLSBasedMemoryManager
   void
   AddGarbage(const T* target_ptr)
   {
+    thread_local auto garbage_keeper = std::make_shared<std::atomic_bool>(false);
     thread_local std::shared_ptr<GarbageList<T>> garbage_list = nullptr;
 
-    if (garbage_list == nullptr) {
-      garbage_list =
-          std::make_shared<GarbageList<T>>(garbage_list_size_, epoch_manager_.GetCurrentEpoch(),
-                                           gc_interval_micro_sec_, memory_keeper_.get());
-      auto garbage_node = new GarbageNode{garbage_list, garbages_.load(mo_relax)};
+    if (!*garbage_keeper) {
+      garbage_list.reset(new GarbageList<T>{garbage_list_size_, epoch_manager_.GetCurrentEpoch(),
+                                            gc_interval_micro_sec_, memory_keeper_.get()});
+      auto garbage_node = new GarbageNode{garbage_list, garbage_keeper, garbages_.load(mo_relax)};
       while (!garbages_.compare_exchange_weak(garbage_node->next, garbage_node, mo_relax)) {
         // continue until inserting succeeds
       }
