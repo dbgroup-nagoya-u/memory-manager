@@ -197,11 +197,11 @@ class TLSBasedMemoryManager
   EpochGuard
   CreateEpochGuard()
   {
-    thread_local std::shared_ptr<uint64_t> epoch_keeper{nullptr};
+    thread_local auto epoch_keeper = std::make_shared<std::atomic_bool>(false);
     thread_local Epoch epoch{epoch_manager_.GetCurrentEpoch()};
 
-    if (epoch_keeper == nullptr) {
-      epoch_keeper = std::make_shared<uint64_t>(0);
+    if (!*epoch_keeper) {
+      epoch_keeper->store(true);
       epoch_manager_.RegisterEpoch(&epoch, epoch_keeper);
     }
 
