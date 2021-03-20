@@ -153,6 +153,34 @@ TEST_F(TLSBasedMemoryManagerFixture, Destruct_SingleThread_GarbagesCorrectlyFree
   }
 }
 
+TEST_F(TLSBasedMemoryManagerFixture, Destruct_RecreatedGC_GarbagesCorrectlyFreed)
+{
+  for (size_t count = 0; count < 2; ++count) {
+    // keep garbage targets
+    std::vector<std::weak_ptr<Target>> target_weak_ptrs;
+
+    // register garbages to GC
+    {
+      auto gc = TLSBasedMemoryManager<std::shared_ptr<Target>>{kGCInterval};
+      for (size_t loop = 0; loop < kGarbageNumLarge; ++loop) {
+        std::shared_ptr<Target> *target_shared;
+        {
+          const auto guard = gc.CreateEpochGuard();
+          target_shared = new std::shared_ptr<Target>(new Target{loop});
+          target_weak_ptrs.emplace_back(*target_shared);
+        }
+        gc.AddGarbage(target_shared);
+      }
+      // GC deletes all targets when it leaves this scope
+    }
+
+    // check there is no referece to target pointers
+    for (auto &&target_weak : target_weak_ptrs) {
+      EXPECT_EQ(0, target_weak.use_count());
+    }
+  }
+}
+
 TEST_F(TLSBasedMemoryManagerFixture, Destruct_MultiThreads_GarbagesCorrectlyFreed)
 {
   // keep garbage targets
