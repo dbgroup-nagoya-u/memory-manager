@@ -13,13 +13,12 @@
 
 namespace dbgroup::memory::manager
 {
-using Target = size_t;
-
 class TLSBasedMemoryManagerFixture : public ::testing::Test
 {
  public:
-  static constexpr size_t kGarbageListSize = 256;
-  static constexpr size_t kGCInterval = 500;
+  using Target = size_t;
+
+  static constexpr size_t kGCInterval = 1000;
 #ifdef MEMORY_MANAGER_TEST_THREAD_NUM
   static constexpr size_t kThreadNum = MEMORY_MANAGER_TEST_THREAD_NUM;
 #else
@@ -128,7 +127,7 @@ class TLSBasedMemoryManagerFixture : public ::testing::Test
 
 TEST_F(TLSBasedMemoryManagerFixture, Construct_GCStarted_MemberVariablesCorrectlyInitialized)
 {
-  auto gc = TLSBasedMemoryManager<size_t>{kGarbageListSize, kGCInterval};
+  auto gc = TLSBasedMemoryManager<Target>{kGCInterval};
 
   auto gc_is_running = gc.StopGC();
 
@@ -138,11 +137,11 @@ TEST_F(TLSBasedMemoryManagerFixture, Construct_GCStarted_MemberVariablesCorrectl
 TEST_F(TLSBasedMemoryManagerFixture, Destruct_SingleThread_GarbagesCorrectlyFreed)
 {
   // keep garbage targets
-  std::vector<std::weak_ptr<size_t>> target_weak_ptrs;
+  std::vector<std::weak_ptr<Target>> target_weak_ptrs;
 
   // register garbages to GC
   {
-    auto gc = TLSBasedMemoryManager<std::shared_ptr<size_t>>{kGarbageListSize, kGCInterval};
+    auto gc = TLSBasedMemoryManager<std::shared_ptr<Target>>{kGCInterval};
     target_weak_ptrs = TestGC(&gc, 1, kGarbageNumLarge);
 
     // GC deletes all targets when it leaves this scope
@@ -157,11 +156,11 @@ TEST_F(TLSBasedMemoryManagerFixture, Destruct_SingleThread_GarbagesCorrectlyFree
 TEST_F(TLSBasedMemoryManagerFixture, Destruct_MultiThreads_GarbagesCorrectlyFreed)
 {
   // keep garbage targets
-  std::vector<std::weak_ptr<size_t>> target_weak_ptrs;
+  std::vector<std::weak_ptr<Target>> target_weak_ptrs;
 
   // register garbages to GC
   {
-    auto gc = TLSBasedMemoryManager<std::shared_ptr<size_t>>{kGarbageListSize, kGCInterval};
+    auto gc = TLSBasedMemoryManager<std::shared_ptr<Target>>{kGCInterval};
     target_weak_ptrs = TestGC(&gc, kThreadNum, kGarbageNumLarge);
 
     // GC deletes all targets when it leaves this scope
@@ -175,10 +174,10 @@ TEST_F(TLSBasedMemoryManagerFixture, Destruct_MultiThreads_GarbagesCorrectlyFree
 
 TEST_F(TLSBasedMemoryManagerFixture, RunGC_SingleThread_GarbagesCorrectlyFreed)
 {
-  auto gc = TLSBasedMemoryManager<std::shared_ptr<size_t>>{kGarbageListSize, kGCInterval};
+  auto gc = TLSBasedMemoryManager<std::shared_ptr<Target>>{kGCInterval};
 
   // keep garbage targets
-  std::vector<std::weak_ptr<size_t>> target_weak_ptrs;
+  std::vector<std::weak_ptr<Target>> target_weak_ptrs;
 
   // register garbages to GC
   target_weak_ptrs = TestGC(&gc, 1, kGarbageNumLarge);
@@ -194,10 +193,10 @@ TEST_F(TLSBasedMemoryManagerFixture, RunGC_SingleThread_GarbagesCorrectlyFreed)
 
 TEST_F(TLSBasedMemoryManagerFixture, RunGC_MultiThreads_GarbagesCorrectlyFreed)
 {
-  auto gc = TLSBasedMemoryManager<std::shared_ptr<size_t>>{kGarbageListSize, kGCInterval};
+  auto gc = TLSBasedMemoryManager<std::shared_ptr<Target>>{kGCInterval};
 
   // keep garbage targets
-  std::vector<std::weak_ptr<size_t>> target_weak_ptrs;
+  std::vector<std::weak_ptr<Target>> target_weak_ptrs;
 
   // register garbages to GC
   target_weak_ptrs = TestGC(&gc, kThreadNum, kGarbageNumLarge);
@@ -213,10 +212,10 @@ TEST_F(TLSBasedMemoryManagerFixture, RunGC_MultiThreads_GarbagesCorrectlyFreed)
 
 TEST_F(TLSBasedMemoryManagerFixture, CreateEpochGuard_SingleThread_PreventGarbagesFromDeleeting)
 {
-  auto gc = TLSBasedMemoryManager<std::shared_ptr<size_t>>{kGarbageListSize, kGCInterval};
+  auto gc = TLSBasedMemoryManager<std::shared_ptr<Target>>{kGCInterval};
 
   // keep garbage targets
-  std::vector<std::weak_ptr<size_t>> target_weak_ptrs;
+  std::vector<std::weak_ptr<Target>> target_weak_ptrs;
 
   // create an epoch guard on anther thread
   std::thread guarder;
@@ -245,10 +244,10 @@ TEST_F(TLSBasedMemoryManagerFixture, CreateEpochGuard_SingleThread_PreventGarbag
 
 TEST_F(TLSBasedMemoryManagerFixture, CreateEpochGuard_MultiThreads_PreventGarbagesFromDeleeting)
 {
-  auto gc = TLSBasedMemoryManager<std::shared_ptr<size_t>>{kGarbageListSize, kGCInterval};
+  auto gc = TLSBasedMemoryManager<std::shared_ptr<Target>>{kGCInterval};
 
   // keep garbage targets
-  std::vector<std::weak_ptr<size_t>> target_weak_ptrs;
+  std::vector<std::weak_ptr<Target>> target_weak_ptrs;
 
   // create an epoch guard on anther thread
   std::thread guarder;
@@ -277,15 +276,15 @@ TEST_F(TLSBasedMemoryManagerFixture, CreateEpochGuard_MultiThreads_PreventGarbag
 
 TEST_F(TLSBasedMemoryManagerFixture, GetPage_WithMemoryKeeper_ReuseReservedPages)
 {
-  constexpr size_t kPageNum = 4096;
+  constexpr size_t kPageNum = 1024 * kThreadNum;
   constexpr size_t kLoopNum = 100;
 
-  auto memory_manager = TLSBasedMemoryManager<Target>{kGarbageListSize, kGCInterval, true, kPageNum,
-                                                      sizeof(Target),   kThreadNum,  8};
+  auto memory_manager =
+      TLSBasedMemoryManager<Target>{kGCInterval, true, kPageNum, sizeof(Target), kThreadNum, 8};
 
   for (size_t loop = 0; loop < kLoopNum; ++loop) {
-    TestMemoryManager(&memory_manager, kThreadNum, kGarbageListSize / 2);
-    std::this_thread::sleep_for(std::chrono::microseconds(kGCInterval));
+    TestMemoryManager(&memory_manager, kThreadNum, 100);
+    // std::this_thread::sleep_for(std::chrono::microseconds(kGCInterval));
   }
 
   // wait GC

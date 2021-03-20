@@ -54,7 +54,7 @@ TEST_F(GarbageListFixture, Destruct_AddLessGarbages_AddedGarbagesCorrectlyFreed)
     auto garbage_list = GarbageList_t{};
     for (size_t count = 0; count < kGarbageNum; ++count) {
       auto garbage = new std::shared_ptr<Target>{new Target{0}};
-      GarbageList_t::AddGarbage(&garbage_list, 0, garbage);
+      GarbageList_t::AddGarbage(&garbage_list, garbage);
       garbage_references.emplace_back(*garbage);
     }
 
@@ -77,7 +77,7 @@ TEST_F(GarbageListFixture, Destruct_AddLotOfGarbages_AddedGarbagesCorrectlyFreed
     GarbageList_t* current_list = &garbage_list;
     for (size_t count = 0; count < kGarbageNum; ++count) {
       auto garbage = new std::shared_ptr<Target>{new Target{0}};
-      current_list = GarbageList_t::AddGarbage(current_list, 0, garbage);
+      current_list = GarbageList_t::AddGarbage(current_list, garbage);
       garbage_references.emplace_back(*garbage);
     }
 
@@ -97,7 +97,7 @@ TEST_F(GarbageListFixture, AddGarbage_LessGarbages_ListSizeCorrectlyUpdated)
   auto garbage_list = GarbageList<Target>{};
   for (size_t count = 0; count < kGarbageNum; ++count) {
     auto garbage = new Target{0};
-    GarbageList<Target>::AddGarbage(&garbage_list, 0, garbage);
+    GarbageList<Target>::AddGarbage(&garbage_list, garbage);
   }
 
   EXPECT_EQ(kGarbageNum, garbage_list.Size());
@@ -111,7 +111,7 @@ TEST_F(GarbageListFixture, AddGarbage_LotOfGarbages_ListSizeCorrectlyUpdated)
   GarbageList<Target>* current_list = &garbage_list;
   for (size_t count = 0; count < kGarbageNum; ++count) {
     auto garbage = new Target{0};
-    current_list = GarbageList<Target>::AddGarbage(current_list, 0, garbage);
+    current_list = GarbageList<Target>::AddGarbage(current_list, garbage);
   }
 
   EXPECT_EQ(kGarbageNum, garbage_list.Size());
@@ -132,14 +132,16 @@ TEST_F(GarbageListFixture, Clear_WithLessGarbages_ProtectedGarbagesRemain)
   size_t count = 0;
   for (; count < kHalfGarbageNum; ++count) {
     auto garbage = new std::shared_ptr<Target>{new Target{0}};
-    GarbageList_t::AddGarbage(&garbage_list, 0, garbage);
+    GarbageList_t::AddGarbage(&garbage_list, garbage);
     garbage_references.emplace_back(*garbage);
   }
+
+  garbage_list.SetCurrentEpoch(protected_epoch);
 
   // add protected garbages
   for (; count < kTotalGarbageNum; ++count) {
     auto garbage = new std::shared_ptr<Target>{new Target{0}};
-    GarbageList_t::AddGarbage(&garbage_list, protected_epoch, garbage);
+    GarbageList_t::AddGarbage(&garbage_list, garbage);
     garbage_references.emplace_back(*garbage);
   }
 
@@ -169,14 +171,16 @@ TEST_F(GarbageListFixture, Clear_WithLotOfGarbages_ProtectedGarbagesRemain)
   size_t count = 0;
   for (; count < kHalfGarbageNum; ++count) {
     auto garbage = new std::shared_ptr<Target>{new Target{0}};
-    current_list = GarbageList_t::AddGarbage(current_list, 0, garbage);
+    current_list = GarbageList_t::AddGarbage(current_list, garbage);
     garbage_references.emplace_back(*garbage);
   }
+
+  garbage_list.SetCurrentEpoch(protected_epoch);
 
   // add protected garbages
   for (; count < kTotalGarbageNum; ++count) {
     auto garbage = new std::shared_ptr<Target>{new Target{0}};
-    current_list = GarbageList_t::AddGarbage(current_list, protected_epoch, garbage);
+    current_list = GarbageList_t::AddGarbage(current_list, garbage);
     garbage_references.emplace_back(*garbage);
   }
 

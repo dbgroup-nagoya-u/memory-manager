@@ -29,6 +29,8 @@ class GarbageList
 
   size_t tail_index_;
 
+  std::atomic_size_t current_epoch_;
+
   std::atomic<GarbageList*> next_;
 
   MemoryKeeper* memory_keeper_;
@@ -38,12 +40,19 @@ class GarbageList
    * Public constructors/destructors
    *##############################################################################################*/
 
-  constexpr GarbageList() : head_index_{0}, tail_index_{0}, next_{nullptr}, memory_keeper_{nullptr}
+  constexpr GarbageList()
+      : head_index_{0}, tail_index_{0}, current_epoch_{0}, next_{nullptr}, memory_keeper_{nullptr}
   {
   }
 
-  explicit GarbageList(MemoryKeeper* memory_keeper)
-      : head_index_{0}, tail_index_{0}, next_{nullptr}, memory_keeper_{memory_keeper}
+  explicit GarbageList(  //
+      const size_t current_epoch,
+      MemoryKeeper* memory_keeper = nullptr)
+      : head_index_{0},
+        tail_index_{0},
+        current_epoch_{current_epoch},
+        next_{nullptr},
+        memory_keeper_{memory_keeper}
   {
   }
 
@@ -76,6 +85,12 @@ class GarbageList
     }
   }
 
+  void
+  SetCurrentEpoch(const size_t current_epoch)
+  {
+    current_epoch_.store(current_epoch, mo_relax);
+  }
+
   /*################################################################################################
    * Public utility functions
    *##############################################################################################*/
@@ -83,17 +98,17 @@ class GarbageList
   static GarbageList*
   AddGarbage(  //
       GarbageList* garbage_list,
-      const size_t current_epoch,
       const T* garbage)
   {
     const auto current_head = garbage_list->head_index_.load(mo_relax);
+    const auto current_epoch = garbage_list->current_epoch_.load(mo_relax);
     garbage_list->garbages_[current_head] = {current_epoch, const_cast<T*>(garbage)};
     garbage_list->head_index_.fetch_add(1, mo_relax);
 
     if (current_head < kGarbageBufferSize - 1) {
       return garbage_list;
     } else {
-      const auto new_garbage_list = new GarbageList{garbage_list->memory_keeper_};
+      const auto new_garbage_list = new GarbageList{current_epoch, garbage_list->memory_keeper_};
       garbage_list->next_.store(new_garbage_list, mo_relax);
       return new_garbage_list;
     }
@@ -125,8 +140,8 @@ class GarbageList
       }
     }
 
+    garbage_list->tail_index_ = index;
     if (index < kGarbageBufferSize) {
-      garbage_list->tail_index_ = index;
       return garbage_list;
     } else {
       auto next_list = garbage_list->next_.load(mo_relax);

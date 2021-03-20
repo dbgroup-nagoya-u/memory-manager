@@ -60,19 +60,33 @@ class TLSBasedMemoryManager
    *##############################################################################################*/
 
   void
-  DeleteGarbages(const size_t protected_epoch)
+  DeleteGarbages(  //
+      const size_t current_epoch,
+      const size_t protected_epoch)
   {
     GarbageNode *current, *next;
+    auto head = garbages_.load(mo_relax);
+    if (head == nullptr) {
+      return;
+    }
 
-    next = garbages_.load(mo_relax);
-    while (next != nullptr) {
-      current = next;
+    current = head;
+    while (current != nullptr) {
+      current->garbage_tail->SetCurrentEpoch(current_epoch);
       current->garbage_tail = GarbageList<T>::Clear(current->garbage_tail, protected_epoch);
+      current = current->next;
+    }
 
-      next = current->next;
-      if (current->reference.use_count() == 1 && current->garbage_tail->Size() == 0) {
-        delete current;
+    current = head;
+    next = head->next;
+    while (next != nullptr) {
+      if (next->reference.use_count() == 1 && next->garbage_tail->Size() == 0) {
+        current->next = next->next;
+        delete next;
+      } else {
+        current = next;
       }
+      next = current->next;
     }
   }
 
@@ -87,9 +101,7 @@ class TLSBasedMemoryManager
       // forward a global epoch and update registered epochs/garbage lists
       const auto current_epoch = epoch_manager_.ForwardGlobalEpoch();
       const auto protected_epoch = epoch_manager_.UpdateRegisteredEpochs();
-
-      // delete freeable garbages
-      DeleteGarbages(protected_epoch);
+      DeleteGarbages(current_epoch, protected_epoch);
 
       if (memory_keeper_ != nullptr) {
         // check a remaining memory capacity, and reserve memory if needed
@@ -165,6 +177,19 @@ class TLSBasedMemoryManager
    *##############################################################################################*/
 
   size_t
+  GetRegisteredGarbageSize() const
+  {
+    auto garbage_node = garbages_.load(mo_relax);
+    size_t sum = 0;
+    while (garbage_node != nullptr) {
+      sum += garbage_node->garbage_tail->Size();
+      garbage_node = garbage_node->next;
+    }
+
+    return sum;
+  }
+
+  size_t
   GetAvailablePageSize() const
   {
     return memory_keeper_->GetCurrentCapacity();
@@ -195,15 +220,15 @@ class TLSBasedMemoryManager
     thread_local GarbageList<T>* garbage_head = nullptr;
 
     if (!*garbage_keeper) {
-      garbage_head = new GarbageList<T>{memory_keeper_.get()};
+      garbage_keeper->store(true, mo_relax);
+      garbage_head = new GarbageList<T>{epoch_manager_.GetCurrentEpoch(), memory_keeper_.get()};
       auto garbage_node = new GarbageNode{garbage_head, garbage_keeper, garbages_.load(mo_relax)};
       while (!garbages_.compare_exchange_weak(garbage_node->next, garbage_node, mo_relax)) {
         // continue until inserting succeeds
       }
     }
 
-    garbage_head =
-        GarbageList<T>::AddGarbage(garbage_head, epoch_manager_.GetCurrentEpoch(), target_ptr);
+    garbage_head = GarbageList<T>::AddGarbage(garbage_head, target_ptr);
   }
 
   void*
