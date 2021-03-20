@@ -13,7 +13,7 @@
 
 namespace dbgroup::memory::manager::component
 {
-using EpochPairs = std::pair<std::vector<Epoch>, std::vector<std::shared_ptr<uint64_t>>>;
+using EpochPairs = std::pair<std::vector<Epoch>, std::vector<std::shared_ptr<std::atomic_bool>>>;
 
 class EpochManagerFixture : public ::testing::Test
 {
@@ -24,11 +24,11 @@ class EpochManagerFixture : public ::testing::Test
 
   void
   CreateEpoch(  //
-      std::promise<std::pair<Epoch *, std::shared_ptr<uint64_t>>> p,
+      std::promise<std::pair<Epoch *, std::shared_ptr<std::atomic_bool>>> p,
       EpochManager *manager)
   {
     thread_local auto epoch = Epoch{manager->GetCurrentEpoch()};
-    thread_local auto epoch_keeper = std::make_shared<uint64_t>(0);
+    thread_local auto epoch_keeper = std::make_shared<std::atomic_bool>(true);
 
     manager->RegisterEpoch(&epoch, epoch_keeper);
 
@@ -45,7 +45,7 @@ class EpochManagerFixture : public ::testing::Test
   TestUpdateRegisteredEpochs(const size_t thread_num)
   {
     auto manager = EpochManager{};
-    std::vector<std::weak_ptr<uint64_t>> epoch_keepers;
+    std::vector<std::weak_ptr<std::atomic_bool>> epoch_keepers;
 
     {
       // create a lock to prevent destruction of epochs
@@ -53,9 +53,9 @@ class EpochManagerFixture : public ::testing::Test
 
       // create threads and gather their epochs
       std::vector<Epoch *> epochs;
-      std::vector<std::future<std::pair<Epoch *, std::shared_ptr<uint64_t>>>> futures;
+      std::vector<std::future<std::pair<Epoch *, std::shared_ptr<std::atomic_bool>>>> futures;
       for (size_t i = 0; i < thread_num; ++i) {
-        std::promise<std::pair<Epoch *, std::shared_ptr<uint64_t>>> p;
+        std::promise<std::pair<Epoch *, std::shared_ptr<std::atomic_bool>>> p;
         futures.emplace_back(p.get_future());
         std::thread{&EpochManagerFixture::CreateEpoch, this, std::move(p), &manager}.detach();
       }
@@ -83,7 +83,7 @@ class EpochManagerFixture : public ::testing::Test
     do {
       all_thread_exit = true;
       for (auto &&epoch_keeper : epoch_keepers) {
-        all_thread_exit &= epoch_keeper.expired();
+        all_thread_exit &= epoch_keeper.use_count() == 1;
       }
     } while (!all_thread_exit);
 
@@ -116,11 +116,11 @@ TEST_F(EpochManagerFixture, Construct_NoArgs_MemberVariablesCorrectlyInitialized
 
 TEST_F(EpochManagerFixture, Destruct_AfterRegisterOneEpoch_RegisteredEpochFreed)
 {
-  std::weak_ptr<uint64_t> epoch_reference;
+  std::weak_ptr<std::atomic_bool> epoch_reference;
 
   {
     auto manager = EpochManager{};
-    auto epoch_keeper = std::make_shared<uint64_t>(0);
+    auto epoch_keeper = std::make_shared<std::atomic_bool>(true);
     auto epoch = Epoch{manager.GetCurrentEpoch()};
 
     // register an epoch to a manager
@@ -137,14 +137,14 @@ TEST_F(EpochManagerFixture, Destruct_AfterRegisterOneEpoch_RegisteredEpochFreed)
 
 TEST_F(EpochManagerFixture, Destruct_AfterRegisterTenEpochs_RegisteredEpochsFreed)
 {
-  std::vector<std::weak_ptr<uint64_t>> epoch_references;
+  std::vector<std::weak_ptr<std::atomic_bool>> epoch_references;
 
   {
     auto manager = EpochManager{};
 
     for (size_t count = 0; count < kLoopNum; ++count) {
       // register an epoch to a manager
-      auto epoch_keeper = std::make_shared<uint64_t>(0);
+      auto epoch_keeper = std::make_shared<std::atomic_bool>(true);
       auto epoch = Epoch{manager.GetCurrentEpoch()};
       manager.RegisterEpoch(&epoch, epoch_keeper);
 

@@ -20,11 +20,11 @@ class EpochManager
    *##############################################################################################*/
 
   struct EpochList {
-    Epoch *epoch;
-    std::weak_ptr<uint64_t> reference;
+    Epoch *epoch = nullptr;
+    std::shared_ptr<std::atomic_bool> reference = std::make_shared<std::atomic_bool>(false);
     EpochList *next = nullptr;
 
-    ~EpochList() { delete next; }
+    ~EpochList() { reference->store(false); }
   };
 
   /*################################################################################################
@@ -42,7 +42,15 @@ class EpochManager
 
   EpochManager() : current_epoch_{0}, epochs_{new EpochList{}} {}
 
-  ~EpochManager() { delete epochs_; }
+  ~EpochManager()
+  {
+    auto next = epochs_.load();
+    while (next != nullptr) {
+      auto current = next;
+      next = current->next;
+      delete current;
+    }
+  }
 
   EpochManager(const EpochManager &) = delete;
   EpochManager &operator=(const EpochManager &) = delete;
@@ -72,7 +80,7 @@ class EpochManager
   void
   RegisterEpoch(  //
       Epoch *epoch,
-      const std::shared_ptr<uint64_t> reference)
+      const std::shared_ptr<std::atomic_bool> reference)
   {
     auto epoch_node = new EpochList{epoch, reference, epochs_.load(mo_relax)};
     while (!epochs_.compare_exchange_weak(epoch_node->next, epoch_node, mo_relax)) {
@@ -88,7 +96,7 @@ class EpochManager
 
     // update the head of an epoch list
     auto previous = epochs_.load(mo_relax);
-    if (!previous->reference.expired()) {
+    if (previous->reference.use_count() > 1) {
       previous->epoch->SetCurrentEpoch(current_epoch);
       const auto protected_epoch = previous->epoch->GetProtectedEpoch();
       if (protected_epoch < min_protected_epoch) {
@@ -99,7 +107,7 @@ class EpochManager
 
     // update the other nodes of an epoch list
     while (current != nullptr) {
-      if (!current->reference.expired()) {
+      if (current->reference.use_count() > 1) {
         // if an epoch remains, update epoch information
         current->epoch->SetCurrentEpoch(current_epoch);
         const auto protected_epoch = current->epoch->GetProtectedEpoch();

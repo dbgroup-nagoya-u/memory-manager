@@ -13,4 +13,5 @@ constexpr std::memory_order mo_relax = std::memory_order_relaxed;
 
 constexpr size_t kCacheLineSize = 64;
 
+constexpr size_t kGarbageBufferSize = 1024;
 }  // namespace dbgroup::memory::manager
