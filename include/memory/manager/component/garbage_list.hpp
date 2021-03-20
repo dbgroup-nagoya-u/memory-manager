@@ -47,7 +47,13 @@ class GarbageList
   {
   }
 
-  ~GarbageList() = default;
+  ~GarbageList()
+  {
+    const auto current_head = head_index_.load(mo_relax);
+    for (size_t index = tail_index_; index < current_head; ++index) {
+      delete garbages_[index].second;
+    }
+  }
 
   GarbageList(const GarbageList&) = delete;
   GarbageList& operator=(const GarbageList&) = delete;
@@ -55,23 +61,40 @@ class GarbageList
   GarbageList& operator=(GarbageList&&) = delete;
 
   /*################################################################################################
+   * Public getters/setters
+   *##############################################################################################*/
+
+  size_t
+  Size() const
+  {
+    const auto size = head_index_.load(mo_relax) - tail_index_;
+    const auto next = next_.load(mo_relax);
+    if (next == nullptr) {
+      return size;
+    } else {
+      return next->Size() + size;
+    }
+  }
+
+  /*################################################################################################
    * Public utility functions
    *##############################################################################################*/
 
-  GarbageList*
+  static GarbageList*
   AddGarbage(  //
+      GarbageList* garbage_list,
       const size_t current_epoch,
       const T* garbage)
   {
-    const auto current_head = head_index_.load(mo_relax);
-    garbages_[current_head] = {current_epoch, garbage};
-    head_index_.store(1, mo_relax);
+    const auto current_head = garbage_list->head_index_.load(mo_relax);
+    garbage_list->garbages_[current_head] = {current_epoch, const_cast<T*>(garbage)};
+    garbage_list->head_index_.fetch_add(1, mo_relax);
 
     if (current_head < kGarbageBufferSize - 1) {
-      return this;
+      return garbage_list;
     } else {
-      const auto new_garbage_list = new GarbageList{memory_keeper_};
-      next_.store(new_garbage_list, mo_relax);
+      const auto new_garbage_list = new GarbageList{garbage_list->memory_keeper_};
+      garbage_list->next_.store(new_garbage_list, mo_relax);
       return new_garbage_list;
     }
   }
@@ -81,7 +104,11 @@ class GarbageList
       GarbageList* garbage_list,
       const size_t protected_epoch)
   {
-    const auto current_head = head_index_.load(mo_relax);
+    if (garbage_list == nullptr) {
+      return nullptr;
+    }
+
+    const auto current_head = garbage_list->head_index_.load(mo_relax);
     auto memory_keeper = garbage_list->memory_keeper_;
 
     auto index = garbage_list->tail_index_;
