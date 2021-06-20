@@ -26,7 +26,6 @@
 #include "component/epoch_guard.hpp"
 #include "component/epoch_manager.hpp"
 #include "component/garbage_list.hpp"
-#include "component/memory_keeper.hpp"
 
 namespace dbgroup::memory::manager
 {
@@ -34,7 +33,6 @@ using component::Epoch;
 using component::EpochGuard;
 using component::EpochManager;
 using component::GarbageList;
-using component::MemoryKeeper;
 
 template <class T>
 class TLSBasedMemoryManager
@@ -65,8 +63,6 @@ class TLSBasedMemoryManager
   std::thread gc_thread_;
 
   std::atomic_bool gc_is_running_;
-
-  std::unique_ptr<MemoryKeeper> memory_keeper_;
 
   /*################################################################################################
    * Internal utility functions
@@ -116,11 +112,6 @@ class TLSBasedMemoryManager
       const auto protected_epoch = epoch_manager_.UpdateRegisteredEpochs();
       DeleteGarbages(current_epoch, protected_epoch);
 
-      if (memory_keeper_ != nullptr) {
-        // check a remaining memory capacity, and reserve memory if needed
-        memory_keeper_->ReservePagesIfNeeded();
-      }
-
       // wait for garbages to be out of scope
       std::this_thread::sleep_until(sleep_time);
     }
@@ -131,23 +122,12 @@ class TLSBasedMemoryManager
    * Public constructors/destructors
    *##############################################################################################*/
 
-  TLSBasedMemoryManager(  //
-      const size_t gc_interval_micro_sec,
-      const bool reserve_memory = false,
-      const size_t page_size = sizeof(T),
-      const size_t page_num = 4096,
-      const size_t partition_num = 8,
-      const size_t page_alignment = 8)
+  explicit TLSBasedMemoryManager(const size_t gc_interval_micro_sec)
       : epoch_manager_{},
         garbages_{nullptr},
         gc_interval_micro_sec_{gc_interval_micro_sec},
-        gc_is_running_{false},
-        memory_keeper_{nullptr}
+        gc_is_running_{false}
   {
-    if (reserve_memory) {
-      memory_keeper_.reset(new MemoryKeeper{page_size, page_num, page_alignment, partition_num});
-    }
-
     StartGC();
   }
 
@@ -202,12 +182,6 @@ class TLSBasedMemoryManager
     return sum;
   }
 
-  size_t
-  GetAvailablePageSize() const
-  {
-    return memory_keeper_->GetCurrentCapacity();
-  }
-
   /*################################################################################################
    * Public utility functions
    *##############################################################################################*/
@@ -234,7 +208,7 @@ class TLSBasedMemoryManager
 
     if (!*garbage_keeper) {
       garbage_keeper->store(true, mo_relax);
-      garbage_head = new GarbageList<T>{epoch_manager_.GetCurrentEpoch(), memory_keeper_.get()};
+      garbage_head = new GarbageList<T>{epoch_manager_.GetCurrentEpoch()};
       auto garbage_node = new GarbageNode{garbage_head, garbage_keeper, garbages_.load(mo_relax)};
       while (!garbages_.compare_exchange_weak(garbage_node->next, garbage_node, mo_relax)) {
         // continue until inserting succeeds
@@ -242,14 +216,6 @@ class TLSBasedMemoryManager
     }
 
     garbage_head = GarbageList<T>::AddGarbage(garbage_head, target_ptr);
-  }
-
-  void*
-  GetPage()
-  {
-    assert(memory_keeper_ != nullptr);
-
-    return memory_keeper_->GetPage();
   }
 
   /*################################################################################################

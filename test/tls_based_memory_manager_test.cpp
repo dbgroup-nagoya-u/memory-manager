@@ -62,18 +62,6 @@ class TLSBasedMemoryManagerFixture : public ::testing::Test
   }
 
   void
-  GetAndReturnPage(  //
-      TLSBasedMemoryManager<Target> *memory_manager,
-      const size_t page_num)
-  {
-    for (size_t i = 0; i < page_num; ++i) {
-      auto page_addr = memory_manager->GetPage();
-      auto page = new (page_addr) Target{0};
-      memory_manager->AddGarbage(page);
-    }
-  }
-
-  void
   KeepEpochGuard(  //
       std::promise<Target> p,
       TLSBasedMemoryManager<std::shared_ptr<Target>> *gc)
@@ -104,22 +92,6 @@ class TLSBasedMemoryManagerFixture : public ::testing::Test
     }
 
     return target_weak_ptrs;
-  }
-
-  void
-  TestMemoryManager(  //
-      TLSBasedMemoryManager<Target> *memory_manager,
-      const size_t thread_num,
-      const size_t page_num)
-  {
-    std::vector<std::thread> threads;
-    for (size_t i = 0; i < thread_num; ++i) {
-      threads.emplace_back(std::thread{&TLSBasedMemoryManagerFixture::GetAndReturnPage, this,
-                                       memory_manager, page_num});
-    }
-    for (auto &&thread : threads) {
-      thread.join();
-    }
   }
 
  protected:
@@ -313,27 +285,6 @@ TEST_F(TLSBasedMemoryManagerFixture, CreateEpochGuard_MultiThreads_PreventGarbag
   }
 
   guarder.join();
-}
-
-TEST_F(TLSBasedMemoryManagerFixture, GetPage_WithMemoryKeeper_ReuseReservedPages)
-{
-  constexpr size_t kPageNum = 1024 * kThreadNum;
-  constexpr size_t kLoopNum = 100;
-
-  auto memory_manager =
-      TLSBasedMemoryManager<Target>{kGCInterval, true, kPageNum, sizeof(Target), kThreadNum, 8};
-
-  for (size_t loop = 0; loop < kLoopNum; ++loop) {
-    TestMemoryManager(&memory_manager, kThreadNum, 100);
-    // std::this_thread::sleep_for(std::chrono::microseconds(kGCInterval));
-  }
-
-  // wait GC
-  while (memory_manager.GetRegisteredGarbageSize() > 0) {
-    std::this_thread::sleep_for(std::chrono::microseconds(kGCInterval));
-  }
-
-  EXPECT_EQ(0, memory_manager.GetAvailablePageSize() % kPageNum);
 }
 
 }  // namespace dbgroup::memory::manager
