@@ -67,8 +67,8 @@ class EpochManager
 
   EpochManager(const EpochManager &) = delete;
   EpochManager &operator=(const EpochManager &) = delete;
-  EpochManager(EpochManager &&) = default;
-  EpochManager &operator=(EpochManager &&) = default;
+  constexpr EpochManager(EpochManager &&) = default;
+  constexpr EpochManager &operator=(EpochManager &&) = default;
 
   /*################################################################################################
    * Public getters/setters

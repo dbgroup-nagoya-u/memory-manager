@@ -53,7 +53,7 @@ class GarbageList
 
   constexpr GarbageList() : head_index_{0}, tail_index_{0}, current_epoch_{0}, next_{nullptr} {}
 
-  explicit GarbageList(const size_t current_epoch)
+  constexpr explicit GarbageList(const size_t current_epoch)
       : head_index_{0}, tail_index_{0}, current_epoch_{current_epoch}, next_{nullptr}
   {
   }
@@ -97,7 +97,7 @@ class GarbageList
    * Public utility functions
    *##############################################################################################*/
 
-  static GarbageList*
+  static constexpr GarbageList*
   AddGarbage(  //
       GarbageList* garbage_list,
       const T* garbage)
@@ -116,7 +116,7 @@ class GarbageList
     }
   }
 
-  static GarbageList*
+  static constexpr GarbageList*
   Clear(  //
       GarbageList* garbage_list,
       const size_t protected_epoch)

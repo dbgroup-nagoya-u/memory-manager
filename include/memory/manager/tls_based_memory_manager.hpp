@@ -68,7 +68,7 @@ class TLSBasedMemoryManager
    * Internal utility functions
    *##############################################################################################*/
 
-  void
+  constexpr void
   DeleteGarbages(  //
       const size_t current_epoch,
       const size_t protected_epoch)
@@ -99,7 +99,7 @@ class TLSBasedMemoryManager
     }
   }
 
-  void
+  constexpr void
   RunGC()
   {
     const auto interval = std::chrono::microseconds(gc_interval_micro_sec_);
@@ -122,7 +122,7 @@ class TLSBasedMemoryManager
    * Public constructors/destructors
    *##############################################################################################*/
 
-  explicit TLSBasedMemoryManager(const size_t gc_interval_micro_sec)
+  constexpr explicit TLSBasedMemoryManager(const size_t gc_interval_micro_sec)
       : epoch_manager_{},
         garbages_{nullptr},
         gc_interval_micro_sec_{gc_interval_micro_sec},
@@ -169,7 +169,7 @@ class TLSBasedMemoryManager
    * Public getters/setters
    *##############################################################################################*/
 
-  size_t
+  constexpr size_t
   GetRegisteredGarbageSize() const
   {
     auto garbage_node = garbages_.load(mo_relax);
@@ -222,7 +222,7 @@ class TLSBasedMemoryManager
    * Public GC control functions
    *##############################################################################################*/
 
-  bool
+  constexpr bool
   StartGC()
   {
     if (gc_is_running_) {
@@ -234,7 +234,7 @@ class TLSBasedMemoryManager
     }
   }
 
-  bool
+  constexpr bool
   StopGC()
   {
     if (!gc_is_running_) {
