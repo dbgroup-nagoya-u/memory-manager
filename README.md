@@ -12,9 +12,10 @@
 sudo apt update && sudo apt install -y build-essential cmake
 ```
 
-### Build Options
+### Build Options for Unit Testing
 
 - `MEMORY_MANAGER_BUILD_TESTS`: build unit tests for this repository if `on`.
+- `MEMORY_MANAGER_TEST_THREAD_NUM`: the number of threads to run unit tests: default `8`.
 
 ### Build and Run Unit Tests
 
