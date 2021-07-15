@@ -30,14 +30,6 @@ add_subdirectory(${CMAKE_CURRENT_BINARY_DIR}/googletest-src
 # Build Unit Tests
 #--------------------------------------------------------------------------------------#
 
-# set compile options for unit tests
-set(
-  MEMORY_MANAGER_TEST_THREAD_NUM
-  "8"
-  CACHE STRING
-  "The maximum number of threads to perform unit tests."
-)
-
 # define function to add unit tests in the same format
 function(ADD_MEMORY_MANAGER_TEST MEMORY_MANAGER_TEST_TARGET)
   add_executable(
@@ -62,9 +54,17 @@ function(ADD_MEMORY_MANAGER_TEST MEMORY_MANAGER_TEST_TARGET)
   )
   target_link_libraries(
     ${MEMORY_MANAGER_TEST_TARGET} PRIVATE
-    pthread
+    memory_manager
     gtest_main
   )
+
+  if(DEFINED MEMORY_MANAGER_TEST_THREAD_NUM)
+    target_compile_definitions(
+      ${MEMORY_MANAGER_TEST_TARGET} PRIVATE
+      MEMORY_MANAGER_TEST_THREAD_NUM=${MEMORY_MANAGER_TEST_THREAD_NUM}
+    )
+  endif()
+
   add_test(NAME ${MEMORY_MANAGER_TEST_TARGET} COMMAND $<TARGET_FILE:${MEMORY_MANAGER_TEST_TARGET}>)
 endfunction()
 
