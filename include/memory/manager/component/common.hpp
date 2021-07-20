@@ -20,6 +20,10 @@
 #include <cstddef>
 #include <cstdint>
 
+#ifdef MEMORY_MANAGER_USE_MIMALLOC
+#include <mimalloc.h>
+#endif
+
 namespace dbgroup::memory::manager
 {
 constexpr std::memory_order mo_relax = std::memory_order_relaxed;
@@ -27,4 +31,11 @@ constexpr std::memory_order mo_relax = std::memory_order_relaxed;
 constexpr size_t kCacheLineSize = 64;
 
 constexpr size_t kGarbageBufferSize = 1024;
+
+#ifdef MEMORY_MANAGER_USE_MIMALLOC
+constexpr bool kUseMimalloc = true;
+#else
+constexpr bool kUseMimalloc = false;
+#endif
+
 }  // namespace dbgroup::memory::manager

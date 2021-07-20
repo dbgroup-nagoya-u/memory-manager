@@ -83,8 +83,8 @@ class EpochManagerFixture : public ::testing::Test
         for (auto &&epoch : epochs) {
           EXPECT_EQ(i, epoch->GetCurrentEpoch());
         }
-        manager.ForwardGlobalEpoch();
-        const auto protected_epoch = manager.UpdateRegisteredEpochs();
+        const auto current_epoch = manager.ForwardGlobalEpoch();
+        const auto protected_epoch = manager.UpdateRegisteredEpochs(current_epoch);
         EXPECT_EQ(0, protected_epoch);
       }
 
@@ -101,7 +101,7 @@ class EpochManagerFixture : public ::testing::Test
     } while (!all_thread_exit);
 
     // there is no protecting epoch
-    EXPECT_EQ(std::numeric_limits<size_t>::max(), manager.UpdateRegisteredEpochs());
+    EXPECT_EQ(std::numeric_limits<size_t>::max(), manager.UpdateRegisteredEpochs(0));
   }
 
  protected:

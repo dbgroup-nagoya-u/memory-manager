@@ -105,7 +105,7 @@ class TLSBasedMemoryManager
     while (gc_is_running_) {
       // forward a global epoch and update registered epochs/garbage lists
       const auto current_epoch = epoch_manager_.ForwardGlobalEpoch();
-      const auto protected_epoch = epoch_manager_.UpdateRegisteredEpochs();
+      const auto protected_epoch = epoch_manager_.UpdateRegisteredEpochs(current_epoch);
       DeleteGarbages(current_epoch, protected_epoch);
 
       // wait for garbages to be out of scope
@@ -139,7 +139,7 @@ class TLSBasedMemoryManager
     do {
       // wait for garbages to be out of scope
       std::this_thread::sleep_for(std::chrono::microseconds(gc_interval_micro_sec_));
-      protected_epoch = epoch_manager_.UpdateRegisteredEpochs();
+      protected_epoch = epoch_manager_.UpdateRegisteredEpochs(current_epoch);
     } while (protected_epoch < current_epoch);
 
     // delete all garbages
