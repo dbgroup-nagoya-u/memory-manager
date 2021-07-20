@@ -34,14 +34,14 @@ class EpochGuard
    * Public constructors/destructors
    *##############################################################################################*/
 
-  constexpr explicit EpochGuard(Epoch *epoch) : epoch_{epoch} { epoch_->EnterEpoch(); }
+  explicit EpochGuard(Epoch *epoch) : epoch_{epoch} { epoch_->EnterEpoch(); }
 
   ~EpochGuard() { epoch_->LeaveEpoch(); }
 
   EpochGuard(const EpochGuard &) = delete;
   EpochGuard &operator=(const EpochGuard &) = delete;
-  EpochGuard(EpochGuard &&) = delete;
-  EpochGuard &operator=(EpochGuard &&) = delete;
+  constexpr EpochGuard(EpochGuard &&) = default;
+  constexpr EpochGuard &operator=(EpochGuard &&) = default;
 };
 
 }  // namespace dbgroup::memory::manager::component
