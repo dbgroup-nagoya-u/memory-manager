@@ -33,6 +33,7 @@
     "DCMAKE",
     "DMEMORY",
     "DSIMPLE",
+    "MIMALLOC",
     "Wextra",
     "alignas",
     "ctest",
