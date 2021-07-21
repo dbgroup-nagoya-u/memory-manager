@@ -81,7 +81,7 @@ class EpochManager
    * Public constructors/destructors
    *##############################################################################################*/
 
-  EpochManager() : current_epoch_{0}, epochs_{New<EpochNode>()} {}
+  EpochManager() : current_epoch_{0}, epochs_{nullptr} {}
 
   ~EpochManager()
   {
@@ -135,10 +135,11 @@ class EpochManager
   size_t
   UpdateRegisteredEpochs(const size_t current_epoch)
   {
-    auto min_protected_epoch = std::numeric_limits<size_t>::max();
-
     // update the head of an epoch list
     auto previous = epochs_.load(mo_relax);
+    if (previous == nullptr) return std::numeric_limits<size_t>::max();
+
+    auto min_protected_epoch = std::numeric_limits<size_t>::max();
     if (previous->reference.use_count() > 1) {
       previous->epoch->SetCurrentEpoch(current_epoch);
       const auto protected_epoch = previous->epoch->GetProtectedEpoch();
