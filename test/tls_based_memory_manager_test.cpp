@@ -53,7 +53,7 @@ class TLSBasedMemoryManagerFixture : public ::testing::Test
       std::shared_ptr<Target> *target_shared;
       {
         const auto guard = gc->CreateEpochGuard();
-        target_shared = Create<std::shared_ptr<Target>>(new Target{loop});
+        target_shared = New<std::shared_ptr<Target>>(new Target{loop});
         target_weak_ptrs.emplace_back(*target_shared);
       }
       gc->AddGarbage(target_shared);
@@ -151,7 +151,7 @@ TEST_F(TLSBasedMemoryManagerFixture, Destruct_RecreatedGC_GarbagesCorrectlyFreed
         std::shared_ptr<Target> *target_shared;
         {
           const auto guard = gc.CreateEpochGuard();
-          target_shared = Create<std::shared_ptr<Target>>(new Target{loop});
+          target_shared = New<std::shared_ptr<Target>>(new Target{loop});
           target_weak_ptrs.emplace_back(*target_shared);
         }
         gc.AddGarbage(target_shared);

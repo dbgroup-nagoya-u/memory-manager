@@ -21,6 +21,7 @@
 #include <memory>
 #include <utility>
 
+#include "../utility.hpp"
 #include "epoch_guard.hpp"
 
 namespace dbgroup::memory::manager::component
@@ -80,7 +81,7 @@ class EpochManager
    * Public constructors/destructors
    *##############################################################################################*/
 
-  EpochManager() : current_epoch_{0}, epochs_{Create<EpochNode>()} {}
+  EpochManager() : current_epoch_{0}, epochs_{New<EpochNode>()} {}
 
   ~EpochManager()
   {
@@ -88,7 +89,7 @@ class EpochManager
     while (next != nullptr) {
       auto current = next;
       next = current->next;
-      Delete(current);
+      Delete(std::move(current));
     }
   }
 
@@ -123,7 +124,7 @@ class EpochManager
       const std::shared_ptr<std::atomic_bool> &reference)
   {
     // prepare a new epoch node
-    auto epoch_node = Create<EpochNode>(epoch, reference, epochs_.load(mo_relax));
+    auto epoch_node = New<EpochNode>(epoch, reference, epochs_.load(mo_relax));
 
     // insert a new epoch node into the epoch list
     while (!epochs_.compare_exchange_weak(epoch_node->next, epoch_node, mo_relax)) {

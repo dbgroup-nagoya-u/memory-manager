@@ -26,6 +26,7 @@
 #include "component/epoch_guard.hpp"
 #include "component/epoch_manager.hpp"
 #include "component/garbage_list.hpp"
+#include "utility.hpp"
 
 namespace dbgroup::memory::manager
 {
@@ -204,9 +205,8 @@ class TLSBasedMemoryManager
 
     if (!*garbage_keeper) {
       garbage_keeper->store(true, mo_relax);
-      garbage_head = Create<GarbageList<T>>(epoch_manager_.GetCurrentEpoch());
-      auto garbage_node =
-          Create<GarbageNode>(garbage_head, garbage_keeper, garbages_.load(mo_relax));
+      garbage_head = New<GarbageList<T>>(epoch_manager_.GetCurrentEpoch());
+      auto garbage_node = New<GarbageNode>(garbage_head, garbage_keeper, garbages_.load(mo_relax));
       while (!garbages_.compare_exchange_weak(garbage_node->next, garbage_node, mo_relax)) {
         // continue until inserting succeeds
       }
