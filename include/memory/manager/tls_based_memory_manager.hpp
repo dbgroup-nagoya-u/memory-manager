@@ -105,7 +105,7 @@ class TLSBasedMemoryManager
     while (gc_is_running_) {
       // forward a global epoch and update registered epochs/garbage lists
       const auto current_epoch = epoch_manager_.ForwardGlobalEpoch();
-      const auto protected_epoch = epoch_manager_.UpdateRegisteredEpochs();
+      const auto protected_epoch = epoch_manager_.UpdateRegisteredEpochs(current_epoch);
       DeleteGarbages(current_epoch, protected_epoch);
 
       // wait for garbages to be out of scope
@@ -139,7 +139,7 @@ class TLSBasedMemoryManager
     do {
       // wait for garbages to be out of scope
       std::this_thread::sleep_for(std::chrono::microseconds(gc_interval_micro_sec_));
-      protected_epoch = epoch_manager_.UpdateRegisteredEpochs();
+      protected_epoch = epoch_manager_.UpdateRegisteredEpochs(current_epoch);
     } while (protected_epoch < current_epoch);
 
     // delete all garbages
@@ -186,7 +186,7 @@ class TLSBasedMemoryManager
   CreateEpochGuard()
   {
     thread_local auto epoch_keeper = std::make_shared<std::atomic_bool>(false);
-    thread_local Epoch epoch{epoch_manager_.GetEpochReference()};
+    thread_local Epoch epoch{epoch_manager_.GetCurrentEpoch()};
 
     if (!*epoch_keeper) {
       epoch_keeper->store(true);
@@ -204,7 +204,7 @@ class TLSBasedMemoryManager
 
     if (!*garbage_keeper) {
       garbage_keeper->store(true, mo_relax);
-      garbage_head = Create<GarbageList<T>>(epoch_manager_.GetEpochReference());
+      garbage_head = Create<GarbageList<T>>(epoch_manager_.GetCurrentEpoch());
       auto garbage_node =
           Create<GarbageNode>(garbage_head, garbage_keeper, garbages_.load(mo_relax));
       while (!garbages_.compare_exchange_weak(garbage_node->next, garbage_node, mo_relax)) {

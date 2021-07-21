@@ -30,7 +30,7 @@ class Epoch
    * Internal member variables
    *##############################################################################################*/
 
-  std::atomic_size_t &current_;
+  std::atomic_size_t current_;
 
   std::atomic_size_t entered_;
 
@@ -39,7 +39,7 @@ class Epoch
    * Public constructors/destructors
    *##############################################################################################*/
 
-  constexpr explicit Epoch(std::atomic_size_t &current_epoch)
+  constexpr explicit Epoch(const size_t current_epoch)
       : current_{current_epoch}, entered_{std::numeric_limits<size_t>::max()}
   {
   }
@@ -65,6 +65,12 @@ class Epoch
   GetProtectedEpoch() const
   {
     return entered_.load(mo_relax);
+  }
+
+  void
+  SetCurrentEpoch(const size_t current_epoch)
+  {
+    current_.store(current_epoch, mo_relax);
   }
 
   /*################################################################################################

@@ -41,19 +41,21 @@ class EpochManager
 
     const std::shared_ptr<std::atomic_bool> reference;
 
-    uintptr_t next;
+    EpochNode *next;
 
     /*##############################################################################################
      * Public constructors/destructors
      *############################################################################################*/
 
-    constexpr EpochNode() : epoch{nullptr}, reference{}, next{0} {}
+    constexpr EpochNode() : epoch{nullptr}, reference{}, next{nullptr} {}
 
     EpochNode(  //
         const Epoch *epoch,
         const std::shared_ptr<std::atomic_bool> reference,
-        const uintptr_t next)
-        : epoch{const_cast<Epoch *>(epoch)}, reference{reference}, next{next}
+        const EpochNode *next)
+        : epoch{const_cast<Epoch *>(epoch)},
+          reference{reference},
+          next{const_cast<EpochNode *>(next)}
     {
     }
 
@@ -71,24 +73,21 @@ class EpochManager
 
   std::atomic_size_t current_epoch_;
 
-  std::atomic_uintptr_t epochs_addr_;
+  std::atomic<EpochNode *> epochs_;
 
  public:
   /*################################################################################################
    * Public constructors/destructors
    *##############################################################################################*/
 
-  EpochManager() : current_epoch_{0}, epochs_addr_{0}
-  {
-    epochs_addr_.store(reinterpret_cast<uintptr_t>(Create<EpochNode>()), mo_relax);
-  }
+  EpochManager() : current_epoch_{0}, epochs_{Create<EpochNode>()} {}
 
   ~EpochManager()
   {
-    auto next = reinterpret_cast<EpochNode *>(epochs_addr_.load(mo_relax));
+    auto next = epochs_.load(mo_relax);
     while (next != nullptr) {
       auto current = next;
-      next = reinterpret_cast<EpochNode *>(current->next);
+      next = current->next;
       Delete(current);
     }
   }
@@ -108,12 +107,6 @@ class EpochManager
     return current_epoch_.load(mo_relax);
   }
 
-  std::atomic_size_t &
-  GetEpochReference()
-  {
-    return current_epoch_;
-  }
-
   /*################################################################################################
    * Public utility functions
    *##############################################################################################*/
@@ -130,45 +123,46 @@ class EpochManager
       const std::shared_ptr<std::atomic_bool> &reference)
   {
     // prepare a new epoch node
-    auto epoch_node = Create<EpochNode>(epoch, reference, epochs_addr_.load(mo_relax));
+    auto epoch_node = Create<EpochNode>(epoch, reference, epochs_.load(mo_relax));
 
     // insert a new epoch node into the epoch list
-    const auto epoch_addr = reinterpret_cast<uintptr_t>(epoch_node);
-    while (!epochs_addr_.compare_exchange_weak(epoch_node->next, epoch_addr, mo_relax)) {
+    while (!epochs_.compare_exchange_weak(epoch_node->next, epoch_node, mo_relax)) {
       // continue until inserting succeeds
     }
   }
 
   size_t
-  UpdateRegisteredEpochs()
+  UpdateRegisteredEpochs(const size_t current_epoch)
   {
     auto min_protected_epoch = std::numeric_limits<size_t>::max();
 
     // update the head of an epoch list
-    auto previous = reinterpret_cast<EpochNode *>(epochs_addr_.load(mo_relax));
+    auto previous = epochs_.load(mo_relax);
     if (previous->reference.use_count() > 1) {
+      previous->epoch->SetCurrentEpoch(current_epoch);
       const auto protected_epoch = previous->epoch->GetProtectedEpoch();
       if (protected_epoch < min_protected_epoch) {
         min_protected_epoch = std::move(protected_epoch);
       }
     }
-    auto current = reinterpret_cast<EpochNode *>(previous->next);
+    auto current = previous->next;
 
     // update the tail nodes of an epoch list
     while (current != nullptr) {
       if (current->reference.use_count() > 1) {
         // if an epoch remains, update epoch information
+        current->epoch->SetCurrentEpoch(current_epoch);
         const auto protected_epoch = current->epoch->GetProtectedEpoch();
         if (protected_epoch < min_protected_epoch) {
           min_protected_epoch = std::move(protected_epoch);
         }
         previous = current;
-        current = reinterpret_cast<EpochNode *>(current->next);
+        current = current->next;
       } else {
         // if an epoch is deleted, delete this node from a list
         previous->next = current->next;
         Delete(current);
-        current = reinterpret_cast<EpochNode *>(previous->next);
+        current = previous->next;
       }
     }
 

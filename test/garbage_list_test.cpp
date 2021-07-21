@@ -42,7 +42,7 @@ class GarbageListFixture : public ::testing::Test
    * Internal member variables
    *##############################################################################################*/
 
-  std::atomic_size_t current_epoch;
+  size_t current_epoch;
 
   /*################################################################################################
    * Test setup/teardown

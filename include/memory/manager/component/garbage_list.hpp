@@ -42,7 +42,7 @@ class GarbageList
 
   size_t tail_index_;
 
-  std::atomic_size_t& current_epoch_;
+  std::atomic_size_t current_epoch_;
 
   std::atomic<GarbageList*> next_;
 
@@ -51,7 +51,7 @@ class GarbageList
    * Public constructors/destructors
    *##############################################################################################*/
 
-  constexpr explicit GarbageList(std::atomic_size_t& current_epoch)
+  constexpr explicit GarbageList(const size_t current_epoch)
       : head_index_{0}, tail_index_{0}, current_epoch_{current_epoch}, next_{nullptr}
   {
   }
@@ -108,7 +108,7 @@ class GarbageList
     if (current_head < kGarbageBufferSize - 1) {
       return garbage_list;
     } else {
-      const auto new_garbage_list = Create<GarbageList>(garbage_list->current_epoch_);
+      const auto new_garbage_list = Create<GarbageList>(current_epoch);
       garbage_list->next_.store(new_garbage_list, mo_relax);
       return new_garbage_list;
     }
