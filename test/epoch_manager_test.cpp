@@ -28,9 +28,9 @@ namespace dbgroup::memory::manager::component
 {
 class EpochManagerFixture : public ::testing::Test
 {
+ protected:
   using EpochPairs = std::pair<std::vector<Epoch>, std::vector<std::shared_ptr<std::atomic_bool>>>;
 
- protected:
   /*################################################################################################
    * Internal constants
    *##############################################################################################*/

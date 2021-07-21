@@ -27,17 +27,31 @@ namespace dbgroup::memory::manager::component
 {
 class GarbageListFixture : public ::testing::Test
 {
- public:
+ protected:
   using Target = uint64_t;
   using GarbageList_t = GarbageList<std::shared_ptr<Target>>;
+
+  /*################################################################################################
+   * Internal constants
+   *##############################################################################################*/
 
   static constexpr size_t kBufferSize = 256;
   static constexpr size_t kGCInterval = 100;
 
- protected:
+  /*################################################################################################
+   * Internal member variables
+   *##############################################################################################*/
+
+  std::atomic_size_t current_epoch;
+
+  /*################################################################################################
+   * Test setup/teardown
+   *##############################################################################################*/
+
   void
   SetUp() override
   {
+    current_epoch = 0;
   }
 
   void
@@ -46,13 +60,13 @@ class GarbageListFixture : public ::testing::Test
   }
 };
 
-/*--------------------------------------------------------------------------------------------------
- * Public utility tests
- *------------------------------------------------------------------------------------------------*/
+/*##################################################################################################
+ * Unit test definitions
+ *################################################################################################*/
 
 TEST_F(GarbageListFixture, Construct_WithoutArgs_MemberVariablesCorrectlyInitialized)
 {
-  auto garbage_list = GarbageList_t{};
+  auto garbage_list = GarbageList_t{current_epoch};
 
   EXPECT_EQ(0, garbage_list.Size());
 }
@@ -64,7 +78,7 @@ TEST_F(GarbageListFixture, Destruct_AddLessGarbages_AddedGarbagesCorrectlyFreed)
   std::vector<std::weak_ptr<Target>> garbage_references;
 
   {
-    auto garbage_list = GarbageList_t{};
+    auto garbage_list = GarbageList_t{current_epoch};
     for (size_t count = 0; count < kGarbageNum; ++count) {
       auto garbage = Create<std::shared_ptr<Target>>(new Target{0});
       GarbageList_t::AddGarbage(&garbage_list, garbage);
@@ -86,7 +100,7 @@ TEST_F(GarbageListFixture, Destruct_AddLotOfGarbages_AddedGarbagesCorrectlyFreed
   std::vector<std::weak_ptr<Target>> garbage_references;
 
   {
-    auto garbage_list = GarbageList_t{};
+    auto garbage_list = GarbageList_t{current_epoch};
     GarbageList_t* current_list = &garbage_list;
     for (size_t count = 0; count < kGarbageNum; ++count) {
       auto garbage = Create<std::shared_ptr<Target>>(new Target{0});
@@ -107,7 +121,7 @@ TEST_F(GarbageListFixture, AddGarbage_LessGarbages_ListSizeCorrectlyUpdated)
 {
   constexpr size_t kGarbageNum = kGarbageBufferSize * 0.5;
 
-  auto garbage_list = GarbageList<Target>{};
+  auto garbage_list = GarbageList<Target>{current_epoch};
   for (size_t count = 0; count < kGarbageNum; ++count) {
     auto garbage = Create<Target>(0UL);
     GarbageList<Target>::AddGarbage(&garbage_list, garbage);
@@ -120,7 +134,7 @@ TEST_F(GarbageListFixture, AddGarbage_LotOfGarbages_ListSizeCorrectlyUpdated)
 {
   constexpr size_t kGarbageNum = kGarbageBufferSize * 1.5;
 
-  auto garbage_list = GarbageList<Target>{};
+  auto garbage_list = GarbageList<Target>{current_epoch};
   GarbageList<Target>* current_list = &garbage_list;
   for (size_t count = 0; count < kGarbageNum; ++count) {
     auto garbage = Create<Target>(0UL);
@@ -137,7 +151,7 @@ TEST_F(GarbageListFixture, Clear_WithLessGarbages_ProtectedGarbagesRemain)
   constexpr size_t kTotalGarbageNum = kGarbageBufferSize / 2;
   constexpr size_t kHalfGarbageNum = kTotalGarbageNum / 2;
 
-  auto garbage_list = GarbageList_t{};
+  auto garbage_list = GarbageList_t{current_epoch};
   std::vector<std::weak_ptr<Target>> garbage_references;
   const size_t protected_epoch = 1;
 
@@ -175,7 +189,7 @@ TEST_F(GarbageListFixture, Clear_WithLotOfGarbages_ProtectedGarbagesRemain)
   constexpr size_t kTotalGarbageNum = kGarbageBufferSize * 1.5;
   constexpr size_t kHalfGarbageNum = kTotalGarbageNum / 2;
 
-  auto garbage_list = GarbageList_t{};
+  auto garbage_list = GarbageList_t{current_epoch};
   GarbageList_t* current_list = &garbage_list;
   std::vector<std::weak_ptr<Target>> garbage_references;
   const size_t protected_epoch = 1;
