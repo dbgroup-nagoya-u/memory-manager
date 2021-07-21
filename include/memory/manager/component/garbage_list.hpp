@@ -62,7 +62,7 @@ class GarbageList
   {
     const auto current_head = head_index_.load(mo_relax);
     for (size_t index = tail_index_; index < current_head; ++index) {
-      delete garbages_[index].second;
+      Delete(garbages_[index].second);
     }
   }
 
@@ -131,7 +131,7 @@ class GarbageList
     for (; index < current_head; ++index) {
       const auto [epoch, garbage] = garbage_list->garbages_[index];
       if (epoch < protected_epoch) {
-        delete garbage;
+        Delete(garbage);
       } else {
         break;
       }
@@ -145,7 +145,7 @@ class GarbageList
       while (next_list == nullptr) {
         next_list = garbage_list->next_.load(mo_relax);
       }
-      delete garbage_list;
+      Delete(garbage_list);
       return GarbageList::Clear(next_list, protected_epoch);
     }
   }

@@ -66,7 +66,7 @@ TEST_F(GarbageListFixture, Destruct_AddLessGarbages_AddedGarbagesCorrectlyFreed)
   {
     auto garbage_list = GarbageList_t{};
     for (size_t count = 0; count < kGarbageNum; ++count) {
-      auto garbage = new std::shared_ptr<Target>{new Target{0}};
+      auto garbage = Create<std::shared_ptr<Target>>(new Target{0});
       GarbageList_t::AddGarbage(&garbage_list, garbage);
       garbage_references.emplace_back(*garbage);
     }
@@ -89,13 +89,13 @@ TEST_F(GarbageListFixture, Destruct_AddLotOfGarbages_AddedGarbagesCorrectlyFreed
     auto garbage_list = GarbageList_t{};
     GarbageList_t* current_list = &garbage_list;
     for (size_t count = 0; count < kGarbageNum; ++count) {
-      auto garbage = new std::shared_ptr<Target>{new Target{0}};
+      auto garbage = Create<std::shared_ptr<Target>>(new Target{0});
       current_list = GarbageList_t::AddGarbage(current_list, garbage);
       garbage_references.emplace_back(*garbage);
     }
 
     // garbages are deleted in destructor
-    delete current_list;
+    Delete(current_list);
   }
 
   for (auto&& garbage_reference : garbage_references) {
@@ -109,7 +109,7 @@ TEST_F(GarbageListFixture, AddGarbage_LessGarbages_ListSizeCorrectlyUpdated)
 
   auto garbage_list = GarbageList<Target>{};
   for (size_t count = 0; count < kGarbageNum; ++count) {
-    auto garbage = new Target{0};
+    auto garbage = Create<Target>(0UL);
     GarbageList<Target>::AddGarbage(&garbage_list, garbage);
   }
 
@@ -123,13 +123,13 @@ TEST_F(GarbageListFixture, AddGarbage_LotOfGarbages_ListSizeCorrectlyUpdated)
   auto garbage_list = GarbageList<Target>{};
   GarbageList<Target>* current_list = &garbage_list;
   for (size_t count = 0; count < kGarbageNum; ++count) {
-    auto garbage = new Target{0};
+    auto garbage = Create<Target>(0UL);
     current_list = GarbageList<Target>::AddGarbage(current_list, garbage);
   }
 
   EXPECT_EQ(kGarbageNum, garbage_list.Size());
 
-  delete current_list;
+  Delete(current_list);
 }
 
 TEST_F(GarbageListFixture, Clear_WithLessGarbages_ProtectedGarbagesRemain)
@@ -144,7 +144,7 @@ TEST_F(GarbageListFixture, Clear_WithLessGarbages_ProtectedGarbagesRemain)
   // add unprotected garbages
   size_t count = 0;
   for (; count < kHalfGarbageNum; ++count) {
-    auto garbage = new std::shared_ptr<Target>{new Target{0}};
+    auto garbage = Create<std::shared_ptr<Target>>(new Target{0});
     GarbageList_t::AddGarbage(&garbage_list, garbage);
     garbage_references.emplace_back(*garbage);
   }
@@ -153,7 +153,7 @@ TEST_F(GarbageListFixture, Clear_WithLessGarbages_ProtectedGarbagesRemain)
 
   // add protected garbages
   for (; count < kTotalGarbageNum; ++count) {
-    auto garbage = new std::shared_ptr<Target>{new Target{0}};
+    auto garbage = Create<std::shared_ptr<Target>>(new Target{0});
     GarbageList_t::AddGarbage(&garbage_list, garbage);
     garbage_references.emplace_back(*garbage);
   }
@@ -183,7 +183,7 @@ TEST_F(GarbageListFixture, Clear_WithLotOfGarbages_ProtectedGarbagesRemain)
   // add unprotected garbages
   size_t count = 0;
   for (; count < kHalfGarbageNum; ++count) {
-    auto garbage = new std::shared_ptr<Target>{new Target{0}};
+    auto garbage = Create<std::shared_ptr<Target>>(new Target{0});
     current_list = GarbageList_t::AddGarbage(current_list, garbage);
     garbage_references.emplace_back(*garbage);
   }
@@ -192,7 +192,7 @@ TEST_F(GarbageListFixture, Clear_WithLotOfGarbages_ProtectedGarbagesRemain)
 
   // add protected garbages
   for (; count < kTotalGarbageNum; ++count) {
-    auto garbage = new std::shared_ptr<Target>{new Target{0}};
+    auto garbage = Create<std::shared_ptr<Target>>(new Target{0});
     current_list = GarbageList_t::AddGarbage(current_list, garbage);
     garbage_references.emplace_back(*garbage);
   }
@@ -208,7 +208,7 @@ TEST_F(GarbageListFixture, Clear_WithLotOfGarbages_ProtectedGarbagesRemain)
     }
   }
 
-  delete current_list;
+  Delete(current_list);
 }
 
 }  // namespace dbgroup::memory::manager::component
