@@ -53,7 +53,7 @@ class EpochGuardFixture : public ::testing::Test
 
 TEST_F(EpochGuardFixture, Construct_CurrentEpochZero_ProtectedEpochCorrectlyUpdated)
 {
-  const auto guard = EpochGuard{&epoch};
+  const auto guard = EpochGuard{epoch};
 
   EXPECT_EQ(0, epoch.GetProtectedEpoch());
 }
@@ -61,7 +61,7 @@ TEST_F(EpochGuardFixture, Construct_CurrentEpochZero_ProtectedEpochCorrectlyUpda
 TEST_F(EpochGuardFixture, Destruct_CurrentEpochZero_ProtectedEpochCorrectlyUpdated)
 {
   {
-    const auto guard = EpochGuard{&epoch};
+    const auto guard = EpochGuard{epoch};
   }
 
   EXPECT_EQ(std::numeric_limits<size_t>::max(), epoch.GetProtectedEpoch());

@@ -71,7 +71,7 @@ class EpochManagerFixture : public ::testing::Test
 
     manager->RegisterEpoch(&epoch, epoch_keeper);
 
-    const auto guard = EpochGuard{&epoch};
+    const auto guard = EpochGuard{epoch};
 
     // return epoch and its reference
     p.set_value(std::make_pair(&epoch, epoch_keeper));

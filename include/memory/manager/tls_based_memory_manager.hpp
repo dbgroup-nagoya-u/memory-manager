@@ -194,7 +194,7 @@ class TLSBasedMemoryManager
       epoch_manager_.RegisterEpoch(&epoch, epoch_keeper);
     }
 
-    return EpochGuard{&epoch};
+    return EpochGuard{epoch};
   }
 
   void

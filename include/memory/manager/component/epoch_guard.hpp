@@ -27,16 +27,16 @@ class EpochGuard
    * Internal member variables
    *##############################################################################################*/
 
-  Epoch *epoch_;
+  Epoch &epoch_;
 
  public:
   /*################################################################################################
    * Public constructors/destructors
    *##############################################################################################*/
 
-  explicit EpochGuard(Epoch *epoch) : epoch_{epoch} { epoch_->EnterEpoch(); }
+  explicit EpochGuard(Epoch &epoch) : epoch_{epoch} { epoch_.EnterEpoch(); }
 
-  ~EpochGuard() { epoch_->LeaveEpoch(); }
+  ~EpochGuard() { epoch_.LeaveEpoch(); }
 
   EpochGuard(const EpochGuard &) = delete;
   EpochGuard &operator=(const EpochGuard &) = delete;
