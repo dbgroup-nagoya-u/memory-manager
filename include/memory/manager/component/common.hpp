@@ -19,6 +19,7 @@
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
+#include <utility>
 
 #ifdef MEMORY_MANAGER_USE_MIMALLOC
 #include <mimalloc.h>
@@ -33,9 +34,37 @@ constexpr size_t kCacheLineSize = 64;
 constexpr size_t kGarbageBufferSize = 1024;
 
 #ifdef MEMORY_MANAGER_USE_MIMALLOC
-constexpr bool kUseMimalloc = true;
+
+template <class T, class... Args>
+T*
+Create(Args&&... args)
+{
+  auto page = mi_malloc_aligned(sizeof(T), alignof(T));
+  return new (std::move(page)) T{args...};
+}
+
+template <class T>
+void
+Delete(T* obj)
+{
+  obj->~T();
+  mi_free_aligned(obj, alignof(T));
+}
 #else
-constexpr bool kUseMimalloc = false;
+
+template <class T, class... Args>
+T*
+Create(Args&&... args)
+{
+  return new T{args...};
+}
+
+template <class T>
+void
+Delete(T* obj)
+{
+  delete obj;
+}
 #endif
 
 }  // namespace dbgroup::memory::manager

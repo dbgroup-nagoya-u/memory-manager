@@ -80,12 +80,7 @@ class EpochManager
 
   EpochManager() : current_epoch_{0}, epochs_addr_{0}
   {
-    if constexpr (kUseMimalloc) {
-      auto page = mi_new(sizeof(EpochNode));
-      epochs_addr_.store(reinterpret_cast<uintptr_t>(new (std::move(page)) EpochNode{}), mo_relax);
-    } else {
-      epochs_addr_.store(reinterpret_cast<uintptr_t>(new EpochNode{}), mo_relax);
-    }
+    epochs_addr_.store(reinterpret_cast<uintptr_t>(Create<EpochNode>()), mo_relax);
   }
 
   ~EpochManager()
@@ -94,12 +89,7 @@ class EpochManager
     while (next != nullptr) {
       auto current = next;
       next = reinterpret_cast<EpochNode *>(current->next);
-      if constexpr (kUseMimalloc) {
-        current->~EpochNode();
-        mi_free(current);
-      } else {
-        delete current;
-      }
+      Delete(current);
     }
   }
 
@@ -137,16 +127,10 @@ class EpochManager
   void
   RegisterEpoch(  //
       const Epoch *epoch,
-      const std::shared_ptr<std::atomic_bool> reference)
+      const std::shared_ptr<std::atomic_bool> &reference)
   {
     // prepare a new epoch node
-    EpochNode *epoch_node;
-    if constexpr (kUseMimalloc) {
-      auto page = mi_new(sizeof(EpochNode));
-      epoch_node = new (std::move(page)) EpochNode{epoch, reference, epochs_addr_.load(mo_relax)};
-    } else {
-      epoch_node = new EpochNode{epoch, reference, epochs_addr_.load(mo_relax)};
-    }
+    auto epoch_node = Create<EpochNode>(epoch, reference, epochs_addr_.load(mo_relax));
 
     // insert a new epoch node into the epoch list
     const auto epoch_addr = reinterpret_cast<uintptr_t>(epoch_node);
@@ -183,12 +167,7 @@ class EpochManager
       } else {
         // if an epoch is deleted, delete this node from a list
         previous->next = current->next;
-        if constexpr (kUseMimalloc) {
-          current->~EpochNode();
-          mi_free(current);
-        } else {
-          delete current;
-        }
+        Delete(current);
         current = reinterpret_cast<EpochNode *>(previous->next);
       }
     }
