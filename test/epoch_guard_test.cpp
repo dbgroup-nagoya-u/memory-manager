@@ -23,9 +23,22 @@ namespace dbgroup::memory::manager::component
 class EpochGuardFixture : public ::testing::Test
 {
  protected:
+  /*################################################################################################
+   * Internal member variables
+   *##############################################################################################*/
+
+  std::atomic_size_t current_epoch;
+
+  Epoch epoch{current_epoch};
+
+  /*################################################################################################
+   * Test setup/teardown
+   *##############################################################################################*/
+
   void
   SetUp() override
   {
+    current_epoch.store(0);
   }
 
   void
@@ -34,13 +47,12 @@ class EpochGuardFixture : public ::testing::Test
   }
 };
 
-/*--------------------------------------------------------------------------------------------------
- * Public utility tests
- *------------------------------------------------------------------------------------------------*/
+/*##################################################################################################
+ * Unit test definitions
+ *################################################################################################*/
 
 TEST_F(EpochGuardFixture, Construct_CurrentEpochZero_ProtectedEpochCorrectlyUpdated)
 {
-  auto epoch = Epoch{0};
   const auto guard = EpochGuard{&epoch};
 
   EXPECT_EQ(0, epoch.GetProtectedEpoch());
@@ -48,8 +60,6 @@ TEST_F(EpochGuardFixture, Construct_CurrentEpochZero_ProtectedEpochCorrectlyUpda
 
 TEST_F(EpochGuardFixture, Destruct_CurrentEpochZero_ProtectedEpochCorrectlyUpdated)
 {
-  auto epoch = Epoch{0};
-
   {
     const auto guard = EpochGuard{&epoch};
   }

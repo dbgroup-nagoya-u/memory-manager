@@ -118,6 +118,12 @@ class EpochManager
     return current_epoch_.load(mo_relax);
   }
 
+  std::atomic_size_t &
+  GetEpochReference()
+  {
+    return current_epoch_;
+  }
+
   /*################################################################################################
    * Public utility functions
    *##############################################################################################*/
@@ -150,14 +156,13 @@ class EpochManager
   }
 
   size_t
-  UpdateRegisteredEpochs(const size_t current_epoch)
+  UpdateRegisteredEpochs()
   {
     auto min_protected_epoch = std::numeric_limits<size_t>::max();
 
     // update the head of an epoch list
     auto previous = reinterpret_cast<EpochNode *>(epochs_addr_.load(mo_relax));
     if (previous->reference.use_count() > 1) {
-      previous->epoch->SetCurrentEpoch(current_epoch);
       const auto protected_epoch = previous->epoch->GetProtectedEpoch();
       if (protected_epoch < min_protected_epoch) {
         min_protected_epoch = std::move(protected_epoch);
@@ -169,7 +174,6 @@ class EpochManager
     while (current != nullptr) {
       if (current->reference.use_count() > 1) {
         // if an epoch remains, update epoch information
-        current->epoch->SetCurrentEpoch(current_epoch);
         const auto protected_epoch = current->epoch->GetProtectedEpoch();
         if (protected_epoch < min_protected_epoch) {
           min_protected_epoch = std::move(protected_epoch);

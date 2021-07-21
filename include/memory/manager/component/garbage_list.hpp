@@ -97,7 +97,7 @@ class GarbageList
    * Public utility functions
    *##############################################################################################*/
 
-  static constexpr GarbageList*
+  static GarbageList*
   AddGarbage(  //
       GarbageList* garbage_list,
       const T* garbage)
@@ -116,7 +116,7 @@ class GarbageList
     }
   }
 
-  static constexpr GarbageList*
+  static GarbageList*
   Clear(  //
       GarbageList* garbage_list,
       const size_t protected_epoch)

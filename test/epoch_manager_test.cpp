@@ -26,21 +26,47 @@
 
 namespace dbgroup::memory::manager::component
 {
-using EpochPairs = std::pair<std::vector<Epoch>, std::vector<std::shared_ptr<std::atomic_bool>>>;
-
 class EpochManagerFixture : public ::testing::Test
 {
- public:
+  using EpochPairs = std::pair<std::vector<Epoch>, std::vector<std::shared_ptr<std::atomic_bool>>>;
+
+ protected:
+  /*################################################################################################
+   * Internal constants
+   *##############################################################################################*/
+
   static constexpr size_t kLoopNum = 10;
 
+  /*################################################################################################
+   * Internal member variables
+   *##############################################################################################*/
+
   std::mutex mtx;
+
+  /*################################################################################################
+   * Test setup/teardown
+   *##############################################################################################*/
+
+  void
+  SetUp() override
+  {
+  }
+
+  void
+  TearDown() override
+  {
+  }
+
+  /*################################################################################################
+   * Internal utility functions
+   *##############################################################################################*/
 
   void
   CreateEpoch(  //
       std::promise<std::pair<Epoch *, std::shared_ptr<std::atomic_bool>>> p,
       EpochManager *manager)
   {
-    thread_local auto epoch = Epoch{manager->GetCurrentEpoch()};
+    thread_local auto epoch = Epoch{manager->GetEpochReference()};
     thread_local auto epoch_keeper = std::make_shared<std::atomic_bool>(true);
 
     manager->RegisterEpoch(&epoch, epoch_keeper);
@@ -83,8 +109,8 @@ class EpochManagerFixture : public ::testing::Test
         for (auto &&epoch : epochs) {
           EXPECT_EQ(i, epoch->GetCurrentEpoch());
         }
-        const auto current_epoch = manager.ForwardGlobalEpoch();
-        const auto protected_epoch = manager.UpdateRegisteredEpochs(current_epoch);
+        manager.ForwardGlobalEpoch();
+        const auto protected_epoch = manager.UpdateRegisteredEpochs();
         EXPECT_EQ(0, protected_epoch);
       }
 
@@ -101,24 +127,13 @@ class EpochManagerFixture : public ::testing::Test
     } while (!all_thread_exit);
 
     // there is no protecting epoch
-    EXPECT_EQ(std::numeric_limits<size_t>::max(), manager.UpdateRegisteredEpochs(0));
-  }
-
- protected:
-  void
-  SetUp() override
-  {
-  }
-
-  void
-  TearDown() override
-  {
+    EXPECT_EQ(std::numeric_limits<size_t>::max(), manager.UpdateRegisteredEpochs());
   }
 };
 
-/*--------------------------------------------------------------------------------------------------
- * Public utility tests
- *------------------------------------------------------------------------------------------------*/
+/*##################################################################################################
+ * Unit test definitions
+ *################################################################################################*/
 
 TEST_F(EpochManagerFixture, Construct_NoArgs_MemberVariablesCorrectlyInitialized)
 {
@@ -134,7 +149,7 @@ TEST_F(EpochManagerFixture, Destruct_AfterRegisterOneEpoch_RegisteredEpochFreed)
   {
     auto manager = EpochManager{};
     auto epoch_keeper = std::make_shared<std::atomic_bool>(true);
-    auto epoch = Epoch{manager.GetCurrentEpoch()};
+    auto epoch = Epoch{manager.GetEpochReference()};
 
     // register an epoch to a manager
     manager.RegisterEpoch(&epoch, epoch_keeper);
@@ -158,7 +173,7 @@ TEST_F(EpochManagerFixture, Destruct_AfterRegisterTenEpochs_RegisteredEpochsFree
     for (size_t count = 0; count < kLoopNum; ++count) {
       // register an epoch to a manager
       auto epoch_keeper = std::make_shared<std::atomic_bool>(true);
-      auto epoch = Epoch{manager.GetCurrentEpoch()};
+      auto epoch = Epoch{manager.GetEpochReference()};
       manager.RegisterEpoch(&epoch, epoch_keeper);
 
       // keep the reference to an epoch

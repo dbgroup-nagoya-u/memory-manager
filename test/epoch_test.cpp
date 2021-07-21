@@ -23,9 +23,22 @@ namespace dbgroup::memory::manager::component
 class EpochFixture : public ::testing::Test
 {
  protected:
+  /*################################################################################################
+   * Internal member variables
+   *##############################################################################################*/
+
+  std::atomic_size_t current_epoch;
+
+  Epoch epoch{current_epoch};
+
+  /*################################################################################################
+   * Test setup/teardown
+   *##############################################################################################*/
+
   void
   SetUp() override
   {
+    current_epoch.store(0);
   }
 
   void
@@ -34,29 +47,18 @@ class EpochFixture : public ::testing::Test
   }
 };
 
-/*--------------------------------------------------------------------------------------------------
- * Public utility tests
- *------------------------------------------------------------------------------------------------*/
+/*##################################################################################################
+ * Unit test definitions
+ *################################################################################################*/
 
 TEST_F(EpochFixture, Construct_CurrentEpochZero_MemberVariableCorrectlyInitialized)
 {
-  const auto epoch = Epoch{0};
-
   EXPECT_EQ(0, epoch.GetCurrentEpoch());
   EXPECT_EQ(std::numeric_limits<size_t>::max(), epoch.GetProtectedEpoch());
 }
 
-TEST_F(EpochFixture, SetCurrentEpoch_SetOne_CurrentEpochCorrectlyUpdated)
-{
-  auto epoch = Epoch{0};
-  epoch.SetCurrentEpoch(1);
-
-  EXPECT_EQ(1, epoch.GetCurrentEpoch());
-}
-
 TEST_F(EpochFixture, EnterEpoch_CurrentZero_ProtectedEpochCorrectlyUpdated)
 {
-  auto epoch = Epoch{0};
   epoch.EnterEpoch();
 
   EXPECT_EQ(0, epoch.GetProtectedEpoch());
@@ -64,7 +66,6 @@ TEST_F(EpochFixture, EnterEpoch_CurrentZero_ProtectedEpochCorrectlyUpdated)
 
 TEST_F(EpochFixture, LeaveEpoch_AfterEntered_ProtectedEpochCorrectlyUpdated)
 {
-  auto epoch = Epoch{0};
   epoch.EnterEpoch();
   epoch.LeaveEpoch();
 
