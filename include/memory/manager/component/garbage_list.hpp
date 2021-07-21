@@ -90,6 +90,11 @@ class GarbageList
   SetCurrentEpoch(const size_t current_epoch)
   {
     current_epoch_.store(current_epoch, mo_relax);
+
+    auto next_list = next_.load(mo_relax);
+    if (next_list != nullptr) {
+      next_list->SetCurrentEpoch(current_epoch);
+    }
   }
 
   /*################################################################################################
