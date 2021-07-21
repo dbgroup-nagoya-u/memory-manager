@@ -38,13 +38,18 @@ using component::GarbageList;
 template <class T>
 class TLSBasedMemoryManager
 {
+  using Epoch = component::Epoch;
+  using EpochGuard = component::EpochGuard;
+  using EpochManager = component::EpochManager;
+  using GarbageList_t = component::GarbageList<T>;
+
  private:
   /*################################################################################################
    * Internal structs
    *##############################################################################################*/
 
   struct GarbageNode {
-    GarbageList<T>* garbage_tail{nullptr};
+    GarbageList_t* garbage_tail{nullptr};
     std::shared_ptr<std::atomic_bool> reference = std::make_shared<std::atomic_bool>(false);
     GarbageNode* next{nullptr};
 
@@ -83,7 +88,7 @@ class TLSBasedMemoryManager
     current = head;
     while (current != nullptr) {
       current->garbage_tail->SetCurrentEpoch(current_epoch);
-      current->garbage_tail = GarbageList<T>::Clear(current->garbage_tail, protected_epoch);
+      current->garbage_tail = GarbageList_t::Clear(current->garbage_tail, protected_epoch);
       current = current->next;
     }
 
@@ -148,7 +153,7 @@ class TLSBasedMemoryManager
     next = garbages_.load();
     while (next != nullptr) {
       current = next;
-      current->garbage_tail = GarbageList<T>::Clear(current->garbage_tail, protected_epoch);
+      current->garbage_tail = GarbageList_t::Clear(current->garbage_tail, protected_epoch);
       if (current->reference.use_count() > 1) {
         current->reference->store(false);
       }
@@ -201,18 +206,21 @@ class TLSBasedMemoryManager
   AddGarbage(const T* target_ptr)
   {
     thread_local auto garbage_keeper = std::make_shared<std::atomic_bool>(false);
-    thread_local GarbageList<T>* garbage_head = nullptr;
+    thread_local GarbageList_t* garbage_head = nullptr;
 
     if (!*garbage_keeper) {
       garbage_keeper->store(true, mo_relax);
-      garbage_head = New<GarbageList<T>>(epoch_manager_.GetCurrentEpoch());
+      garbage_head = New<GarbageList_t>(epoch_manager_.GetCurrentEpoch());
       auto garbage_node = New<GarbageNode>(garbage_head, garbage_keeper, garbages_.load(mo_relax));
       while (!garbages_.compare_exchange_weak(garbage_node->next, garbage_node, mo_relax)) {
         // continue until inserting succeeds
       }
     }
 
-    garbage_head = GarbageList<T>::AddGarbage(garbage_head, target_ptr);
+    const auto new_list = GarbageList_t::AddGarbage(garbage_head, target_ptr);
+    if (new_list != nullptr) {
+      garbage_head = new_list;
+    }
   }
 
   /*################################################################################################
