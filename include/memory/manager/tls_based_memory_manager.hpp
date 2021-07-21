@@ -47,7 +47,7 @@ class TLSBasedMemoryManager
     std::shared_ptr<std::atomic_bool> reference = std::make_shared<std::atomic_bool>(false);
     GarbageNode* next{nullptr};
 
-    ~GarbageNode() { delete garbage_tail; }
+    ~GarbageNode() { Delete(garbage_tail); }
   };
 
   /*################################################################################################
@@ -91,7 +91,7 @@ class TLSBasedMemoryManager
     while (next != nullptr) {
       if (next->reference.use_count() == 1 && next->garbage_tail->Size() == 0) {
         current->next = next->next;
-        delete next;
+        Delete(next);
       } else {
         current = next;
       }
@@ -152,7 +152,7 @@ class TLSBasedMemoryManager
         current->reference->store(false);
       }
       next = current->next;
-      delete current;
+      Delete(current);
     }
   }
 
@@ -204,8 +204,9 @@ class TLSBasedMemoryManager
 
     if (!*garbage_keeper) {
       garbage_keeper->store(true, mo_relax);
-      garbage_head = new GarbageList<T>{epoch_manager_.GetCurrentEpoch()};
-      auto garbage_node = new GarbageNode{garbage_head, garbage_keeper, garbages_.load(mo_relax)};
+      garbage_head = Create<GarbageList<T>>(epoch_manager_.GetCurrentEpoch());
+      auto garbage_node =
+          Create<GarbageNode>(garbage_head, garbage_keeper, garbages_.load(mo_relax));
       while (!garbages_.compare_exchange_weak(garbage_node->next, garbage_node, mo_relax)) {
         // continue until inserting succeeds
       }

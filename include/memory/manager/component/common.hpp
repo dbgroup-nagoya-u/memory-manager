@@ -67,4 +67,23 @@ Delete(T* obj)
 }
 #endif
 
+template <class T>
+struct Deleter {
+  constexpr Deleter() noexcept = default;
+
+  template <class Up, typename = typename std::enable_if_t<std::is_convertible_v<Up*, T*>>>
+  Deleter(const Deleter<Up>&) noexcept
+  {
+  }
+
+  void
+  operator()(T* ptr) const
+  {
+    static_assert(!std::is_void_v<T>, "can't delete pointer to incomplete type");
+    static_assert(sizeof(T) > 0, "can't delete pointer to incomplete type");
+
+    Delete(ptr);
+  }
+};
+
 }  // namespace dbgroup::memory::manager
