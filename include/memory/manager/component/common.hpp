@@ -22,10 +22,13 @@
 
 namespace dbgroup::memory::manager
 {
+/// abbreviation for simplicity
 constexpr std::memory_order mo_relax = std::memory_order_relaxed;
 
+/// an assumed cache line size
 constexpr size_t kCacheLineSize = 64;
 
+/// an initial buffer size for retaining garbages
 constexpr size_t kGarbageBufferSize = 1024;
 
 }  // namespace dbgroup::memory::manager

@@ -26,6 +26,10 @@
 
 namespace dbgroup::memory::manager::component
 {
+/**
+ * @brief A class to manage epochs for epoch-based garbage collection.
+ *
+ */
 class EpochManager
 {
  private:
@@ -33,26 +37,44 @@ class EpochManager
    * Internal structs
    *##############################################################################################*/
 
+  /**
+   * @brief A class of nodes for composing a linked list of epochs in each thread.
+   *
+   */
   struct EpochNode {
     /*##############################################################################################
      * Public member variables
      *############################################################################################*/
 
+    /// a pointer to a target epoch.
     Epoch *epoch;
 
+    /// a shared pointer for monitoring the lifetime of a target epoch.
     const std::shared_ptr<std::atomic_bool> reference;
 
+    /// a pointer to a next node.
     EpochNode *next;
 
     /*##############################################################################################
      * Public constructors/destructors
      *############################################################################################*/
 
+    /**
+     * @brief Construct a dummy instance.
+     *
+     */
     constexpr EpochNode() : epoch{nullptr}, reference{}, next{nullptr} {}
 
+    /**
+     * @brief Construct a new instance.
+     *
+     * @param epoch a pointer to a target epoch.
+     * @param reference an original pointer for monitoring the lifetime of a target epoch.
+     * @param next a pointer to a next node.
+     */
     EpochNode(  //
         const Epoch *epoch,
-        const std::shared_ptr<std::atomic_bool> reference,
+        const std::shared_ptr<std::atomic_bool> &reference,
         const EpochNode *next)
         : epoch{const_cast<Epoch *>(epoch)},
           reference{reference},
@@ -60,6 +82,10 @@ class EpochManager
     {
     }
 
+    /**
+     * @brief Destroy the instance and set off a monitoring flag.
+     *
+     */
     ~EpochNode()
     {
       if (reference.use_count() > 0) {
@@ -72,8 +98,10 @@ class EpochManager
    * Internal member variables
    *##############################################################################################*/
 
+  /// an original epoch counter.
   std::atomic_size_t current_epoch_;
 
+  /// the head pointer of a linked list of epochs.
   std::atomic<EpochNode *> epochs_;
 
  public:
@@ -81,15 +109,23 @@ class EpochManager
    * Public constructors/destructors
    *##############################################################################################*/
 
-  EpochManager() : current_epoch_{0}, epochs_{nullptr} {}
+  /**
+   * @brief Construct a new instance.
+   *
+   */
+  constexpr EpochManager() : current_epoch_{0}, epochs_{nullptr} {}
 
+  /**
+   * @brief Destroy the instance.
+   *
+   */
   ~EpochManager()
   {
     auto next = epochs_.load(mo_relax);
     while (next != nullptr) {
       auto current = next;
       next = current->next;
-      Delete(std::move(current));
+      Delete(current);
     }
   }
 
@@ -102,6 +138,9 @@ class EpochManager
    * Public getters/setters
    *##############################################################################################*/
 
+  /**
+   * @return size_t a current epoch counter.
+   */
   size_t
   GetCurrentEpoch() const
   {
@@ -112,12 +151,23 @@ class EpochManager
    * Public utility functions
    *##############################################################################################*/
 
+  /**
+   * @brief Forward an original epoch counter.
+   *
+   * @return size_t a forwarded epoch value.
+   */
   size_t
   ForwardGlobalEpoch()
   {
     return current_epoch_.fetch_add(1, mo_relax) + 1;
   }
 
+  /**
+   * @brief Register a new epoch with the manager.
+   *
+   * @param epoch an epoch to be registered.
+   * @param reference a shared pointer for monitoring the lifetime of an epoch.
+   */
   void
   RegisterEpoch(  //
       const Epoch *epoch,
@@ -132,6 +182,12 @@ class EpochManager
     }
   }
 
+  /**
+   * @brief Update information of registered epochs.
+   *
+   * @param current_epoch a new epoch value to update registered epochs.
+   * @return size_t  a protected epoch value.
+   */
   size_t
   UpdateRegisteredEpochs(const size_t current_epoch)
   {
@@ -144,7 +200,7 @@ class EpochManager
       previous->epoch->SetCurrentEpoch(current_epoch);
       const auto protected_epoch = previous->epoch->GetProtectedEpoch();
       if (protected_epoch < min_protected_epoch) {
-        min_protected_epoch = std::move(protected_epoch);
+        min_protected_epoch = protected_epoch;
       }
     }
     auto current = previous->next;
@@ -156,7 +212,7 @@ class EpochManager
         current->epoch->SetCurrentEpoch(current_epoch);
         const auto protected_epoch = current->epoch->GetProtectedEpoch();
         if (protected_epoch < min_protected_epoch) {
-          min_protected_epoch = std::move(protected_epoch);
+          min_protected_epoch = protected_epoch;
         }
         previous = current;
         current = current->next;

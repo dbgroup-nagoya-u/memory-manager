@@ -104,7 +104,10 @@ TEST_F(GarbageListFixture, Destruct_AddLotOfGarbages_AddedGarbagesCorrectlyFreed
     GarbageList_t* current_list = &garbage_list;
     for (size_t count = 0; count < kGarbageNum; ++count) {
       auto garbage = New<std::shared_ptr<Target>>(new Target{0});
-      current_list = GarbageList_t::AddGarbage(current_list, garbage);
+      const auto new_list = GarbageList_t::AddGarbage(current_list, garbage);
+      if (new_list != nullptr) {
+        current_list = new_list;
+      }
       garbage_references.emplace_back(*garbage);
     }
 
@@ -138,7 +141,10 @@ TEST_F(GarbageListFixture, AddGarbage_LotOfGarbages_ListSizeCorrectlyUpdated)
   GarbageList<Target>* current_list = &garbage_list;
   for (size_t count = 0; count < kGarbageNum; ++count) {
     auto garbage = New<Target>(0UL);
-    current_list = GarbageList<Target>::AddGarbage(current_list, garbage);
+    const auto new_list = GarbageList<Target>::AddGarbage(current_list, garbage);
+    if (new_list != nullptr) {
+      current_list = new_list;
+    }
   }
 
   EXPECT_EQ(kGarbageNum, garbage_list.Size());
@@ -198,7 +204,10 @@ TEST_F(GarbageListFixture, Clear_WithLotOfGarbages_ProtectedGarbagesRemain)
   size_t count = 0;
   for (; count < kHalfGarbageNum; ++count) {
     auto garbage = New<std::shared_ptr<Target>>(new Target{0});
-    current_list = GarbageList_t::AddGarbage(current_list, garbage);
+    const auto new_list = GarbageList_t::AddGarbage(current_list, garbage);
+    if (new_list != nullptr) {
+      current_list = new_list;
+    }
     garbage_references.emplace_back(*garbage);
   }
 
@@ -207,7 +216,10 @@ TEST_F(GarbageListFixture, Clear_WithLotOfGarbages_ProtectedGarbagesRemain)
   // add protected garbages
   for (; count < kTotalGarbageNum; ++count) {
     auto garbage = New<std::shared_ptr<Target>>(new Target{0});
-    current_list = GarbageList_t::AddGarbage(current_list, garbage);
+    const auto new_list = GarbageList_t::AddGarbage(current_list, garbage);
+    if (new_list != nullptr) {
+      current_list = new_list;
+    }
     garbage_references.emplace_back(*garbage);
   }
 

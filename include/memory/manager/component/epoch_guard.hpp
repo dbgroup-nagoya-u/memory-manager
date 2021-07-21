@@ -20,6 +20,10 @@
 
 namespace dbgroup::memory::manager::component
 {
+/**
+ * @brief A class to protect epochs based on the scoped locking pattern.
+ *
+ */
 class EpochGuard
 {
  private:
@@ -27,6 +31,7 @@ class EpochGuard
    * Internal member variables
    *##############################################################################################*/
 
+  /// a reference to a target epoch.
   Epoch &epoch_;
 
  public:
@@ -34,8 +39,17 @@ class EpochGuard
    * Public constructors/destructors
    *##############################################################################################*/
 
+  /**
+   * @brief Construct a new instance and protect a current epoch.
+   *
+   * @param epoch a reference to a target epoch.
+   */
   explicit EpochGuard(Epoch &epoch) : epoch_{epoch} { epoch_.EnterEpoch(); }
 
+  /**
+   * @brief Destroy the instace and release a protected epoch.
+   *
+   */
   ~EpochGuard() { epoch_.LeaveEpoch(); }
 
   EpochGuard(const EpochGuard &) = delete;

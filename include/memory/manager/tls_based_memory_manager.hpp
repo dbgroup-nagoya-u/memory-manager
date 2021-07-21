@@ -30,11 +30,11 @@
 
 namespace dbgroup::memory::manager
 {
-using component::Epoch;
-using component::EpochGuard;
-using component::EpochManager;
-using component::GarbageList;
-
+/**
+ * @brief A class to manage garbage collection.
+ *
+ * @tparam T a target class of garbage collection.
+ */
 template <class T>
 class TLSBasedMemoryManager
 {
@@ -48,11 +48,53 @@ class TLSBasedMemoryManager
    * Internal structs
    *##############################################################################################*/
 
+  /**
+   * @brief A class of nodes for composing a linked list of gabage lists in each thread.
+   *
+   */
   struct GarbageNode {
-    GarbageList_t* garbage_tail{nullptr};
-    std::shared_ptr<std::atomic_bool> reference = std::make_shared<std::atomic_bool>(false);
-    GarbageNode* next{nullptr};
+    /*##############################################################################################
+     * Public member variables
+     *############################################################################################*/
 
+    /// a pointer to a target garbage list.
+    GarbageList_t* garbage_tail;
+
+    /// a shared pointer for monitoring the lifetime of a target list.
+    std::shared_ptr<std::atomic_bool> reference;
+
+    /// a pointer to a next node.
+    GarbageNode* next;
+
+    /*##############################################################################################
+     * Public constructors/destructors
+     *############################################################################################*/
+
+    /**
+     * @brief Construct a dummy instance.
+     *
+     */
+    constexpr GarbageNode() : garbage_tail{nullptr}, reference{}, next{nullptr} {};
+
+    /**
+     * @brief Construct a new instance.
+     *
+     * @param garbage_tail a pointer to a target list.
+     * @param reference an original pointer for monitoring the lifetime of a target list.
+     * @param next a pointer to a next node.
+     */
+    GarbageNode(  //
+        const GarbageList_t* garbage_tail,
+        const std::shared_ptr<std::atomic_bool>& reference,
+        const GarbageNode* next)
+        : garbage_tail{const_cast<GarbageList_t*>(garbage_tail)},
+          reference{reference},
+          next{const_cast<GarbageNode*>(next)} {};
+
+    /**
+     * @brief Destroy the instance.
+     *
+     */
     ~GarbageNode() { Delete(garbage_tail); }
   };
 
@@ -60,40 +102,50 @@ class TLSBasedMemoryManager
    * Internal member variables
    *##############################################################################################*/
 
+  /// an epoch manager.
   EpochManager epoch_manager_;
 
+  /// the head of a linked list of garbage buffers.
   std::atomic<GarbageNode*> garbages_;
 
+  /// the duration of garbage collection in micro seconds.
   const size_t gc_interval_micro_sec_;
 
+  /// a thread to run garbage collection.
   std::thread gc_thread_;
 
+  /// a flag to check whether garbage collection is running.
   std::atomic_bool gc_is_running_;
 
   /*################################################################################################
    * Internal utility functions
    *##############################################################################################*/
 
-  constexpr void
+  /**
+   * @brief Delete registered garbages if possible.
+   *
+   * @param current_epoch a current epoch value to update epochs in garbage lists.
+   * @param protected_epoch a protected epoch value.
+   */
+  void
   DeleteGarbages(  //
       const size_t current_epoch,
       const size_t protected_epoch)
   {
-    GarbageNode *current, *next;
-    auto head = garbages_.load(mo_relax);
-    if (head == nullptr) {
-      return;
-    }
+    const auto head = garbages_.load(mo_relax);
+    if (head == nullptr) return;
 
-    current = head;
+    // delete freeable garbages
+    auto current = head;
     while (current != nullptr) {
       current->garbage_tail->SetCurrentEpoch(current_epoch);
       current->garbage_tail = GarbageList_t::Clear(current->garbage_tail, protected_epoch);
       current = current->next;
     }
 
+    // unregister garbage lists of expired threads
     current = head;
-    next = head->next;
+    auto next = head->next;
     while (next != nullptr) {
       if (next->reference.use_count() == 1 && next->garbage_tail->Size() == 0) {
         current->next = next->next;
@@ -105,10 +157,15 @@ class TLSBasedMemoryManager
     }
   }
 
-  constexpr void
+  /**
+   * @brief Run garbage collection.
+   *
+   *  This function is assumed to be called in std::thread constructors.
+   */
+  void
   RunGC()
   {
-    while (gc_is_running_) {
+    while (gc_is_running_.load(mo_relax)) {
       // forward a global epoch and update registered epochs/garbage lists
       const auto current_epoch = epoch_manager_.ForwardGlobalEpoch();
       const auto protected_epoch = epoch_manager_.UpdateRegisteredEpochs(current_epoch);
@@ -124,15 +181,24 @@ class TLSBasedMemoryManager
    * Public constructors/destructors
    *##############################################################################################*/
 
-  constexpr explicit TLSBasedMemoryManager(const size_t gc_interval_micro_sec)
+  /**
+   * @brief Construct a new instance.
+   *
+   * @param gc_interval_micro_sec the duration of interval for GC (default: 1e5us = 100ms).
+   */
+  constexpr explicit TLSBasedMemoryManager(const size_t gc_interval_micro_sec = 100000)
       : epoch_manager_{},
         garbages_{nullptr},
         gc_interval_micro_sec_{gc_interval_micro_sec},
         gc_is_running_{false}
   {
-    StartGC();
   }
 
+  /**
+   * @brief Destroy the instance.
+   *
+   * If protected garbages remains, this destructor waits for them to be free.
+   */
   ~TLSBasedMemoryManager()
   {
     // stop garbage collection
@@ -171,7 +237,10 @@ class TLSBasedMemoryManager
    * Public getters/setters
    *##############################################################################################*/
 
-  constexpr size_t
+  /**
+   * @return size_t the total number of registered garbages.
+   */
+  size_t
   GetRegisteredGarbageSize() const
   {
     auto garbage_node = garbages_.load(mo_relax);
@@ -188,27 +257,37 @@ class TLSBasedMemoryManager
    * Public utility functions
    *##############################################################################################*/
 
+  /**
+   * @brief Create a guard instance to protect garbages based on the scoped locking pattern.
+   *
+   * @return EpochGuard a created epoch guard.
+   */
   EpochGuard
   CreateEpochGuard()
   {
     thread_local auto epoch_keeper = std::make_shared<std::atomic_bool>(false);
     thread_local Epoch epoch{epoch_manager_.GetCurrentEpoch()};
 
-    if (!*epoch_keeper) {
-      epoch_keeper->store(true);
+    if (!epoch_keeper->load(mo_relax)) {
+      epoch_keeper->store(true, mo_relax);
       epoch_manager_.RegisterEpoch(&epoch, epoch_keeper);
     }
 
     return EpochGuard{epoch};
   }
 
+  /**
+   * @brief Add a new garbage instance.
+   *
+   * @param target_ptr a pointer to a target garbage.
+   */
   void
   AddGarbage(const T* target_ptr)
   {
     thread_local auto garbage_keeper = std::make_shared<std::atomic_bool>(false);
     thread_local GarbageList_t* garbage_head = nullptr;
 
-    if (!*garbage_keeper) {
+    if (!garbage_keeper->load(mo_relax)) {
       garbage_keeper->store(true, mo_relax);
       garbage_head = New<GarbageList_t>(epoch_manager_.GetCurrentEpoch());
       auto garbage_node = New<GarbageNode>(garbage_head, garbage_keeper, garbages_.load(mo_relax));
@@ -227,25 +306,37 @@ class TLSBasedMemoryManager
    * Public GC control functions
    *##############################################################################################*/
 
-  constexpr bool
+  /**
+   * @brief Start garbage collection.
+   *
+   * @retval true if garbage collection has started.
+   * @retval false if garbage collection is already running.
+   */
+  bool
   StartGC()
   {
-    if (gc_is_running_) {
+    if (gc_is_running_.load(mo_relax)) {
       return false;
     } else {
-      gc_is_running_ = true;
+      gc_is_running_.store(true, mo_relax);
       gc_thread_ = std::thread{&TLSBasedMemoryManager::RunGC, this};
       return true;
     }
   }
 
-  constexpr bool
+  /**
+   * @brief Stop garbage collection.
+   *
+   * @retval true if garbage collection has stopped.
+   * @retval false if garbage collection is not running.
+   */
+  bool
   StopGC()
   {
-    if (!gc_is_running_) {
+    if (!gc_is_running_.load(mo_relax)) {
       return false;
     } else {
-      gc_is_running_ = false;
+      gc_is_running_.store(false, mo_relax);
       gc_thread_.join();
       return true;
     }

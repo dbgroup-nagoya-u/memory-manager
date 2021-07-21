@@ -25,6 +25,17 @@
 namespace dbgroup::memory::manager
 {
 #ifdef MEMORY_MANAGER_USE_MIMALLOC
+
+/**
+ * @brief A wrapper function to create an instance dynamically.
+ *
+ * This function is equivalent with "new".
+ *
+ * @tparam T a class to be created.
+ * @tparam Args variadic templates.
+ * @param args arguments for a constructor.
+ * @return T* a pointer to a created instance.
+ */
 template <class T, class... Args>
 T*
 New(Args&&... args)
@@ -32,6 +43,17 @@ New(Args&&... args)
   return new (mi_malloc_aligned(sizeof(T), alignof(T))) T{std::forward<Args>(args)...};
 }
 
+/**
+ * @brief A wrapper function to create an instance dynamically.
+ *
+ * This function is equivalent with "malloc + new".
+ *
+ * @tparam T a class to be created.
+ * @tparam Args variadic templates.
+ * @param size the size to be allocated.
+ * @param args arguments for a constructor.
+ * @return T* a pointer to a created instance.
+ */
 template <class T, class... Args>
 T*
 MallocNew(  //
@@ -41,6 +63,17 @@ MallocNew(  //
   return new (mi_malloc_aligned(size, alignof(T))) T{std::forward<Args>(args)...};
 }
 
+/**
+ * @brief A wrapper function to create an instance dynamically.
+ *
+ * This function is equivalent with "calloc + new".
+ *
+ * @tparam T a class to be created.
+ * @tparam Args variadic templates.
+ * @param size the size to be allocated.
+ * @param args arguments for a constructor.
+ * @return T* a pointer to a created instance.
+ */
 template <class T, class... Args>
 T*
 ZallocNew(  //
@@ -50,6 +83,14 @@ ZallocNew(  //
   return new (mi_zalloc_aligned(size, alignof(T))) T{std::forward<Args>(args)...};
 }
 
+/**
+ * @brief A wrapper function to delete an dynamically created instance.
+ *
+ * This function is equivalent with "delete".
+
+ * @tparam T a class to be deleted.
+ * @param obj a target instance.
+ */
 template <class T>
 void
 Delete(T* obj)
@@ -58,6 +99,15 @@ Delete(T* obj)
   mi_free_aligned(obj, alignof(T));
 }
 #else
+
+/**
+ * @brief A wrapper function to create an instance dynamically.
+ *
+ * @tparam T a class to be created.
+ * @tparam Args variadic templates.
+ * @param args arguments for a constructor.
+ * @return T* a pointer to a created instance.
+ */
 template <class T, class... Args>
 T*
 New(Args&&... args)
@@ -65,6 +115,17 @@ New(Args&&... args)
   return new T{std::forward<Args>(args)...};
 }
 
+/**
+ * @brief A wrapper function to create an instance dynamically.
+ *
+ * This function is equivalent with "malloc + new".
+ *
+ * @tparam T a class to be created.
+ * @tparam Args variadic templates.
+ * @param size the size to be allocated.
+ * @param args arguments for a constructor.
+ * @return T* a pointer to a created instance.
+ */
 template <class T, class... Args>
 T*
 MallocNew(  //
@@ -74,6 +135,17 @@ MallocNew(  //
   return new (malloc(size)) T{std::forward<Args>(args)...};
 }
 
+/**
+ * @brief A wrapper function to create an instance dynamically.
+ *
+ * This function is equivalent with "calloc + new".
+ *
+ * @tparam T a class to be created.
+ * @tparam Args variadic templates.
+ * @param size the size to be allocated.
+ * @param args arguments for a constructor.
+ * @return T* a pointer to a created instance.
+ */
 template <class T, class... Args>
 T*
 ZallocNew(  //
@@ -83,6 +155,14 @@ ZallocNew(  //
   return new (calloc(size, 1)) T{std::forward<Args>(args)...};
 }
 
+/**
+ * @brief A wrapper function to delete an dynamically created instance.
+ *
+ * This function is equivalent with "delete".
+
+ * @tparam T a class to be deleted.
+ * @param obj a target instance.
+ */
 template <class T>
 void
 Delete(T* obj)
@@ -91,6 +171,11 @@ Delete(T* obj)
 }
 #endif
 
+/**
+ * @brief A wrapper of a deleter class for unique_ptr/shared_ptr.
+ *
+ * @tparam T a class to be deleted by this deleter.
+ */
 template <class T>
 struct Deleter {
   constexpr Deleter() noexcept = default;
