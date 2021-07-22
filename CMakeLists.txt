@@ -47,6 +47,13 @@ target_link_libraries(
 # Build options
 #--------------------------------------------------------------------------------------#
 
+if(DEFINED MEMORY_MANAGER_GARBAGE_BUFFER_SIZE)
+  target_compile_definitions(
+    memory_manager INTERFACE
+    MEMORY_MANAGER_GARBAGE_BUFFER_SIZE=${MEMORY_MANAGER_GARBAGE_BUFFER_SIZE}
+  )
+endif()
+
 option(MEMORY_MANAGER_USE_MIMALLOC "use mimalloc as a memory allocator/deleter if ON" OFF)
 if(${MEMORY_MANAGER_USE_MIMALLOC})
   find_package(mimalloc 1.7 REQUIRED)

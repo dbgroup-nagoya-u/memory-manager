@@ -14,8 +14,9 @@ sudo apt update && sudo apt install -y build-essential cmake
 
 ### Build Options
 
+- `MEMORY_MANAGER_GARBAGE_BUFFER_SIZE`: the size of an initially created buffer for garbage instances (default `1024`).
 - `MEMORY_MANAGER_USE_MIMALLOC`: use [mimalloc](https://github.com/microsoft/mimalloc) as a memory allocator/deleter if `on` (default `off`).
-    - If you use this option, you need to install mimalloc beforehand because this library uses the [find_package](https://cmake.org/cmake/help/latest/command/find_package.html) command to link mimalloc.
+    - If you use this option, you need to install mimalloc beforehand and enable `cmake` find it by using the [find_package](https://cmake.org/cmake/help/latest/command/find_package.html) command.
 
 ### Build Options for Unit Testing
 
