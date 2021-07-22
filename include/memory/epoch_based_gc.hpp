@@ -125,38 +125,45 @@ class EpochBasedGC
    *##############################################################################################*/
 
   /**
-   * @brief Delete registered garbages if possible.
+   * @brief Update current epoch values in registered garbage lists.
    *
    * @param current_epoch a current epoch value to update epochs in garbage lists.
+   */
+  void
+  UpdateEpochsInGarbageLists(const size_t current_epoch)
+  {
+    auto current = garbages_.load(mo_relax);
+    while (current != nullptr) {
+      current->garbage_tail->SetCurrentEpoch(current_epoch);
+      current = current->next;
+    }
+  }
+
+  /**
+   * @brief Delete registered garbages if possible.
+   *
    * @param protected_epoch a protected epoch value.
    */
   void
-  DeleteGarbages(  //
-      const size_t current_epoch,
-      const size_t protected_epoch)
+  DeleteGarbages(const size_t protected_epoch)
   {
-    const auto head = garbages_.load(mo_relax);
-    if (head == nullptr) return;
+    auto current = garbages_.load(mo_relax);
+    GarbageNode* previous = nullptr;
 
-    // delete freeable garbages
-    auto current = head;
     while (current != nullptr) {
-      current->garbage_tail->SetCurrentEpoch(current_epoch);
+      // delete freeable garbages
       current->garbage_tail = GarbageList_t::Clear(current->garbage_tail, protected_epoch);
-      current = current->next;
-    }
 
-    // unregister garbage lists of expired threads
-    current = head;
-    auto next = head->next;
-    while (next != nullptr) {
-      if (next->reference.use_count() == 1 && next->garbage_tail->Size() == 0) {
-        current->next = next->next;
-        Delete(next);
+      // unregister garbage lists of expired threads
+      if (previous != nullptr  //
+          && current->reference.use_count() == 1 && current->garbage_tail->Size() == 0) {
+        previous->next = current->next;
+        Delete(current);
+        current = previous->next;
       } else {
-        current = next;
+        previous = current;
+        current = current->next;
       }
-      next = current->next;
     }
   }
 
@@ -171,8 +178,9 @@ class EpochBasedGC
     while (gc_is_running_.load(mo_relax)) {
       // forward a global epoch and update registered epochs/garbage lists
       const auto current_epoch = epoch_manager_.ForwardGlobalEpoch();
+      UpdateEpochsInGarbageLists(current_epoch);
       const auto protected_epoch = epoch_manager_.UpdateRegisteredEpochs(current_epoch);
-      DeleteGarbages(current_epoch, protected_epoch);
+      DeleteGarbages(protected_epoch);
 
       // wait for garbages to be out of scope
       std::this_thread::sleep_for(std::chrono::microseconds(gc_interval_micro_sec_));
