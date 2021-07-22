@@ -22,7 +22,7 @@
 #include <mimalloc.h>
 #endif
 
-namespace dbgroup::memory::manager
+namespace dbgroup::memory
 {
 #ifdef MEMORY_MANAGER_USE_MIMALLOC
 
@@ -76,7 +76,7 @@ MallocNew(  //
  */
 template <class T, class... Args>
 T*
-ZallocNew(  //
+CallocNew(  //
     const size_t size,
     Args&&... args)
 {
@@ -148,7 +148,7 @@ MallocNew(  //
  */
 template <class T, class... Args>
 T*
-ZallocNew(  //
+CallocNew(  //
     const size_t size,
     Args&&... args)
 {
@@ -195,4 +195,4 @@ struct Deleter {
   }
 };
 
-}  // namespace dbgroup::memory::manager
+}  // namespace dbgroup::memory

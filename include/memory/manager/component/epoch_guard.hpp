@@ -18,7 +18,7 @@
 
 #include "epoch.hpp"
 
-namespace dbgroup::memory::manager::component
+namespace dbgroup::memory::component
 {
 /**
  * @brief A class to protect epochs based on the scoped locking pattern.
@@ -58,4 +58,4 @@ class EpochGuard
   constexpr EpochGuard &operator=(EpochGuard &&) = default;
 };
 
-}  // namespace dbgroup::memory::manager::component
+}  // namespace dbgroup::memory::component

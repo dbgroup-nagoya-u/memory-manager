@@ -23,7 +23,7 @@
 #include <thread>
 #include <vector>
 
-namespace dbgroup::memory::manager::component
+namespace dbgroup::memory::component::test
 {
 class GarbageListFixture : public ::testing::Test
 {
@@ -35,7 +35,6 @@ class GarbageListFixture : public ::testing::Test
    * Internal constants
    *##############################################################################################*/
 
-  static constexpr size_t kBufferSize = 256;
   static constexpr size_t kGCInterval = 100;
 
   /*################################################################################################
@@ -237,4 +236,4 @@ TEST_F(GarbageListFixture, Clear_WithLotOfGarbages_ProtectedGarbagesRemain)
   Delete(current_list);
 }
 
-}  // namespace dbgroup::memory::manager::component
+}  // namespace dbgroup::memory::component::test

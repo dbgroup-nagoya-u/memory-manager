@@ -21,7 +21,7 @@
 
 #include "common.hpp"
 
-namespace dbgroup::memory::manager::component
+namespace dbgroup::memory::component
 {
 /**
  * @brief A class to represent epochs for epoch-based garbage collection.
@@ -120,4 +120,4 @@ class Epoch
   }
 };
 
-}  // namespace dbgroup::memory::manager::component
+}  // namespace dbgroup::memory::component

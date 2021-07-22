@@ -27,7 +27,7 @@
 #include "../utility.hpp"
 #include "common.hpp"
 
-namespace dbgroup::memory::manager::component
+namespace dbgroup::memory::component
 {
 /**
  * @brief A class to represent a buffer of garbage instances.
@@ -198,4 +198,4 @@ class GarbageList
   }
 };
 
-}  // namespace dbgroup::memory::manager::component
+}  // namespace dbgroup::memory::component

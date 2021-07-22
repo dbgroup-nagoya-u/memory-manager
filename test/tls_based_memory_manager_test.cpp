@@ -24,7 +24,7 @@
 #include <thread>
 #include <vector>
 
-namespace dbgroup::memory::manager
+namespace dbgroup::memory::test
 {
 class TLSBasedMemoryManagerFixture : public ::testing::Test
 {
@@ -294,4 +294,4 @@ TEST_F(TLSBasedMemoryManagerFixture, CreateEpochGuard_MultiThreads_PreventGarbag
   guarder.join();
 }
 
-}  // namespace dbgroup::memory::manager
+}  // namespace dbgroup::memory::test

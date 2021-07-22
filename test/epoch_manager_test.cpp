@@ -24,7 +24,7 @@
 #include <thread>
 #include <vector>
 
-namespace dbgroup::memory::manager::component
+namespace dbgroup::memory::component::test
 {
 class EpochManagerFixture : public ::testing::Test
 {
@@ -214,4 +214,4 @@ TEST_F(EpochManagerFixture, UpdateRegisteredEpochs_MultiThreads_RegisteredEpochs
   TestUpdateRegisteredEpochs(kThreadNum);
 }
 
-}  // namespace dbgroup::memory::manager::component
+}  // namespace dbgroup::memory::component::test

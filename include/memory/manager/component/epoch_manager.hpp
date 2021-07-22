@@ -24,7 +24,7 @@
 #include "../utility.hpp"
 #include "epoch_guard.hpp"
 
-namespace dbgroup::memory::manager::component
+namespace dbgroup::memory::component
 {
 /**
  * @brief A class to manage epochs for epoch-based garbage collection.
@@ -228,4 +228,4 @@ class EpochManager
   }
 };
 
-}  // namespace dbgroup::memory::manager::component
+}  // namespace dbgroup::memory::component

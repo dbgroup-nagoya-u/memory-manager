@@ -18,7 +18,7 @@
 
 #include <gtest/gtest.h>
 
-namespace dbgroup::memory::manager::component
+namespace dbgroup::memory::component::test
 {
 class EpochGuardFixture : public ::testing::Test
 {
@@ -67,4 +67,4 @@ TEST_F(EpochGuardFixture, Destruct_CurrentEpochZero_ProtectedEpochCorrectlyUpdat
   EXPECT_EQ(std::numeric_limits<size_t>::max(), epoch.GetProtectedEpoch());
 }
 
-}  // namespace dbgroup::memory::manager::component
+}  // namespace dbgroup::memory::component::test

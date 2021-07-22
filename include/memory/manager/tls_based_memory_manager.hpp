@@ -28,7 +28,7 @@
 #include "component/garbage_list.hpp"
 #include "utility.hpp"
 
-namespace dbgroup::memory::manager
+namespace dbgroup::memory
 {
 /**
  * @brief A class to manage garbage collection.
@@ -42,6 +42,9 @@ class TLSBasedMemoryManager
   using EpochGuard = component::EpochGuard;
   using EpochManager = component::EpochManager;
   using GarbageList_t = component::GarbageList<T>;
+
+  /// abbreviation for simplicity.
+  static constexpr std::memory_order mo_relax = std::memory_order_relaxed;
 
  private:
   /*################################################################################################
@@ -343,4 +346,4 @@ class TLSBasedMemoryManager
   }
 };
 
-}  // namespace dbgroup::memory::manager
+}  // namespace dbgroup::memory
