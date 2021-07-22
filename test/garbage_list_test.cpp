@@ -16,12 +16,12 @@
 
 #include "memory/component/garbage_list.hpp"
 
-#include <gtest/gtest.h>
-
 #include <future>
 #include <memory>
 #include <thread>
 #include <vector>
+
+#include "gtest/gtest.h"
 
 namespace dbgroup::memory::component::test
 {

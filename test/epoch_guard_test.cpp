@@ -16,7 +16,7 @@
 
 #include "memory/component/epoch_guard.hpp"
 
-#include <gtest/gtest.h>
+#include "gtest/gtest.h"
 
 namespace dbgroup::memory::component::test
 {

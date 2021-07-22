@@ -16,13 +16,13 @@
 
 #include "memory/epoch_based_gc.hpp"
 
-#include <gtest/gtest.h>
-
 #include <future>
 #include <memory>
 #include <mutex>
 #include <thread>
 #include <vector>
+
+#include "gtest/gtest.h"
 
 namespace dbgroup::memory::test
 {
