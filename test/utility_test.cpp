@@ -16,6 +16,8 @@
 
 #include "memory/utility.hpp"
 
+#include <memory>
+
 #include "gtest/gtest.h"
 
 namespace dbgroup::memory::test
@@ -155,6 +157,22 @@ class UtilityFixture : public ::testing::Test
 
     Delete(obj);
   }
+
+  void
+  VerifyDeleter()
+  {
+    auto obj = New<std::shared_ptr<T>>(New<T>(), Deleter<T>{});
+
+    std::weak_ptr<T> inner{*obj};
+    std::weak_ptr<std::shared_ptr<T>> outer;
+    {
+      std::shared_ptr<std::shared_ptr<T>> ptr{obj, Deleter<std::shared_ptr<T>>{}};
+      outer = ptr;
+    }
+
+    EXPECT_TRUE(inner.expired());
+    EXPECT_TRUE(outer.expired());
+  }
 };
 
 /*##################################################################################################
@@ -197,6 +215,11 @@ TYPED_TEST(UtilityFixture, CallocNew_WithoutArgs_AllocateMemoryWithZeroPadding)
 TYPED_TEST(UtilityFixture, CallocNew_WithArgs_ConstructExpectedInstance)
 {  //
   TestFixture::VerifyCallocNewWithArgs();
+}
+
+TYPED_TEST(UtilityFixture, Deleter_InnerAndOuterReference_DeleteAllReferences)
+{  //
+  TestFixture::VerifyDeleter();
 }
 
 }  // namespace dbgroup::memory::test
