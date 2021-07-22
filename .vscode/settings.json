@@ -34,6 +34,7 @@
     "DMEMORY",
     "DSIMPLE",
     "MIMALLOC",
+    "STREQ",
     "Wextra",
     "alignas",
     "ctest",

@@ -18,8 +18,12 @@
 
 #include <utility>
 
+#include "component/common.hpp"
+
 #ifdef MEMORY_MANAGER_USE_MIMALLOC
 #include <mimalloc.h>
+#else
+#include <stdlib.h>
 #endif
 
 namespace dbgroup::memory
@@ -152,7 +156,7 @@ CallocNew(  //
     const size_t size,
     Args&&... args)
 {
-  return new (calloc(size, 1)) T{std::forward<Args>(args)...};
+  return new (calloc(1, size)) T{std::forward<Args>(args)...};
 }
 
 /**
