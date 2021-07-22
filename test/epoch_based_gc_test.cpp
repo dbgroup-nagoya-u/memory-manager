@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-#include "memory/tls_based_memory_manager.hpp"
+#include "memory/epoch_based_gc.hpp"
 
 #include <gtest/gtest.h>
 
@@ -45,7 +45,7 @@ class TLSBasedMemoryManagerFixture : public ::testing::Test
   void
   AddGarbages(  //
       std::promise<std::vector<std::weak_ptr<Target>>> p,
-      TLSBasedMemoryManager<std::shared_ptr<Target>> *gc,
+      EpochBasedGC<std::shared_ptr<Target>> *gc,
       const size_t garbage_num)
   {
     std::vector<std::weak_ptr<Target>> target_weak_ptrs;
@@ -64,7 +64,7 @@ class TLSBasedMemoryManagerFixture : public ::testing::Test
   void
   KeepEpochGuard(  //
       std::promise<Target> p,
-      TLSBasedMemoryManager<std::shared_ptr<Target>> *gc)
+      EpochBasedGC<std::shared_ptr<Target>> *gc)
   {
     const auto guard = gc->CreateEpochGuard();
     p.set_value(0);  // set promise to notice
@@ -73,7 +73,7 @@ class TLSBasedMemoryManagerFixture : public ::testing::Test
 
   std::vector<std::weak_ptr<Target>>
   TestGC(  //
-      TLSBasedMemoryManager<std::shared_ptr<Target>> *gc,
+      EpochBasedGC<std::shared_ptr<Target>> *gc,
       const size_t thread_num,
       const size_t garbage_num)
   {
@@ -112,7 +112,7 @@ class TLSBasedMemoryManagerFixture : public ::testing::Test
 
 TEST_F(TLSBasedMemoryManagerFixture, Construct_GCStoped_MemberVariablesCorrectlyInitialized)
 {
-  auto gc = TLSBasedMemoryManager<Target>{kGCInterval};
+  auto gc = EpochBasedGC<Target>{kGCInterval};
 
   auto gc_is_running = gc.StopGC();
 
@@ -126,7 +126,7 @@ TEST_F(TLSBasedMemoryManagerFixture, Destruct_SingleThread_GarbagesCorrectlyFree
 
   // register garbages to GC
   {
-    auto gc = TLSBasedMemoryManager<std::shared_ptr<Target>>{kGCInterval};
+    auto gc = EpochBasedGC<std::shared_ptr<Target>>{kGCInterval};
     gc.StartGC();
     target_weak_ptrs = TestGC(&gc, 1, kGarbageNumLarge);
 
@@ -147,7 +147,7 @@ TEST_F(TLSBasedMemoryManagerFixture, Destruct_RecreatedGC_GarbagesCorrectlyFreed
 
     // register garbages to GC
     {
-      auto gc = TLSBasedMemoryManager<std::shared_ptr<Target>>{kGCInterval};
+      auto gc = EpochBasedGC<std::shared_ptr<Target>>{kGCInterval};
       gc.StartGC();
       for (size_t loop = 0; loop < kGarbageNumLarge; ++loop) {
         std::shared_ptr<Target> *target_shared;
@@ -175,7 +175,7 @@ TEST_F(TLSBasedMemoryManagerFixture, Destruct_MultiThreads_GarbagesCorrectlyFree
 
   // register garbages to GC
   {
-    auto gc = TLSBasedMemoryManager<std::shared_ptr<Target>>{kGCInterval};
+    auto gc = EpochBasedGC<std::shared_ptr<Target>>{kGCInterval};
     gc.StartGC();
     target_weak_ptrs = TestGC(&gc, kThreadNum, kGarbageNumLarge);
 
@@ -190,7 +190,7 @@ TEST_F(TLSBasedMemoryManagerFixture, Destruct_MultiThreads_GarbagesCorrectlyFree
 
 TEST_F(TLSBasedMemoryManagerFixture, RunGC_SingleThread_GarbagesCorrectlyFreed)
 {
-  auto gc = TLSBasedMemoryManager<std::shared_ptr<Target>>{kGCInterval};
+  auto gc = EpochBasedGC<std::shared_ptr<Target>>{kGCInterval};
   gc.StartGC();
 
   // keep garbage targets
@@ -210,7 +210,7 @@ TEST_F(TLSBasedMemoryManagerFixture, RunGC_SingleThread_GarbagesCorrectlyFreed)
 
 TEST_F(TLSBasedMemoryManagerFixture, RunGC_MultiThreads_GarbagesCorrectlyFreed)
 {
-  auto gc = TLSBasedMemoryManager<std::shared_ptr<Target>>{kGCInterval};
+  auto gc = EpochBasedGC<std::shared_ptr<Target>>{kGCInterval};
   gc.StartGC();
 
   // keep garbage targets
@@ -230,7 +230,7 @@ TEST_F(TLSBasedMemoryManagerFixture, RunGC_MultiThreads_GarbagesCorrectlyFreed)
 
 TEST_F(TLSBasedMemoryManagerFixture, CreateEpochGuard_SingleThread_PreventGarbagesFromDeleeting)
 {
-  auto gc = TLSBasedMemoryManager<std::shared_ptr<Target>>{kGCInterval};
+  auto gc = EpochBasedGC<std::shared_ptr<Target>>{kGCInterval};
   gc.StartGC();
 
   // keep garbage targets
@@ -263,7 +263,7 @@ TEST_F(TLSBasedMemoryManagerFixture, CreateEpochGuard_SingleThread_PreventGarbag
 
 TEST_F(TLSBasedMemoryManagerFixture, CreateEpochGuard_MultiThreads_PreventGarbagesFromDeleeting)
 {
-  auto gc = TLSBasedMemoryManager<std::shared_ptr<Target>>{kGCInterval};
+  auto gc = EpochBasedGC<std::shared_ptr<Target>>{kGCInterval};
   gc.StartGC();
 
   // keep garbage targets

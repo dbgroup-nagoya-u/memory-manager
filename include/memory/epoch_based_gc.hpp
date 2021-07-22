@@ -36,7 +36,7 @@ namespace dbgroup::memory
  * @tparam T a target class of garbage collection.
  */
 template <class T>
-class TLSBasedMemoryManager
+class EpochBasedGC
 {
   using Epoch = component::Epoch;
   using EpochGuard = component::EpochGuard;
@@ -189,7 +189,7 @@ class TLSBasedMemoryManager
    *
    * @param gc_interval_micro_sec the duration of interval for GC (default: 1e5us = 100ms).
    */
-  constexpr explicit TLSBasedMemoryManager(const size_t gc_interval_micro_sec = 100000)
+  constexpr explicit EpochBasedGC(const size_t gc_interval_micro_sec = 100000)
       : epoch_manager_{},
         garbages_{nullptr},
         gc_interval_micro_sec_{gc_interval_micro_sec},
@@ -202,7 +202,7 @@ class TLSBasedMemoryManager
    *
    * If protected garbages remains, this destructor waits for them to be free.
    */
-  ~TLSBasedMemoryManager()
+  ~EpochBasedGC()
   {
     // stop garbage collection
     StopGC();
@@ -231,10 +231,10 @@ class TLSBasedMemoryManager
     }
   }
 
-  TLSBasedMemoryManager(const TLSBasedMemoryManager&) = delete;
-  TLSBasedMemoryManager& operator=(const TLSBasedMemoryManager&) = delete;
-  TLSBasedMemoryManager(TLSBasedMemoryManager&&) = delete;
-  TLSBasedMemoryManager& operator=(TLSBasedMemoryManager&&) = delete;
+  EpochBasedGC(const EpochBasedGC&) = delete;
+  EpochBasedGC& operator=(const EpochBasedGC&) = delete;
+  EpochBasedGC(EpochBasedGC&&) = delete;
+  EpochBasedGC& operator=(EpochBasedGC&&) = delete;
 
   /*################################################################################################
    * Public getters/setters
@@ -322,7 +322,7 @@ class TLSBasedMemoryManager
       return false;
     } else {
       gc_is_running_.store(true, mo_relax);
-      gc_thread_ = std::thread{&TLSBasedMemoryManager::RunGC, this};
+      gc_thread_ = std::thread{&EpochBasedGC::RunGC, this};
       return true;
     }
   }
