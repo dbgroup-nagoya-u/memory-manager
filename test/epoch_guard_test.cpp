@@ -27,7 +27,7 @@ class EpochGuardFixture : public ::testing::Test
    * Internal member variables
    *##############################################################################################*/
 
-  std::atomic_size_t current_epoch;
+  std::atomic_size_t current_epoch{0};
 
   Epoch epoch{current_epoch};
 
@@ -38,7 +38,6 @@ class EpochGuardFixture : public ::testing::Test
   void
   SetUp() override
   {
-    current_epoch.store(0);
   }
 
   void

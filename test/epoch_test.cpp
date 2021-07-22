@@ -27,7 +27,7 @@ class EpochFixture : public ::testing::Test
    * Internal member variables
    *##############################################################################################*/
 
-  size_t current_epoch;
+  size_t current_epoch{0};
 
   Epoch epoch{current_epoch};
 
@@ -38,7 +38,6 @@ class EpochFixture : public ::testing::Test
   void
   SetUp() override
   {
-    current_epoch = 0;
   }
 
   void
