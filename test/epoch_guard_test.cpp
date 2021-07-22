@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-#include "memory/manager/component/epoch_guard.hpp"
+#include "memory/component/epoch_guard.hpp"
 
 #include <gtest/gtest.h>
 

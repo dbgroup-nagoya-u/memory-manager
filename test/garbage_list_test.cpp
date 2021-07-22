@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-#include "memory/manager/component/garbage_list.hpp"
+#include "memory/component/garbage_list.hpp"
 
 #include <gtest/gtest.h>
 

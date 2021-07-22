@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-#include "memory/manager/tls_based_memory_manager.hpp"
+#include "memory/tls_based_memory_manager.hpp"
 
 #include <gtest/gtest.h>
 
