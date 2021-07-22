@@ -14,15 +14,27 @@
  * limitations under the License.
  */
 
-#include "memory/manager/component/epoch.hpp"
+#include "memory/component/epoch.hpp"
 
-#include <gtest/gtest.h>
+#include "gtest/gtest.h"
 
-namespace dbgroup::memory::manager::component
+namespace dbgroup::memory::component::test
 {
 class EpochFixture : public ::testing::Test
 {
  protected:
+  /*################################################################################################
+   * Internal member variables
+   *##############################################################################################*/
+
+  size_t current_epoch{0};
+
+  Epoch epoch{current_epoch};
+
+  /*################################################################################################
+   * Test setup/teardown
+   *##############################################################################################*/
+
   void
   SetUp() override
   {
@@ -34,29 +46,18 @@ class EpochFixture : public ::testing::Test
   }
 };
 
-/*--------------------------------------------------------------------------------------------------
- * Public utility tests
- *------------------------------------------------------------------------------------------------*/
+/*##################################################################################################
+ * Unit test definitions
+ *################################################################################################*/
 
 TEST_F(EpochFixture, Construct_CurrentEpochZero_MemberVariableCorrectlyInitialized)
 {
-  const auto epoch = Epoch{0};
-
   EXPECT_EQ(0, epoch.GetCurrentEpoch());
   EXPECT_EQ(std::numeric_limits<size_t>::max(), epoch.GetProtectedEpoch());
 }
 
-TEST_F(EpochFixture, SetCurrentEpoch_SetOne_CurrentEpochCorrectlyUpdated)
-{
-  auto epoch = Epoch{0};
-  epoch.SetCurrentEpoch(1);
-
-  EXPECT_EQ(1, epoch.GetCurrentEpoch());
-}
-
 TEST_F(EpochFixture, EnterEpoch_CurrentZero_ProtectedEpochCorrectlyUpdated)
 {
-  auto epoch = Epoch{0};
   epoch.EnterEpoch();
 
   EXPECT_EQ(0, epoch.GetProtectedEpoch());
@@ -64,11 +65,10 @@ TEST_F(EpochFixture, EnterEpoch_CurrentZero_ProtectedEpochCorrectlyUpdated)
 
 TEST_F(EpochFixture, LeaveEpoch_AfterEntered_ProtectedEpochCorrectlyUpdated)
 {
-  auto epoch = Epoch{0};
   epoch.EnterEpoch();
   epoch.LeaveEpoch();
 
   EXPECT_EQ(std::numeric_limits<size_t>::max(), epoch.GetProtectedEpoch());
 }
 
-}  // namespace dbgroup::memory::manager::component
+}  // namespace dbgroup::memory::component::test

@@ -58,6 +58,24 @@ function(ADD_MEMORY_MANAGER_TEST MEMORY_MANAGER_TEST_TARGET)
     gtest_main
   )
 
+  if(DEFINED MEMORY_MANAGER_GARBAGE_BUFFER_SIZE)
+    target_compile_definitions(
+      ${MEMORY_MANAGER_TEST_TARGET} PRIVATE
+      MEMORY_MANAGER_GARBAGE_BUFFER_SIZE=${MEMORY_MANAGER_GARBAGE_BUFFER_SIZE}
+    )
+  endif()
+
+  if(${MEMORY_MANAGER_USE_MIMALLOC})
+    target_link_libraries(
+      ${MEMORY_MANAGER_TEST_TARGET} PRIVATE
+      mimalloc-static
+    )
+    target_compile_definitions(
+      ${MEMORY_MANAGER_TEST_TARGET} PRIVATE
+      MEMORY_MANAGER_USE_MIMALLOC
+    )
+  endif()
+
   if(DEFINED MEMORY_MANAGER_TEST_THREAD_NUM)
     target_compile_definitions(
       ${MEMORY_MANAGER_TEST_TARGET} PRIVATE
@@ -73,4 +91,5 @@ ADD_MEMORY_MANAGER_TEST("epoch_test")
 ADD_MEMORY_MANAGER_TEST("epoch_guard_test")
 ADD_MEMORY_MANAGER_TEST("epoch_manager_test")
 ADD_MEMORY_MANAGER_TEST("garbage_list_test")
-ADD_MEMORY_MANAGER_TEST("tls_based_memory_manager_test")
+ADD_MEMORY_MANAGER_TEST("epoch_based_gc_test")
+ADD_MEMORY_MANAGER_TEST("utility_test")

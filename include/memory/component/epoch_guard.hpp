@@ -18,8 +18,12 @@
 
 #include "epoch.hpp"
 
-namespace dbgroup::memory::manager::component
+namespace dbgroup::memory::component
 {
+/**
+ * @brief A class to protect epochs based on the scoped locking pattern.
+ *
+ */
 class EpochGuard
 {
  private:
@@ -27,21 +31,31 @@ class EpochGuard
    * Internal member variables
    *##############################################################################################*/
 
-  Epoch *epoch_;
+  /// a reference to a target epoch.
+  Epoch &epoch_;
 
  public:
   /*################################################################################################
    * Public constructors/destructors
    *##############################################################################################*/
 
-  constexpr explicit EpochGuard(Epoch *epoch) : epoch_{epoch} { epoch_->EnterEpoch(); }
+  /**
+   * @brief Construct a new instance and protect a current epoch.
+   *
+   * @param epoch a reference to a target epoch.
+   */
+  explicit EpochGuard(Epoch &epoch) : epoch_{epoch} { epoch_.EnterEpoch(); }
 
-  ~EpochGuard() { epoch_->LeaveEpoch(); }
+  /**
+   * @brief Destroy the instace and release a protected epoch.
+   *
+   */
+  ~EpochGuard() { epoch_.LeaveEpoch(); }
 
   EpochGuard(const EpochGuard &) = delete;
   EpochGuard &operator=(const EpochGuard &) = delete;
-  EpochGuard(EpochGuard &&) = delete;
-  EpochGuard &operator=(EpochGuard &&) = delete;
+  constexpr EpochGuard(EpochGuard &&) = default;
+  constexpr EpochGuard &operator=(EpochGuard &&) = default;
 };
 
-}  // namespace dbgroup::memory::manager::component
+}  // namespace dbgroup::memory::component

@@ -14,30 +14,43 @@
  * limitations under the License.
  */
 
-#include "memory/manager/component/garbage_list.hpp"
-
-#include <gtest/gtest.h>
+#include "memory/component/garbage_list.hpp"
 
 #include <future>
 #include <memory>
 #include <thread>
 #include <vector>
 
-namespace dbgroup::memory::manager::component
+#include "gtest/gtest.h"
+
+namespace dbgroup::memory::component::test
 {
 class GarbageListFixture : public ::testing::Test
 {
- public:
+ protected:
   using Target = uint64_t;
   using GarbageList_t = GarbageList<std::shared_ptr<Target>>;
 
-  static constexpr size_t kBufferSize = 256;
+  /*################################################################################################
+   * Internal constants
+   *##############################################################################################*/
+
   static constexpr size_t kGCInterval = 100;
 
- protected:
+  /*################################################################################################
+   * Internal member variables
+   *##############################################################################################*/
+
+  size_t current_epoch;
+
+  /*################################################################################################
+   * Test setup/teardown
+   *##############################################################################################*/
+
   void
   SetUp() override
   {
+    current_epoch = 0;
   }
 
   void
@@ -46,13 +59,13 @@ class GarbageListFixture : public ::testing::Test
   }
 };
 
-/*--------------------------------------------------------------------------------------------------
- * Public utility tests
- *------------------------------------------------------------------------------------------------*/
+/*##################################################################################################
+ * Unit test definitions
+ *################################################################################################*/
 
 TEST_F(GarbageListFixture, Construct_WithoutArgs_MemberVariablesCorrectlyInitialized)
 {
-  auto garbage_list = GarbageList_t{};
+  auto garbage_list = GarbageList_t{current_epoch};
 
   EXPECT_EQ(0, garbage_list.Size());
 }
@@ -64,9 +77,9 @@ TEST_F(GarbageListFixture, Destruct_AddLessGarbages_AddedGarbagesCorrectlyFreed)
   std::vector<std::weak_ptr<Target>> garbage_references;
 
   {
-    auto garbage_list = GarbageList_t{};
+    auto garbage_list = GarbageList_t{current_epoch};
     for (size_t count = 0; count < kGarbageNum; ++count) {
-      auto garbage = new std::shared_ptr<Target>{new Target{0}};
+      auto garbage = New<std::shared_ptr<Target>>(new Target{0});
       GarbageList_t::AddGarbage(&garbage_list, garbage);
       garbage_references.emplace_back(*garbage);
     }
@@ -86,16 +99,19 @@ TEST_F(GarbageListFixture, Destruct_AddLotOfGarbages_AddedGarbagesCorrectlyFreed
   std::vector<std::weak_ptr<Target>> garbage_references;
 
   {
-    auto garbage_list = GarbageList_t{};
+    auto garbage_list = GarbageList_t{current_epoch};
     GarbageList_t* current_list = &garbage_list;
     for (size_t count = 0; count < kGarbageNum; ++count) {
-      auto garbage = new std::shared_ptr<Target>{new Target{0}};
-      current_list = GarbageList_t::AddGarbage(current_list, garbage);
+      auto garbage = New<std::shared_ptr<Target>>(new Target{0});
+      const auto new_list = GarbageList_t::AddGarbage(current_list, garbage);
+      if (new_list != nullptr) {
+        current_list = new_list;
+      }
       garbage_references.emplace_back(*garbage);
     }
 
     // garbages are deleted in destructor
-    delete current_list;
+    Delete(current_list);
   }
 
   for (auto&& garbage_reference : garbage_references) {
@@ -107,9 +123,9 @@ TEST_F(GarbageListFixture, AddGarbage_LessGarbages_ListSizeCorrectlyUpdated)
 {
   constexpr size_t kGarbageNum = kGarbageBufferSize * 0.5;
 
-  auto garbage_list = GarbageList<Target>{};
+  auto garbage_list = GarbageList<Target>{current_epoch};
   for (size_t count = 0; count < kGarbageNum; ++count) {
-    auto garbage = new Target{0};
+    auto garbage = New<Target>(0UL);
     GarbageList<Target>::AddGarbage(&garbage_list, garbage);
   }
 
@@ -120,16 +136,19 @@ TEST_F(GarbageListFixture, AddGarbage_LotOfGarbages_ListSizeCorrectlyUpdated)
 {
   constexpr size_t kGarbageNum = kGarbageBufferSize * 1.5;
 
-  auto garbage_list = GarbageList<Target>{};
+  auto garbage_list = GarbageList<Target>{current_epoch};
   GarbageList<Target>* current_list = &garbage_list;
   for (size_t count = 0; count < kGarbageNum; ++count) {
-    auto garbage = new Target{0};
-    current_list = GarbageList<Target>::AddGarbage(current_list, garbage);
+    auto garbage = New<Target>(0UL);
+    const auto new_list = GarbageList<Target>::AddGarbage(current_list, garbage);
+    if (new_list != nullptr) {
+      current_list = new_list;
+    }
   }
 
   EXPECT_EQ(kGarbageNum, garbage_list.Size());
 
-  delete current_list;
+  Delete(current_list);
 }
 
 TEST_F(GarbageListFixture, Clear_WithLessGarbages_ProtectedGarbagesRemain)
@@ -137,14 +156,14 @@ TEST_F(GarbageListFixture, Clear_WithLessGarbages_ProtectedGarbagesRemain)
   constexpr size_t kTotalGarbageNum = kGarbageBufferSize / 2;
   constexpr size_t kHalfGarbageNum = kTotalGarbageNum / 2;
 
-  auto garbage_list = GarbageList_t{};
+  auto garbage_list = GarbageList_t{current_epoch};
   std::vector<std::weak_ptr<Target>> garbage_references;
   const size_t protected_epoch = 1;
 
   // add unprotected garbages
   size_t count = 0;
   for (; count < kHalfGarbageNum; ++count) {
-    auto garbage = new std::shared_ptr<Target>{new Target{0}};
+    auto garbage = New<std::shared_ptr<Target>>(new Target{0});
     GarbageList_t::AddGarbage(&garbage_list, garbage);
     garbage_references.emplace_back(*garbage);
   }
@@ -153,7 +172,7 @@ TEST_F(GarbageListFixture, Clear_WithLessGarbages_ProtectedGarbagesRemain)
 
   // add protected garbages
   for (; count < kTotalGarbageNum; ++count) {
-    auto garbage = new std::shared_ptr<Target>{new Target{0}};
+    auto garbage = New<std::shared_ptr<Target>>(new Target{0});
     GarbageList_t::AddGarbage(&garbage_list, garbage);
     garbage_references.emplace_back(*garbage);
   }
@@ -175,7 +194,7 @@ TEST_F(GarbageListFixture, Clear_WithLotOfGarbages_ProtectedGarbagesRemain)
   constexpr size_t kTotalGarbageNum = kGarbageBufferSize * 1.5;
   constexpr size_t kHalfGarbageNum = kTotalGarbageNum / 2;
 
-  auto garbage_list = GarbageList_t{};
+  auto garbage_list = GarbageList_t{current_epoch};
   GarbageList_t* current_list = &garbage_list;
   std::vector<std::weak_ptr<Target>> garbage_references;
   const size_t protected_epoch = 1;
@@ -183,8 +202,11 @@ TEST_F(GarbageListFixture, Clear_WithLotOfGarbages_ProtectedGarbagesRemain)
   // add unprotected garbages
   size_t count = 0;
   for (; count < kHalfGarbageNum; ++count) {
-    auto garbage = new std::shared_ptr<Target>{new Target{0}};
-    current_list = GarbageList_t::AddGarbage(current_list, garbage);
+    auto garbage = New<std::shared_ptr<Target>>(new Target{0});
+    const auto new_list = GarbageList_t::AddGarbage(current_list, garbage);
+    if (new_list != nullptr) {
+      current_list = new_list;
+    }
     garbage_references.emplace_back(*garbage);
   }
 
@@ -192,8 +214,11 @@ TEST_F(GarbageListFixture, Clear_WithLotOfGarbages_ProtectedGarbagesRemain)
 
   // add protected garbages
   for (; count < kTotalGarbageNum; ++count) {
-    auto garbage = new std::shared_ptr<Target>{new Target{0}};
-    current_list = GarbageList_t::AddGarbage(current_list, garbage);
+    auto garbage = New<std::shared_ptr<Target>>(new Target{0});
+    const auto new_list = GarbageList_t::AddGarbage(current_list, garbage);
+    if (new_list != nullptr) {
+      current_list = new_list;
+    }
     garbage_references.emplace_back(*garbage);
   }
 
@@ -208,7 +233,7 @@ TEST_F(GarbageListFixture, Clear_WithLotOfGarbages_ProtectedGarbagesRemain)
     }
   }
 
-  delete current_list;
+  Delete(current_list);
 }
 
-}  // namespace dbgroup::memory::manager::component
+}  // namespace dbgroup::memory::component::test

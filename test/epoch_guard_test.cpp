@@ -14,15 +14,27 @@
  * limitations under the License.
  */
 
-#include "memory/manager/component/epoch_guard.hpp"
+#include "memory/component/epoch_guard.hpp"
 
-#include <gtest/gtest.h>
+#include "gtest/gtest.h"
 
-namespace dbgroup::memory::manager::component
+namespace dbgroup::memory::component::test
 {
 class EpochGuardFixture : public ::testing::Test
 {
  protected:
+  /*################################################################################################
+   * Internal member variables
+   *##############################################################################################*/
+
+  std::atomic_size_t current_epoch{0};
+
+  Epoch epoch{current_epoch};
+
+  /*################################################################################################
+   * Test setup/teardown
+   *##############################################################################################*/
+
   void
   SetUp() override
   {
@@ -34,27 +46,24 @@ class EpochGuardFixture : public ::testing::Test
   }
 };
 
-/*--------------------------------------------------------------------------------------------------
- * Public utility tests
- *------------------------------------------------------------------------------------------------*/
+/*##################################################################################################
+ * Unit test definitions
+ *################################################################################################*/
 
 TEST_F(EpochGuardFixture, Construct_CurrentEpochZero_ProtectedEpochCorrectlyUpdated)
 {
-  auto epoch = Epoch{0};
-  const auto guard = EpochGuard{&epoch};
+  const auto guard = EpochGuard{epoch};
 
   EXPECT_EQ(0, epoch.GetProtectedEpoch());
 }
 
 TEST_F(EpochGuardFixture, Destruct_CurrentEpochZero_ProtectedEpochCorrectlyUpdated)
 {
-  auto epoch = Epoch{0};
-
   {
-    const auto guard = EpochGuard{&epoch};
+    const auto guard = EpochGuard{epoch};
   }
 
   EXPECT_EQ(std::numeric_limits<size_t>::max(), epoch.GetProtectedEpoch());
 }
 
-}  // namespace dbgroup::memory::manager::component
+}  // namespace dbgroup::memory::component::test

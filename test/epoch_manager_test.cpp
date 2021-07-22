@@ -14,9 +14,7 @@
  * limitations under the License.
  */
 
-#include "memory/manager/component/epoch_manager.hpp"
-
-#include <gtest/gtest.h>
+#include "memory/component/epoch_manager.hpp"
 
 #include <future>
 #include <memory>
@@ -24,16 +22,44 @@
 #include <thread>
 #include <vector>
 
-namespace dbgroup::memory::manager::component
-{
-using EpochPairs = std::pair<std::vector<Epoch>, std::vector<std::shared_ptr<std::atomic_bool>>>;
+#include "gtest/gtest.h"
 
+namespace dbgroup::memory::component::test
+{
 class EpochManagerFixture : public ::testing::Test
 {
- public:
+ protected:
+  using EpochPairs = std::pair<std::vector<Epoch>, std::vector<std::shared_ptr<std::atomic_bool>>>;
+
+  /*################################################################################################
+   * Internal constants
+   *##############################################################################################*/
+
   static constexpr size_t kLoopNum = 10;
 
+  /*################################################################################################
+   * Internal member variables
+   *##############################################################################################*/
+
   std::mutex mtx;
+
+  /*################################################################################################
+   * Test setup/teardown
+   *##############################################################################################*/
+
+  void
+  SetUp() override
+  {
+  }
+
+  void
+  TearDown() override
+  {
+  }
+
+  /*################################################################################################
+   * Internal utility functions
+   *##############################################################################################*/
 
   void
   CreateEpoch(  //
@@ -45,7 +71,7 @@ class EpochManagerFixture : public ::testing::Test
 
     manager->RegisterEpoch(&epoch, epoch_keeper);
 
-    const auto guard = EpochGuard{&epoch};
+    const auto guard = EpochGuard{epoch};
 
     // return epoch and its reference
     p.set_value(std::make_pair(&epoch, epoch_keeper));
@@ -83,8 +109,8 @@ class EpochManagerFixture : public ::testing::Test
         for (auto &&epoch : epochs) {
           EXPECT_EQ(i, epoch->GetCurrentEpoch());
         }
-        manager.ForwardGlobalEpoch();
-        const auto protected_epoch = manager.UpdateRegisteredEpochs();
+        const auto current_epoch = manager.ForwardGlobalEpoch();
+        const auto protected_epoch = manager.UpdateRegisteredEpochs(current_epoch);
         EXPECT_EQ(0, protected_epoch);
       }
 
@@ -101,24 +127,13 @@ class EpochManagerFixture : public ::testing::Test
     } while (!all_thread_exit);
 
     // there is no protecting epoch
-    EXPECT_EQ(std::numeric_limits<size_t>::max(), manager.UpdateRegisteredEpochs());
-  }
-
- protected:
-  void
-  SetUp() override
-  {
-  }
-
-  void
-  TearDown() override
-  {
+    EXPECT_EQ(std::numeric_limits<size_t>::max(), manager.UpdateRegisteredEpochs(0));
   }
 };
 
-/*--------------------------------------------------------------------------------------------------
- * Public utility tests
- *------------------------------------------------------------------------------------------------*/
+/*##################################################################################################
+ * Unit test definitions
+ *################################################################################################*/
 
 TEST_F(EpochManagerFixture, Construct_NoArgs_MemberVariablesCorrectlyInitialized)
 {
@@ -199,4 +214,4 @@ TEST_F(EpochManagerFixture, UpdateRegisteredEpochs_MultiThreads_RegisteredEpochs
   TestUpdateRegisteredEpochs(kThreadNum);
 }
 
-}  // namespace dbgroup::memory::manager::component
+}  // namespace dbgroup::memory::component::test

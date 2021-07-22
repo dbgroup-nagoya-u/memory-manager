@@ -16,15 +16,22 @@
 
 #pragma once
 
+#include <atomic>
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
 
-namespace dbgroup::memory::manager
+namespace dbgroup::memory::component
 {
+/// abbreviation for simplicity.
 constexpr std::memory_order mo_relax = std::memory_order_relaxed;
 
-constexpr size_t kCacheLineSize = 64;
-
+#ifdef MEMORY_MANAGER_GARBAGE_BUFFER_SIZE
+/// an initial buffer size for retaining garbages
+constexpr size_t kGarbageBufferSize = MEMORY_MANAGER_GARBAGE_BUFFER_SIZE;
+#else
+/// an initial buffer size for retaining garbages
 constexpr size_t kGarbageBufferSize = 1024;
-}  // namespace dbgroup::memory::manager
+#endif
+
+}  // namespace dbgroup::memory::component

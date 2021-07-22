@@ -21,8 +21,12 @@
 
 #include "common.hpp"
 
-namespace dbgroup::memory::manager::component
+namespace dbgroup::memory::component
 {
+/**
+ * @brief A class to represent epochs for epoch-based garbage collection.
+ *
+ */
 class Epoch
 {
  private:
@@ -30,8 +34,10 @@ class Epoch
    * Internal member variables
    *##############################################################################################*/
 
+  /// a current epoch. Note: this is maintained individually to improve performance.
   std::atomic_size_t current_;
 
+  /// a snapshot to denote a protected epoch.
   std::atomic_size_t entered_;
 
  public:
@@ -39,8 +45,11 @@ class Epoch
    * Public constructors/destructors
    *##############################################################################################*/
 
-  constexpr Epoch() : current_{0}, entered_{std::numeric_limits<size_t>::max()} {}
-
+  /**
+   * @brief Construct a new instance with an initial epoch.
+   *
+   * @param current_epoch an initial epoch value.
+   */
   constexpr explicit Epoch(const size_t current_epoch)
       : current_{current_epoch}, entered_{std::numeric_limits<size_t>::max()}
   {
@@ -50,38 +59,36 @@ class Epoch
 
   Epoch(const Epoch &) = delete;
   Epoch &operator=(const Epoch &) = delete;
-
-  Epoch(Epoch &&orig)
-  {
-    this->current_.store(orig.current_.load(mo_relax), mo_relax);
-    this->entered_.store(orig.entered_.load(mo_relax), mo_relax);
-  }
-
-  Epoch &
-  operator=(Epoch &&orig)
-  {
-    this->current_.store(orig.current_.load(mo_relax), mo_relax);
-    this->entered_.store(orig.entered_.load(mo_relax), mo_relax);
-
-    return *this;
-  }
+  Epoch(Epoch &&orig) = delete;
+  Epoch &operator=(Epoch &&orig) = delete;
 
   /*################################################################################################
    * Public getters/setters
    *##############################################################################################*/
 
+  /**
+   * @return size_t a current epoch value.
+   */
   size_t
   GetCurrentEpoch() const
   {
     return current_.load(mo_relax);
   }
 
+  /**
+   * @return size_t a protected epoch value.
+   */
   size_t
   GetProtectedEpoch() const
   {
     return entered_.load(mo_relax);
   }
 
+  /**
+   * @brief Set a current epoch value.
+   *
+   * @param current_epoch a epoch value to be set.
+   */
   void
   SetCurrentEpoch(const size_t current_epoch)
   {
@@ -92,12 +99,20 @@ class Epoch
    * Public utility functions
    *##############################################################################################*/
 
+  /**
+   * @brief Keep a current epoch value to protect new garbages.
+   *
+   */
   void
   EnterEpoch()
   {
     entered_.store(current_.load(mo_relax), mo_relax);
   }
 
+  /**
+   * @brief Release a protected epoch value to allow GC to delete old garbages.
+   *
+   */
   void
   LeaveEpoch()
   {
@@ -105,4 +120,4 @@ class Epoch
   }
 };
 
-}  // namespace dbgroup::memory::manager::component
+}  // namespace dbgroup::memory::component
