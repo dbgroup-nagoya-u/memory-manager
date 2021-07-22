@@ -173,6 +173,15 @@ class UtilityFixture : public ::testing::Test
     EXPECT_TRUE(inner.expired());
     EXPECT_TRUE(outer.expired());
   }
+
+  void
+  VerifySTLAlloc()
+  {
+    std::vector<T, STLAlloc<T>> vec;
+    for (size_t i = 0; i < 1E6; ++i) {
+      vec.emplace_back();
+    }
+  }
 };
 
 /*##################################################################################################
@@ -220,6 +229,11 @@ TYPED_TEST(UtilityFixture, CallocNew_WithArgs_ConstructExpectedInstance)
 TYPED_TEST(UtilityFixture, Deleter_InnerAndOuterReference_DeleteAllReferences)
 {  //
   TestFixture::VerifyDeleter();
+}
+
+TYPED_TEST(UtilityFixture, STLAlloc_InnerAndOuterReference_DeleteAllReferences)
+{  //
+  TestFixture::VerifySTLAlloc();
 }
 
 }  // namespace dbgroup::memory::test

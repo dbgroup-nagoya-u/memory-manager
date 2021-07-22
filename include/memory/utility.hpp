@@ -16,6 +16,7 @@
 
 #pragma once
 
+#include <memory_resource>
 #include <utility>
 
 #include "component/common.hpp"
@@ -102,6 +103,15 @@ Delete(T* obj)
   obj->~T();
   mi_free_aligned(obj, alignof(T));
 }
+
+/**
+ * @brief An alias of allocators for container types.
+ *
+ * @tparam T a class to be contained.
+ */
+template <class T>
+using STLAlloc = mi_stl_allocator<T>;
+
 #else
 
 /**
@@ -173,6 +183,15 @@ Delete(T* obj)
 {
   delete obj;
 }
+
+/**
+ * @brief An alias of allocators for container types.
+ *
+ * @tparam T a class to be contained.
+ */
+template <class T>
+using STLAlloc = std::pmr::polymorphic_allocator<T>;
+
 #endif
 
 /**
