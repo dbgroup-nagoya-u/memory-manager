@@ -175,7 +175,11 @@ class EpochBasedGC
   void
   RunGC()
   {
+    const auto interval = std::chrono::microseconds(gc_interval_micro_sec_);
+
     while (gc_is_running_.load(mo_relax)) {
+      const auto sleep_time = std::chrono::high_resolution_clock::now() + interval;
+
       // forward a global epoch and update registered epochs/garbage lists
       const auto current_epoch = epoch_manager_.ForwardGlobalEpoch();
       UpdateEpochsInGarbageLists(current_epoch);
@@ -183,7 +187,7 @@ class EpochBasedGC
       DeleteGarbages(protected_epoch);
 
       // wait for garbages to be out of scope
-      std::this_thread::sleep_for(std::chrono::microseconds(gc_interval_micro_sec_));
+      std::this_thread::sleep_until(sleep_time);
     }
   }
 
