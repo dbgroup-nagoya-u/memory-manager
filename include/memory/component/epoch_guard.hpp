@@ -32,7 +32,7 @@ class EpochGuard
    *##############################################################################################*/
 
   /// a reference to a target epoch.
-  Epoch &epoch_;
+  Epoch *epoch_;
 
  public:
   /*################################################################################################
@@ -44,13 +44,13 @@ class EpochGuard
    *
    * @param epoch a reference to a target epoch.
    */
-  explicit EpochGuard(Epoch &epoch) : epoch_{epoch} { epoch_.EnterEpoch(); }
+  explicit EpochGuard(Epoch *epoch) : epoch_{epoch} { epoch_->EnterEpoch(); }
 
   /**
    * @brief Destroy the instace and release a protected epoch.
    *
    */
-  ~EpochGuard() { epoch_.LeaveEpoch(); }
+  ~EpochGuard() { epoch_->LeaveEpoch(); }
 
   EpochGuard(const EpochGuard &) = delete;
   EpochGuard &operator=(const EpochGuard &) = delete;

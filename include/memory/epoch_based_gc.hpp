@@ -280,15 +280,14 @@ class EpochBasedGC
   EpochGuard
   CreateEpochGuard()
   {
-    thread_local auto epoch_keeper = std::make_shared<std::atomic_bool>(false);
-    thread_local Epoch epoch{epoch_manager_.GetCurrentEpoch()};
+    thread_local std::shared_ptr<Epoch> epoch;
 
-    if (!epoch_keeper->load(mo_relax)) {
-      epoch_keeper->store(true, mo_relax);
-      epoch_manager_.RegisterEpoch(&epoch, epoch_keeper);
+    if (epoch.use_count() == 0) {
+      epoch = std::make_shared<Epoch>(epoch_manager_.GetCurrentEpoch());
+      epoch_manager_.RegisterEpoch(epoch);
     }
 
-    return EpochGuard{epoch};
+    return EpochGuard{epoch.get()};
   }
 
   /**

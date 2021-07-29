@@ -63,18 +63,17 @@ class EpochManagerFixture : public ::testing::Test
 
   void
   CreateEpoch(  //
-      std::promise<std::pair<Epoch *, std::shared_ptr<std::atomic_bool>>> p,
+      std::promise<std::shared_ptr<Epoch>> p,
       EpochManager *manager)
   {
-    thread_local auto epoch = Epoch{manager->GetCurrentEpoch()};
-    thread_local auto epoch_keeper = std::make_shared<std::atomic_bool>(true);
+    thread_local auto epoch = std::make_shared<Epoch>(manager->GetCurrentEpoch());
 
-    manager->RegisterEpoch(&epoch, epoch_keeper);
+    manager->RegisterEpoch(epoch);
 
-    const auto guard = EpochGuard{epoch};
+    const auto guard = EpochGuard{epoch.get()};
 
     // return epoch and its reference
-    p.set_value(std::make_pair(&epoch, epoch_keeper));
+    p.set_value(epoch);
 
     // wait until a main thread finishes tests
     const auto lock = std::unique_lock<std::mutex>(mtx);
@@ -84,24 +83,24 @@ class EpochManagerFixture : public ::testing::Test
   TestUpdateRegisteredEpochs(const size_t thread_num)
   {
     auto manager = EpochManager{};
-    std::vector<std::weak_ptr<std::atomic_bool>> epoch_keepers;
+    std::vector<std::weak_ptr<Epoch>> epoch_references;
 
     {
       // create a lock to prevent destruction of epochs
       auto lock = std::unique_lock<std::mutex>(mtx);
 
       // create threads and gather their epochs
-      std::vector<Epoch *> epochs;
-      std::vector<std::future<std::pair<Epoch *, std::shared_ptr<std::atomic_bool>>>> futures;
+      std::vector<std::shared_ptr<Epoch>> epochs;
+      std::vector<std::future<std::shared_ptr<Epoch>>> futures;
       for (size_t i = 0; i < thread_num; ++i) {
-        std::promise<std::pair<Epoch *, std::shared_ptr<std::atomic_bool>>> p;
+        std::promise<std::shared_ptr<Epoch>> p;
         futures.emplace_back(p.get_future());
         std::thread{&EpochManagerFixture::CreateEpoch, this, std::move(p), &manager}.detach();
       }
       for (auto &&future : futures) {
-        auto [epoch, epoch_keeper] = future.get();
+        auto epoch = future.get();
         epochs.emplace_back(epoch);
-        epoch_keepers.emplace_back(epoch_keeper);
+        epoch_references.emplace_back(epoch);
       }
 
       // check whether epochs are correclty updated
@@ -121,8 +120,8 @@ class EpochManagerFixture : public ::testing::Test
     bool all_thread_exit;
     do {
       all_thread_exit = true;
-      for (auto &&epoch_keeper : epoch_keepers) {
-        all_thread_exit &= epoch_keeper.use_count() == 1;
+      for (auto &&epoch_reference : epoch_references) {
+        all_thread_exit &= epoch_reference.use_count() == 1;
       }
     } while (!all_thread_exit);
 
@@ -144,18 +143,17 @@ TEST_F(EpochManagerFixture, Construct_NoArgs_MemberVariablesCorrectlyInitialized
 
 TEST_F(EpochManagerFixture, Destruct_AfterRegisterOneEpoch_RegisteredEpochFreed)
 {
-  std::weak_ptr<std::atomic_bool> epoch_reference;
+  std::weak_ptr<Epoch> epoch_reference;
 
   {
     auto manager = EpochManager{};
-    auto epoch_keeper = std::make_shared<std::atomic_bool>(true);
-    auto epoch = Epoch{manager.GetCurrentEpoch()};
+    auto epoch = std::make_shared<Epoch>(manager.GetCurrentEpoch());
 
     // register an epoch to a manager
-    manager.RegisterEpoch(&epoch, epoch_keeper);
+    manager.RegisterEpoch(epoch);
 
     // keep the reference to an epoch
-    epoch_reference = epoch_keeper;
+    epoch_reference = epoch;
 
     // the created epoch is freed here because all the shared_ptr are out of scope
   }
@@ -165,19 +163,18 @@ TEST_F(EpochManagerFixture, Destruct_AfterRegisterOneEpoch_RegisteredEpochFreed)
 
 TEST_F(EpochManagerFixture, Destruct_AfterRegisterTenEpochs_RegisteredEpochsFreed)
 {
-  std::vector<std::weak_ptr<std::atomic_bool>> epoch_references;
+  std::vector<std::weak_ptr<Epoch>> epoch_references;
 
   {
     auto manager = EpochManager{};
 
     for (size_t count = 0; count < kLoopNum; ++count) {
       // register an epoch to a manager
-      auto epoch_keeper = std::make_shared<std::atomic_bool>(true);
-      auto epoch = Epoch{manager.GetCurrentEpoch()};
-      manager.RegisterEpoch(&epoch, epoch_keeper);
+      auto epoch = std::make_shared<Epoch>(manager.GetCurrentEpoch());
+      manager.RegisterEpoch(epoch);
 
       // keep the reference to an epoch
-      epoch_references.emplace_back(epoch_keeper);
+      epoch_references.emplace_back(epoch);
     }
 
     // the created epochs are freed here because all the shared_ptr are out of scope
