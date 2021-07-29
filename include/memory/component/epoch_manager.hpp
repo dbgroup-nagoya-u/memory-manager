@@ -46,11 +46,8 @@ class EpochManager
      * Public member variables
      *############################################################################################*/
 
-    /// a pointer to a target epoch.
-    Epoch *epoch;
-
     /// a shared pointer for monitoring the lifetime of a target epoch.
-    const std::shared_ptr<std::atomic_bool> reference;
+    std::shared_ptr<Epoch> epoch;
 
     /// a pointer to a next node.
     EpochNode *next;
@@ -63,22 +60,18 @@ class EpochManager
      * @brief Construct a dummy instance.
      *
      */
-    constexpr EpochNode() : epoch{nullptr}, reference{}, next{nullptr} {}
+    constexpr EpochNode() : epoch{}, next{nullptr} {}
 
     /**
      * @brief Construct a new instance.
      *
      * @param epoch a pointer to a target epoch.
-     * @param reference an original pointer for monitoring the lifetime of a target epoch.
      * @param next a pointer to a next node.
      */
     EpochNode(  //
-        const Epoch *epoch,
-        const std::shared_ptr<std::atomic_bool> &reference,
+        const std::shared_ptr<Epoch> &epoch,
         const EpochNode *next)
-        : epoch{const_cast<Epoch *>(epoch)},
-          reference{reference},
-          next{const_cast<EpochNode *>(next)}
+        : epoch{epoch}, next{const_cast<EpochNode *>(next)}
     {
     }
 
@@ -86,12 +79,7 @@ class EpochManager
      * @brief Destroy the instance and set off a monitoring flag.
      *
      */
-    ~EpochNode()
-    {
-      if (reference.use_count() > 0) {
-        reference->store(false);
-      }
-    }
+    ~EpochNode() = default;
   };
 
   /*################################################################################################
@@ -166,15 +154,12 @@ class EpochManager
    * @brief Register a new epoch with the manager.
    *
    * @param epoch an epoch to be registered.
-   * @param reference a shared pointer for monitoring the lifetime of an epoch.
    */
   void
-  RegisterEpoch(  //
-      const Epoch *epoch,
-      const std::shared_ptr<std::atomic_bool> &reference)
+  RegisterEpoch(const std::shared_ptr<Epoch> &epoch)
   {
     // prepare a new epoch node
-    auto epoch_node = New<EpochNode>(epoch, reference, epochs_.load(mo_relax));
+    auto epoch_node = New<EpochNode>(epoch, epochs_.load(mo_relax));
 
     // insert a new epoch node into the epoch list
     while (!epochs_.compare_exchange_weak(epoch_node->next, epoch_node, mo_relax)) {
@@ -196,7 +181,7 @@ class EpochManager
     if (previous == nullptr) return std::numeric_limits<size_t>::max();
 
     auto min_protected_epoch = std::numeric_limits<size_t>::max();
-    if (previous->reference.use_count() > 1) {
+    if (previous->epoch.use_count() > 1) {
       previous->epoch->SetCurrentEpoch(current_epoch);
       const auto protected_epoch = previous->epoch->GetProtectedEpoch();
       if (protected_epoch < min_protected_epoch) {
@@ -207,7 +192,7 @@ class EpochManager
 
     // update the tail nodes of an epoch list
     while (current != nullptr) {
-      if (current->reference.use_count() > 1) {
+      if (current->epoch.use_count() > 1) {
         // if an epoch remains, update epoch information
         current->epoch->SetCurrentEpoch(current_epoch);
         const auto protected_epoch = current->epoch->GetProtectedEpoch();
