@@ -76,6 +76,21 @@ function(ADD_MEMORY_MANAGER_TEST MEMORY_MANAGER_TEST_TARGET)
     )
   endif()
 
+  if(${MEMORY_MANAGER_USE_JEMALLOC})
+    target_include_directories(
+      ${MEMORY_MANAGER_TEST_TARGET} PRIVATE
+      ${JEMALLOC_INCLUDE_DIRS}
+    )
+    target_link_libraries(
+      ${MEMORY_MANAGER_TEST_TARGET} PRIVATE
+      ${JEMALLOC_LIBRARIES}
+    )
+    target_compile_definitions(
+      ${MEMORY_MANAGER_TEST_TARGET} PRIVATE
+      MEMORY_MANAGER_USE_JEMALLOC
+    )
+  endif()
+
   if(DEFINED MEMORY_MANAGER_TEST_THREAD_NUM)
     target_compile_definitions(
       ${MEMORY_MANAGER_TEST_TARGET} PRIVATE
