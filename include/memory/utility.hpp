@@ -23,6 +23,9 @@
 
 #ifdef MEMORY_MANAGER_USE_MIMALLOC
 #include <mimalloc.h>
+#elif defined MEMORY_MANAGER_USE_JEMALLOC
+#include <jemalloc/jemalloc.h>
+#include <string.h>
 #else
 #include <stdlib.h>
 #endif
@@ -111,6 +114,91 @@ Delete(T* obj)
  */
 template <class T>
 using STLAlloc = mi_stl_allocator<T>;
+
+#elif defined MEMORY_MANAGER_USE_JEMALLOC
+
+/**
+ * @brief A wrapper function to create an instance dynamically.
+ *
+ * This function is equivalent with "new".
+ *
+ * @tparam T a class to be created.
+ * @tparam Args variadic templates.
+ * @param args arguments for a constructor.
+ * @return T* a pointer to a created instance.
+ */
+template <class T, class... Args>
+T*
+New(Args&&... args)
+{
+  return new (je_aligned_alloc(alignof(T), sizeof(T))) T{std::forward<Args>(args)...};
+}
+
+/**
+ * @brief A wrapper function to create an instance dynamically.
+ *
+ * This function is equivalent with "malloc + new".
+ *
+ * @tparam T a class to be created.
+ * @tparam Args variadic templates.
+ * @param size the size to be allocated.
+ * @param args arguments for a constructor.
+ * @return T* a pointer to a created instance.
+ */
+template <class T, class... Args>
+T*
+MallocNew(  //
+    const size_t size,
+    Args&&... args)
+{
+  return new (je_aligned_alloc(alignof(T), size)) T{std::forward<Args>(args)...};
+}
+
+/**
+ * @brief A wrapper function to create an instance dynamically.
+ *
+ * This function is equivalent with "calloc + new".
+ *
+ * @tparam T a class to be created.
+ * @tparam Args variadic templates.
+ * @param size the size to be allocated.
+ * @param args arguments for a constructor.
+ * @return T* a pointer to a created instance.
+ */
+template <class T, class... Args>
+T*
+CallocNew(  //
+    const size_t size,
+    Args&&... args)
+{
+  auto page = je_aligned_alloc(alignof(T), size);
+  memset(page, 0, size);
+  return new (page) T{std::forward<Args>(args)...};
+}
+
+/**
+ * @brief A wrapper function to delete an dynamically created instance.
+ *
+ * This function is equivalent with "delete".
+
+ * @tparam T a class to be deleted.
+ * @param obj a target instance.
+ */
+template <class T>
+void
+Delete(T* obj)
+{
+  obj->~T();
+  je_free(obj);
+}
+
+/**
+ * @brief An alias of allocators for container types.
+ *
+ * @tparam T a class to be contained.
+ */
+template <class T>
+using STLAlloc = std::pmr::polymorphic_allocator<T>;
 
 #else
 
