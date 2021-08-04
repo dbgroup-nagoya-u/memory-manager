@@ -104,7 +104,7 @@ void
 Delete(T* obj)
 {
   obj->~T();
-  mi_free_aligned(obj, alignof(T));
+  mi_free(obj);
 }
 
 /**
