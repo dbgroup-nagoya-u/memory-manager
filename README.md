@@ -1,6 +1,6 @@
 # Memory Manager
 
-![Unit Tests](https://github.com/dbgroup-nagoya-u/memory-manager/workflows/Unit%20Tests/badge.svg?branch=main)
+![Ubuntu-20.04](https://github.com/dbgroup-nagoya-u/memory-manager/workflows/Ubuntu-20.04/badge.svg?branch=main)
 ![mimalloc](https://github.com/dbgroup-nagoya-u/memory-manager/workflows/mimalloc/badge.svg?branch=main)
 ![jemalloc](https://github.com/dbgroup-nagoya-u/memory-manager/workflows/jemalloc/badge.svg?branch=main)
 
