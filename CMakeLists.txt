@@ -76,15 +76,15 @@ endif()
 
 if(${MEMORY_MANAGER_USE_JEMALLOC})
   find_package(PkgConfig REQUIRED)
-  pkg_check_modules(JEMALLOC REQUIRED jemalloc)
+  pkg_check_modules(JEMALLOC REQUIRED IMPORTED_TARGET jemalloc)
 
   target_include_directories(
     memory_manager INTERFACE
-    ${JEMALLOC_INCLUDE_DIRS}
+    ${JEMALLOC_STATIC_INCLUDE_DIRS}
   )
   target_link_libraries(
     memory_manager INTERFACE
-    ${JEMALLOC_LIBRARIES}
+    PkgConfig::JEMALLOC
   )
   target_compile_definitions(
     memory_manager INTERFACE
