@@ -21,9 +21,9 @@
 
 #include "component/common.hpp"
 
-#ifdef MEMORY_MANAGER_USE_MIMALLOC
+#if MEMORY_MANAGER_USE_MIMALLOC
 #include <mimalloc.h>
-#elif defined MEMORY_MANAGER_USE_JEMALLOC
+#elif MEMORY_MANAGER_USE_JEMALLOC
 #include <jemalloc/jemalloc.h>
 #include <string.h>
 #else
