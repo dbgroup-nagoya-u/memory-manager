@@ -76,8 +76,7 @@ endif()
 
 if(${MEMORY_MANAGER_USE_JEMALLOC})
   find_package(PkgConfig REQUIRED)
-  pkg_check_modules(JEMALLOC jemalloc)
-  pkg_search_module(JEMALLOC REQUIRED jemalloc)
+  pkg_check_modules(JEMALLOC REQUIRED jemalloc)
 
   target_include_directories(
     memory_manager INTERFACE

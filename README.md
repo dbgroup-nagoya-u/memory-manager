@@ -2,6 +2,7 @@
 
 ![Unit Tests](https://github.com/dbgroup-nagoya-u/memory-manager/workflows/Unit%20Tests/badge.svg?branch=main)
 ![mimalloc](https://github.com/dbgroup-nagoya-u/memory-manager/workflows/mimalloc/badge.svg?branch=main)
+![jemalloc](https://github.com/dbgroup-nagoya-u/memory-manager/workflows/jemalloc/badge.svg?branch=main)
 
 ## Build
 
@@ -18,6 +19,8 @@ sudo apt update && sudo apt install -y build-essential cmake
 - `MEMORY_MANAGER_GARBAGE_BUFFER_SIZE`: the size of an initially created buffer for garbage instances (default `1024`).
 - `MEMORY_MANAGER_USE_MIMALLOC`: use [mimalloc](https://github.com/microsoft/mimalloc) as a memory allocator/deleter if `on` (default `off`).
     - If you use this option, you need to install mimalloc beforehand and enable `cmake` find it by using the [find_package](https://cmake.org/cmake/help/latest/command/find_package.html) command.
+- `MEMORY_MANAGER_USE_JEMALLOC`: use [jemalloc](https://github.com/jemalloc/jemalloc) as a memory allocator/deleter if `on` (default `off`).
+    - If you use this option, you need to build/install jemalloc beforehand with `--with-jemalloc-prefix=je_` option and enable `cmake` find it by using the [pkg-config](https://cmake.org/cmake/help/latest/module/FindPkgConfig.html) module.
 
 ### Build Options for Unit Testing
 
