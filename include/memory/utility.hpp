@@ -32,7 +32,7 @@
 
 namespace dbgroup::memory
 {
-#ifdef MEMORY_MANAGER_USE_MIMALLOC
+#if MEMORY_MANAGER_USE_MIMALLOC
 
 /**
  * @brief A wrapper function to create an instance dynamically.
@@ -115,7 +115,7 @@ Delete(T* obj)
 template <class T>
 using STLAlloc = mi_stl_allocator<T>;
 
-#elif defined MEMORY_MANAGER_USE_JEMALLOC
+#elif MEMORY_MANAGER_USE_JEMALLOC
 
 /**
  * @brief A wrapper function to create an instance dynamically.
@@ -192,13 +192,98 @@ Delete(T* obj)
   je_free(obj);
 }
 
+template <class T>
+struct je_stl_allocator {
+  typedef T value_type;
+  typedef std::size_t size_type;
+  typedef std::ptrdiff_t difference_type;
+  typedef value_type& reference;
+  typedef value_type const& const_reference;
+  typedef value_type* pointer;
+  typedef value_type const* const_pointer;
+  template <class U>
+  struct rebind {
+    typedef je_stl_allocator<U> other;
+  };
+
+  je_stl_allocator() noexcept = default;
+
+  je_stl_allocator(const je_stl_allocator&) noexcept = default;
+
+  template <class U>
+  je_stl_allocator(const je_stl_allocator<U>&) noexcept
+  {
+  }
+
+  je_stl_allocator
+  select_on_container_copy_construction() const
+  {
+    return *this;
+  }
+
+  void
+  deallocate(T* p, size_type)
+  {
+    je_free(p);
+  }
+
+  [[nodiscard]] T*
+  allocate(size_type count)
+  {
+    return static_cast<T*>(je_aligned_alloc(alignof(T), count * sizeof(T)));
+  }
+
+  [[nodiscard]] T*
+  allocate(size_type count, const void*)
+  {
+    return allocate(count);
+  }
+
+  using propagate_on_container_copy_assignment = std::true_type;
+  using propagate_on_container_move_assignment = std::true_type;
+  using propagate_on_container_swap = std::true_type;
+  using is_always_equal = std::true_type;
+
+  template <class U, class... Args>
+  void
+  construct(U* p, Args&&... args)
+  {
+    ::new (p) U(std::forward<Args>(args)...);
+  }
+
+  template <class U>
+  void
+  destroy(U* p) noexcept
+  {
+    p->~U();
+  }
+
+  size_type
+  max_size() const noexcept
+  {
+    return (PTRDIFF_MAX / sizeof(value_type));
+  }
+
+  pointer
+  address(reference x) const
+  {
+    return &x;
+  }
+
+  const_pointer
+  address(const_reference x) const
+  {
+    return &x;
+  }
+};
+
 /**
  * @brief An alias of allocators for container types.
  *
  * @tparam T a class to be contained.
  */
 template <class T>
-using STLAlloc = std::pmr::polymorphic_allocator<T>;
+using STLAlloc = je_stl_allocator<T>;
 
 #else
 
