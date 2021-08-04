@@ -1,4 +1,4 @@
-name: Ubuntu-20.04
+name: jemalloc
 
 on:
   push:
@@ -27,10 +27,25 @@ jobs:
         sudo apt-get install -y build-essential cmake
         cmake -E make_directory ${{github.workspace}}/build
 
+    - name: Download jemalloc
+      shell: bash
+      working-directory: /usr/local/src
+      run: |
+        sudo wget https://github.com/jemalloc/jemalloc/releases/download/5.2.1/jemalloc-5.2.1.tar.bz2
+        sudo tar xvf jemalloc-5.2.1.tar.bz2
+
+    - name: Install jemalloc
+      shell: bash
+      working-directory: /usr/local/src/jemalloc-5.2.1
+      run: |
+        sudo ./configure --prefix=/usr/local --with-version=VERSION --with-jemalloc-prefix=je_
+        sudo make -j
+        sudo make install
+
     - name: Configure CMake
       shell: bash
       working-directory: ${{github.workspace}}/build
-      run: cmake $GITHUB_WORKSPACE -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DMEMORY_MANAGER_BUILD_TESTS=on -DMEMORY_MANAGER_TEST_THREAD_NUM=2
+      run: cmake $GITHUB_WORKSPACE -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DMEMORY_MANAGER_USE_JEMALLOC=on -DMEMORY_MANAGER_BUILD_TESTS=on -DMEMORY_MANAGER_TEST_THREAD_NUM=2
 
     - name: Build
       shell: bash

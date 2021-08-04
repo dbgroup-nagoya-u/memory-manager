@@ -65,17 +65,6 @@ function(ADD_MEMORY_MANAGER_TEST MEMORY_MANAGER_TEST_TARGET)
     )
   endif()
 
-  if(${MEMORY_MANAGER_USE_MIMALLOC})
-    target_link_libraries(
-      ${MEMORY_MANAGER_TEST_TARGET} PRIVATE
-      mimalloc-static
-    )
-    target_compile_definitions(
-      ${MEMORY_MANAGER_TEST_TARGET} PRIVATE
-      MEMORY_MANAGER_USE_MIMALLOC
-    )
-  endif()
-
   if(DEFINED MEMORY_MANAGER_TEST_THREAD_NUM)
     target_compile_definitions(
       ${MEMORY_MANAGER_TEST_TARGET} PRIVATE

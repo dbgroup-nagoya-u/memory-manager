@@ -33,6 +33,7 @@
     "DCMAKE",
     "DMEMORY",
     "DSIMPLE",
+    "JEMALLOC",
     "MIMALLOC",
     "STREQ",
     "Wextra",
