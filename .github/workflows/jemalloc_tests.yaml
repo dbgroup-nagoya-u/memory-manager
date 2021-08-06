@@ -46,7 +46,7 @@ jobs:
     - name: Configure CMake
       shell: bash
       working-directory: ${{github.workspace}}/build
-      run: cmake $GITHUB_WORKSPACE -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DMEMORY_MANAGER_USE_JEMALLOC=on -DMEMORY_MANAGER_BUILD_TESTS=on -DMEMORY_MANAGER_TEST_THREAD_NUM=2
+      run: cmake $GITHUB_WORKSPACE -DCMAKE_BUILD_TYPE=$BUILD_TYPE -DMEMORY_MANAGER_USE_JEMALLOC=ON -DMEMORY_MANAGER_BUILD_TESTS=ON -DMEMORY_MANAGER_TEST_THREAD_NUM=2
 
     - name: Build
       shell: bash

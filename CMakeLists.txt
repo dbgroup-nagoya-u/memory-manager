@@ -54,6 +54,10 @@ if(DEFINED MEMORY_MANAGER_GARBAGE_BUFFER_SIZE)
   )
 endif()
 
+#--------------------------------------------------------------------------------------#
+# Build options for memory allocation
+#--------------------------------------------------------------------------------------#
+
 option(MEMORY_MANAGER_USE_MIMALLOC "use mimalloc as a memory allocator/deleter if ON" OFF)
 option(MEMORY_MANAGER_USE_JEMALLOC "use jemalloc as a memory allocator/deleter if ON" OFF)
 
