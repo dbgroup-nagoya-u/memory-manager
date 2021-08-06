@@ -35,6 +35,7 @@ jobs:
         sudo tar xvf jemalloc-5.2.1.tar.bz2
 
     - name: Install jemalloc
+      continue-on-error: true
       shell: bash
       working-directory: /usr/local/src/jemalloc-5.2.1
       run: |
