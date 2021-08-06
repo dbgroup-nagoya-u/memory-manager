@@ -75,16 +75,13 @@ if(${MEMORY_MANAGER_USE_MIMALLOC})
 endif()
 
 if(${MEMORY_MANAGER_USE_JEMALLOC})
-  find_package(PkgConfig REQUIRED)
-  pkg_check_modules(JEMALLOC REQUIRED IMPORTED_TARGET jemalloc)
-
   target_include_directories(
     memory_manager INTERFACE
-    ${JEMALLOC_STATIC_INCLUDE_DIRS}
+    "/usr/local/include"
   )
   target_link_libraries(
     memory_manager INTERFACE
-    PkgConfig::JEMALLOC
+    "/usr/local/lib/libjemalloc_without_override.so"
   )
   target_compile_definitions(
     memory_manager INTERFACE
