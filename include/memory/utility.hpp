@@ -24,7 +24,7 @@
 #if MEMORY_MANAGER_USE_MIMALLOC
 #include <mimalloc.h>
 #elif MEMORY_MANAGER_USE_JEMALLOC
-#include <jemalloc/jemalloc.h>
+#include <jemalloc/jemalloc_without_override.h>
 #include <string.h>
 #else
 #include <stdlib.h>
