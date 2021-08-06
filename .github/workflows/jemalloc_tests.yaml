@@ -38,7 +38,7 @@ jobs:
       shell: bash
       working-directory: /usr/local/src/jemalloc-5.2.1
       run: |
-        sudo ./configure --prefix=/usr/local --with-version=VERSION --with-jemalloc-prefix=je_
+        sudo ./configure --prefix=/usr/local --with-version=VERSION --with-jemalloc-prefix=je_ --with-install-suffix=_without_override --disable-cxx
         sudo make -j
         sudo make install
 
