@@ -8,24 +8,24 @@ buildType:
       buildType: Debug
       settings:
         MEMORY_MANAGER_GARBAGE_BUFFER_SIZE: 1024
-        MEMORY_MANAGER_USE_MIMALLOC: off
-        MEMORY_MANAGER_USE_JEMALLOC: off
-        MEMORY_MANAGER_BUILD_TESTS: on
+        MEMORY_MANAGER_USE_MIMALLOC: OFF
+        MEMORY_MANAGER_USE_JEMALLOC: OFF
+        MEMORY_MANAGER_BUILD_TESTS: ON
     relWithDebInfo:
       short: RelWithDebInfo
       long: Perform optimizations and include debugging informatin
       buildType: RelWithDebInfo
       settings:
         MEMORY_MANAGER_GARBAGE_BUFFER_SIZE: 1024
-        MEMORY_MANAGER_USE_MIMALLOC: off
-        MEMORY_MANAGER_USE_JEMALLOC: off
-        MEMORY_MANAGER_BUILD_TESTS: on
+        MEMORY_MANAGER_USE_MIMALLOC: OFF
+        MEMORY_MANAGER_USE_JEMALLOC: OFF
+        MEMORY_MANAGER_BUILD_TESTS: ON
     release:
       short: Release
       long: Perform optimizations and omit debugging informatin
       buildType: Release
       settings:
         MEMORY_MANAGER_GARBAGE_BUFFER_SIZE: 1024
-        MEMORY_MANAGER_USE_MIMALLOC: off
-        MEMORY_MANAGER_USE_JEMALLOC: off
-        MEMORY_MANAGER_BUILD_TESTS: on
+        MEMORY_MANAGER_USE_MIMALLOC: OFF
+        MEMORY_MANAGER_USE_JEMALLOC: OFF
+        MEMORY_MANAGER_BUILD_TESTS: ON
