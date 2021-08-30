@@ -98,7 +98,7 @@ endif()
 #--------------------------------------------------------------------------------------#
 
 # build unit tests if required
-option(MEMORY_MANAGER_BUILD_TESTS, "build unit tests for this repository" OFF)
+option(MEMORY_MANAGER_BUILD_TESTS "build unit tests for this repository" OFF)
 if(${MEMORY_MANAGER_BUILD_TESTS})
   enable_testing()
   # include unit tests
