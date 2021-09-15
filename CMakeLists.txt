@@ -55,45 +55,6 @@ if(DEFINED MEMORY_MANAGER_GARBAGE_BUFFER_SIZE)
 endif()
 
 #--------------------------------------------------------------------------------------#
-# Build options for memory allocation
-#--------------------------------------------------------------------------------------#
-
-option(MEMORY_MANAGER_USE_MIMALLOC "use mimalloc as a memory allocator/deleter if ON" OFF)
-option(MEMORY_MANAGER_USE_JEMALLOC "use jemalloc as a memory allocator/deleter if ON" OFF)
-
-if(${MEMORY_MANAGER_USE_MIMALLOC} AND ${MEMORY_MANAGER_USE_JEMALLOC})
-  message(FATAL_ERROR "Only one memory allocator can be specified.")
-endif()
-
-
-if(${MEMORY_MANAGER_USE_MIMALLOC})
-  find_package(mimalloc 1.7 REQUIRED)
-  target_link_libraries(
-    memory_manager INTERFACE
-    mimalloc-static
-  )
-  target_compile_definitions(
-    memory_manager INTERFACE
-    MEMORY_MANAGER_USE_MIMALLOC
-  )
-endif()
-
-if(${MEMORY_MANAGER_USE_JEMALLOC})
-  target_include_directories(
-    memory_manager INTERFACE
-    "/usr/local/include"
-  )
-  target_link_libraries(
-    memory_manager INTERFACE
-    "/usr/local/lib/libjemalloc_without_override.so"
-  )
-  target_compile_definitions(
-    memory_manager INTERFACE
-    MEMORY_MANAGER_USE_JEMALLOC
-  )
-endif()
-
-#--------------------------------------------------------------------------------------#
 # Build unit tests
 #--------------------------------------------------------------------------------------#
 

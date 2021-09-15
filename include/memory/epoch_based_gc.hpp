@@ -98,7 +98,7 @@ class EpochBasedGC
      * @brief Destroy the instance.
      *
      */
-    ~GarbageNode() { Delete(garbage_tail); }
+    ~GarbageNode() { delete garbage_tail; }
   };
 
   /*################################################################################################
@@ -158,7 +158,7 @@ class EpochBasedGC
       if (previous != nullptr  //
           && current->reference.use_count() <= 1 && current->garbage_tail->Size() == 0) {
         previous->next = current->next;
-        Delete(current);
+        delete current;
         current = previous->next;
       } else {
         previous = current;
@@ -236,7 +236,7 @@ class EpochBasedGC
       current = next;
       current->garbage_tail = GarbageList_t::Clear(current->garbage_tail, protected_epoch);
       next = current->next;
-      Delete(current);
+      delete current;
     }
   }
 
@@ -299,10 +299,10 @@ class EpochBasedGC
     thread_local GarbageList_t* garbage_head = nullptr;
 
     if (garbage_keeper.use_count() <= 1) {
-      garbage_head = New<GarbageList_t>(epoch_manager_.GetCurrentEpoch());
+      garbage_head = new GarbageList_t{epoch_manager_.GetCurrentEpoch()};
 
       // register this garbage list
-      auto garbage_node = New<GarbageNode>(garbage_head, garbage_keeper, garbages_.load(mo_relax));
+      auto garbage_node = new GarbageNode{garbage_head, garbage_keeper, garbages_.load(mo_relax)};
       while (!garbages_.compare_exchange_weak(garbage_node->next, garbage_node, mo_relax)) {
         // continue until inserting succeeds
       }
