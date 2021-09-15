@@ -111,7 +111,7 @@ TEST_F(GarbageListFixture, Destruct_AddLotOfGarbages_AddedGarbagesCorrectlyFreed
     }
 
     // garbages are deleted in destructor
-    Delete(current_list);
+    delete current_list;
   }
 
   for (auto&& garbage_reference : garbage_references) {
@@ -148,7 +148,7 @@ TEST_F(GarbageListFixture, AddGarbage_LotOfGarbages_ListSizeCorrectlyUpdated)
 
   EXPECT_EQ(kGarbageNum, garbage_list.Size());
 
-  Delete(current_list);
+  delete current_list;
 }
 
 TEST_F(GarbageListFixture, Clear_WithLessGarbages_ProtectedGarbagesRemain)
@@ -233,7 +233,7 @@ TEST_F(GarbageListFixture, Clear_WithLotOfGarbages_ProtectedGarbagesRemain)
     }
   }
 
-  Delete(current_list);
+  delete current_list;
 }
 
 }  // namespace dbgroup::memory::component::test

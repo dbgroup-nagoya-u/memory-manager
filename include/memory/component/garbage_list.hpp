@@ -193,7 +193,7 @@ class GarbageList
         // if the garbage buffer is full but does not have a next buffer, wait insertion of it
         next_list = garbage_list->next_.load(mo_relax);
       }
-      Delete(garbage_list);
+      delete garbage_list;
 
       // release the next list recursively
       return GarbageList::Clear(next_list, protected_epoch);

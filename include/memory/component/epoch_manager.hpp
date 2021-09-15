@@ -113,7 +113,7 @@ class EpochManager
     while (next != nullptr) {
       auto current = next;
       next = current->next;
-      Delete(current);
+      delete current;
     }
   }
 
@@ -204,7 +204,7 @@ class EpochManager
       } else {
         // if an epoch is deleted, delete this node from a list
         previous->next = current->next;
-        Delete(current);
+        delete current;
         current = previous->next;
       }
     }

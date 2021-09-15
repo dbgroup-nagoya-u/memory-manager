@@ -98,7 +98,7 @@ class EpochBasedGC
      * @brief Destroy the instance.
      *
      */
-    ~GarbageNode() { Delete(garbage_tail); }
+    ~GarbageNode() { delete garbage_tail; }
   };
 
   /*################################################################################################
@@ -158,7 +158,7 @@ class EpochBasedGC
       if (previous != nullptr  //
           && current->reference.use_count() <= 1 && current->garbage_tail->Size() == 0) {
         previous->next = current->next;
-        Delete(current);
+        delete current;
         current = previous->next;
       } else {
         previous = current;
@@ -236,7 +236,7 @@ class EpochBasedGC
       current = next;
       current->garbage_tail = GarbageList_t::Clear(current->garbage_tail, protected_epoch);
       next = current->next;
-      Delete(current);
+      delete current;
     }
   }
 
