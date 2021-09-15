@@ -98,7 +98,11 @@ class EpochBasedGC
      * @brief Destroy the instance.
      *
      */
-    ~GarbageNode() { Delete(garbage_tail); }
+    ~GarbageNode()
+    {
+      reference->store(false, mo_relax);
+      Delete(garbage_tail);
+    }
   };
 
   /*################################################################################################
@@ -304,6 +308,8 @@ class EpochBasedGC
     if (!garbage_keeper->load(mo_relax)) {
       garbage_keeper->store(true, mo_relax);
       garbage_head = New<GarbageList_t>(epoch_manager_.GetCurrentEpoch());
+
+      // register this garbage list
       auto garbage_node = New<GarbageNode>(garbage_head, garbage_keeper, garbages_.load(mo_relax));
       while (!garbages_.compare_exchange_weak(garbage_node->next, garbage_node, mo_relax)) {
         // continue until inserting succeeds
