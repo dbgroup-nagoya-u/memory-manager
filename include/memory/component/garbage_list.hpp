@@ -171,8 +171,8 @@ class GarbageList
   {
     if (garbage_list == nullptr) return nullptr;
 
+    // release unprotected garbages
     const auto current_head = garbage_list->head_index_.load(mo_relax);
-
     auto index = garbage_list->tail_index_;
     for (; index < current_head; ++index) {
       const auto [epoch, garbage] = garbage_list->garbages_[index];
@@ -182,17 +182,20 @@ class GarbageList
         break;
       }
     }
-
     garbage_list->tail_index_ = index;
+
     if (index < kGarbageBufferSize) {
       return garbage_list;
     } else {
+      // release an empty list
       auto next_list = garbage_list->next_.load(mo_relax);
       while (next_list == nullptr) {
         // if the garbage buffer is full but does not have a next buffer, wait insertion of it
         next_list = garbage_list->next_.load(mo_relax);
       }
       Delete(garbage_list);
+
+      // release the next list recursively
       return GarbageList::Clear(next_list, protected_epoch);
     }
   }
