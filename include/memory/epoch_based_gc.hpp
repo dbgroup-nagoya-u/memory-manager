@@ -64,7 +64,7 @@ class EpochBasedGC
     GarbageList_t* garbage_tail;
 
     /// a shared pointer for monitoring the lifetime of a target list.
-    std::shared_ptr<std::atomic_bool> reference;
+    std::shared_ptr<size_t> reference;
 
     /// a pointer to a next node.
     GarbageNode* next;
@@ -88,7 +88,7 @@ class EpochBasedGC
      */
     GarbageNode(  //
         const GarbageList_t* garbage_tail,
-        const std::shared_ptr<std::atomic_bool>& reference,
+        const std::shared_ptr<size_t>& reference,
         const GarbageNode* next)
         : garbage_tail{const_cast<GarbageList_t*>(garbage_tail)},
           reference{reference},
@@ -98,11 +98,7 @@ class EpochBasedGC
      * @brief Destroy the instance.
      *
      */
-    ~GarbageNode()
-    {
-      reference->store(false, mo_relax);
-      Delete(garbage_tail);
-    }
+    ~GarbageNode() { Delete(garbage_tail); }
   };
 
   /*################################################################################################
@@ -160,7 +156,7 @@ class EpochBasedGC
 
       // unregister garbage lists of expired threads
       if (previous != nullptr  //
-          && current->reference.use_count() == 1 && current->garbage_tail->Size() == 0) {
+          && current->reference.use_count() <= 1 && current->garbage_tail->Size() == 0) {
         previous->next = current->next;
         Delete(current);
         current = previous->next;
@@ -239,9 +235,6 @@ class EpochBasedGC
     while (next != nullptr) {
       current = next;
       current->garbage_tail = GarbageList_t::Clear(current->garbage_tail, protected_epoch);
-      if (current->reference.use_count() > 1) {
-        current->reference->store(false);
-      }
       next = current->next;
       Delete(current);
     }
@@ -286,7 +279,7 @@ class EpochBasedGC
   {
     thread_local auto epoch = std::make_shared<Epoch>();
 
-    if (epoch.use_count() == 1) {
+    if (epoch.use_count() <= 1) {
       epoch->SetCurrentEpoch(epoch_manager_.GetCurrentEpoch());
       epoch_manager_.RegisterEpoch(epoch);
     }
@@ -302,11 +295,10 @@ class EpochBasedGC
   void
   AddGarbage(const T* target_ptr)
   {
-    thread_local auto garbage_keeper = std::make_shared<std::atomic_bool>(false);
+    thread_local auto garbage_keeper = std::make_shared<size_t>();
     thread_local GarbageList_t* garbage_head = nullptr;
 
-    if (!garbage_keeper->load(mo_relax)) {
-      garbage_keeper->store(true, mo_relax);
+    if (garbage_keeper.use_count() <= 1) {
       garbage_head = New<GarbageList_t>(epoch_manager_.GetCurrentEpoch());
 
       // register this garbage list
