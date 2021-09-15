@@ -159,7 +159,7 @@ class EpochManager
   RegisterEpoch(const std::shared_ptr<Epoch> &epoch)
   {
     // prepare a new epoch node
-    auto epoch_node = New<EpochNode>(epoch, epochs_.load(mo_relax));
+    auto epoch_node = new EpochNode{epoch, epochs_.load(mo_relax)};
 
     // insert a new epoch node into the epoch list
     while (!epochs_.compare_exchange_weak(epoch_node->next, epoch_node, mo_relax)) {

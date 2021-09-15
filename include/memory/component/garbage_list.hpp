@@ -151,7 +151,7 @@ class GarbageList
     if (current_head < kGarbageBufferSize - 1) {
       return nullptr;
     } else {
-      const auto new_garbage_list = New<GarbageList>(current_epoch);
+      const auto new_garbage_list = new GarbageList{current_epoch};
       garbage_list->next_.store(new_garbage_list, mo_relax);
       return new_garbage_list;
     }

@@ -299,10 +299,10 @@ class EpochBasedGC
     thread_local GarbageList_t* garbage_head = nullptr;
 
     if (garbage_keeper.use_count() <= 1) {
-      garbage_head = New<GarbageList_t>(epoch_manager_.GetCurrentEpoch());
+      garbage_head = new GarbageList_t{epoch_manager_.GetCurrentEpoch()};
 
       // register this garbage list
-      auto garbage_node = New<GarbageNode>(garbage_head, garbage_keeper, garbages_.load(mo_relax));
+      auto garbage_node = new GarbageNode{garbage_head, garbage_keeper, garbages_.load(mo_relax)};
       while (!garbages_.compare_exchange_weak(garbage_node->next, garbage_node, mo_relax)) {
         // continue until inserting succeeds
       }

@@ -79,7 +79,7 @@ TEST_F(GarbageListFixture, Destruct_AddLessGarbages_AddedGarbagesCorrectlyFreed)
   {
     auto garbage_list = GarbageList_t{current_epoch};
     for (size_t count = 0; count < kGarbageNum; ++count) {
-      auto garbage = New<std::shared_ptr<Target>>(new Target{0});
+      auto garbage = new std::shared_ptr<Target>{new Target{0}};
       GarbageList_t::AddGarbage(&garbage_list, garbage);
       garbage_references.emplace_back(*garbage);
     }
@@ -102,7 +102,7 @@ TEST_F(GarbageListFixture, Destruct_AddLotOfGarbages_AddedGarbagesCorrectlyFreed
     auto garbage_list = GarbageList_t{current_epoch};
     GarbageList_t* current_list = &garbage_list;
     for (size_t count = 0; count < kGarbageNum; ++count) {
-      auto garbage = New<std::shared_ptr<Target>>(new Target{0});
+      auto garbage = new std::shared_ptr<Target>{new Target{0}};
       const auto new_list = GarbageList_t::AddGarbage(current_list, garbage);
       if (new_list != nullptr) {
         current_list = new_list;
@@ -125,7 +125,7 @@ TEST_F(GarbageListFixture, AddGarbage_LessGarbages_ListSizeCorrectlyUpdated)
 
   auto garbage_list = GarbageList<Target>{current_epoch};
   for (size_t count = 0; count < kGarbageNum; ++count) {
-    auto garbage = New<Target>(0UL);
+    auto garbage = new Target{0UL};
     GarbageList<Target>::AddGarbage(&garbage_list, garbage);
   }
 
@@ -139,7 +139,7 @@ TEST_F(GarbageListFixture, AddGarbage_LotOfGarbages_ListSizeCorrectlyUpdated)
   auto garbage_list = GarbageList<Target>{current_epoch};
   GarbageList<Target>* current_list = &garbage_list;
   for (size_t count = 0; count < kGarbageNum; ++count) {
-    auto garbage = New<Target>(0UL);
+    auto garbage = new Target{0UL};
     const auto new_list = GarbageList<Target>::AddGarbage(current_list, garbage);
     if (new_list != nullptr) {
       current_list = new_list;
@@ -163,7 +163,7 @@ TEST_F(GarbageListFixture, Clear_WithLessGarbages_ProtectedGarbagesRemain)
   // add unprotected garbages
   size_t count = 0;
   for (; count < kHalfGarbageNum; ++count) {
-    auto garbage = New<std::shared_ptr<Target>>(new Target{0});
+    auto garbage = new std::shared_ptr<Target>{new Target{0}};
     GarbageList_t::AddGarbage(&garbage_list, garbage);
     garbage_references.emplace_back(*garbage);
   }
@@ -172,7 +172,7 @@ TEST_F(GarbageListFixture, Clear_WithLessGarbages_ProtectedGarbagesRemain)
 
   // add protected garbages
   for (; count < kTotalGarbageNum; ++count) {
-    auto garbage = New<std::shared_ptr<Target>>(new Target{0});
+    auto garbage = new std::shared_ptr<Target>{new Target{0}};
     GarbageList_t::AddGarbage(&garbage_list, garbage);
     garbage_references.emplace_back(*garbage);
   }
@@ -202,7 +202,7 @@ TEST_F(GarbageListFixture, Clear_WithLotOfGarbages_ProtectedGarbagesRemain)
   // add unprotected garbages
   size_t count = 0;
   for (; count < kHalfGarbageNum; ++count) {
-    auto garbage = New<std::shared_ptr<Target>>(new Target{0});
+    auto garbage = new std::shared_ptr<Target>{new Target{0}};
     const auto new_list = GarbageList_t::AddGarbage(current_list, garbage);
     if (new_list != nullptr) {
       current_list = new_list;
@@ -214,7 +214,7 @@ TEST_F(GarbageListFixture, Clear_WithLotOfGarbages_ProtectedGarbagesRemain)
 
   // add protected garbages
   for (; count < kTotalGarbageNum; ++count) {
-    auto garbage = New<std::shared_ptr<Target>>(new Target{0});
+    auto garbage = new std::shared_ptr<Target>{new Target{0}};
     const auto new_list = GarbageList_t::AddGarbage(current_list, garbage);
     if (new_list != nullptr) {
       current_list = new_list;

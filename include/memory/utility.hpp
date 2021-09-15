@@ -35,21 +35,6 @@ namespace dbgroup::memory
 /**
  * @brief A wrapper function to create an instance dynamically.
  *
- * @tparam T a class to be created.
- * @tparam Args variadic templates.
- * @param args arguments for a constructor.
- * @return T* a pointer to a created instance.
- */
-template <class T, class... Args>
-T*
-New(Args&&... args)
-{
-  return new T{std::forward<Args>(args)...};
-}
-
-/**
- * @brief A wrapper function to create an instance dynamically.
- *
  * This function is equivalent with "malloc + new".
  *
  * @tparam T a class to be created.
