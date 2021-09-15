@@ -280,10 +280,10 @@ class EpochBasedGC
   EpochGuard
   CreateEpochGuard()
   {
-    thread_local std::shared_ptr<Epoch> epoch;
+    thread_local auto epoch = std::make_shared<Epoch>();
 
-    if (epoch.use_count() == 0) {
-      epoch = std::make_shared<Epoch>(epoch_manager_.GetCurrentEpoch());
+    if (epoch.use_count() == 1) {
+      epoch->SetCurrentEpoch(epoch_manager_.GetCurrentEpoch());
       epoch_manager_.RegisterEpoch(epoch);
     }
 

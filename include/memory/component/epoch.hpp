@@ -46,6 +46,12 @@ class Epoch
    *##############################################################################################*/
 
   /**
+   * @brief Construct a new instance.
+   *
+   */
+  constexpr Epoch() : current_{}, entered_{std::numeric_limits<size_t>::max()} {}
+
+  /**
    * @brief Construct a new instance with an initial epoch.
    *
    * @param current_epoch an initial epoch value.
