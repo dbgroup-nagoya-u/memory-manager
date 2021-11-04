@@ -95,7 +95,15 @@ class EpochManager
   Epoch *
   GetEpoch()
   {
-    thread_local std::shared_ptr<Epoch> epoch = CreateEpoch();
+    thread_local auto epoch = std::make_shared<Epoch>(global_epoch_);
+
+    if (epoch.use_count() <= 1) {
+      // insert a new epoch node into the epoch list
+      auto epoch_node = new EpochNode{epoch, epochs_.load(kMORelax)};
+      while (!epochs_.compare_exchange_weak(epoch_node->next, epoch_node, kMORelax)) {
+        // continue until inserting succeeds
+      }
+    }
 
     return epoch.get();
   }
@@ -164,7 +172,7 @@ class EpochManager
     EpochNode(  //
         const std::shared_ptr<Epoch> &epoch,
         EpochNode *next)
-        : epoch_{epoch}, next{next}
+        : next{next}, epoch_{epoch}
     {
     }
 
@@ -217,30 +225,6 @@ class EpochManager
     /// a shared pointer for monitoring the lifetime of a target epoch.
     const std::shared_ptr<Epoch> epoch_;
   };
-
-  /*################################################################################################
-   * Internal utility functions
-   *##############################################################################################*/
-
-  /**
-   * @brief Create a new epoch and register it with the internal epoch list.
-   *
-   * @return a new epoch.
-   */
-  std::shared_ptr<Epoch>
-  CreateEpoch()
-  {
-    // create a new epoch and its node
-    auto epoch = std::make_shared<Epoch>(global_epoch_);
-    auto epoch_node = new EpochNode{epoch, epochs_.load(kMORelax)};
-
-    // insert a new epoch node into the epoch list
-    while (!epochs_.compare_exchange_weak(epoch_node->next, epoch_node, kMORelax)) {
-      // continue until inserting succeeds
-    }
-
-    return epoch;
-  }
 
   /*################################################################################################
    * Internal member variables
