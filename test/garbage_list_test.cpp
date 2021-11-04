@@ -21,6 +21,7 @@
 #include <thread>
 #include <vector>
 
+#include "common.hpp"
 #include "gtest/gtest.h"
 
 namespace dbgroup::memory::component::test
@@ -34,12 +35,6 @@ class GarbageListFixture : public ::testing::Test
 
   using Target = uint64_t;
   using GarbageList_t = GarbageList<std::shared_ptr<Target>>;
-
-  /*################################################################################################
-   * Internal constants
-   *##############################################################################################*/
-
-  static constexpr size_t kGCInterval = 100;
 
   /*################################################################################################
    * Test setup/teardown
@@ -60,7 +55,7 @@ class GarbageListFixture : public ::testing::Test
    * Internal member variables
    *##############################################################################################*/
 
-  size_t current_epoch;
+  std::atomic_size_t current_epoch;
 };
 
 /*##################################################################################################
@@ -172,7 +167,7 @@ TEST_F(GarbageListFixture, Clear_WithLessGarbages_ProtectedGarbagesRemain)
     garbage_references.emplace_back(*garbage);
   }
 
-  garbage_list.SetCurrentEpoch(protected_epoch);
+  current_epoch += 1;
 
   // add protected garbages
   for (; count < kTotalGarbageNum; ++count) {
@@ -214,7 +209,7 @@ TEST_F(GarbageListFixture, Clear_WithLotOfGarbages_ProtectedGarbagesRemain)
     garbage_references.emplace_back(*garbage);
   }
 
-  garbage_list.SetCurrentEpoch(protected_epoch);
+  current_epoch += 1;
 
   // add protected garbages
   for (; count < kTotalGarbageNum; ++count) {
