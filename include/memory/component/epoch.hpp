@@ -14,7 +14,8 @@
  * limitations under the License.
  */
 
-#pragma once
+#ifndef MEMORY_MANAGER_MEMORY_COMPONENT_EPOCH_H_
+#define MEMORY_MANAGER_MEMORY_COMPONENT_EPOCH_H_
 
 #include <atomic>
 #include <limits>
@@ -127,3 +128,5 @@ class Epoch
 };
 
 }  // namespace dbgroup::memory::component
+
+#endif  // MEMORY_MANAGER_MEMORY_COMPONENT_EPOCH_H_

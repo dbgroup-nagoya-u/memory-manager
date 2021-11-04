@@ -14,7 +14,8 @@
  * limitations under the License.
  */
 
-#pragma once
+#ifndef MEMORY_MANAGER_MEMORY_UTILITY_H_
+#define MEMORY_MANAGER_MEMORY_UTILITY_H_
 
 #include <cassert>
 #include <cstddef>
@@ -46,3 +47,5 @@ Delete(T* obj)
 }
 
 }  // namespace dbgroup::memory
+
+#endif  // MEMORY_MANAGER_MEMORY_UTILITY_H_

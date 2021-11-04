@@ -14,7 +14,8 @@
  * limitations under the License.
  */
 
-#pragma once
+#ifndef MEMORY_MANAGER_MEMORY_EPOCH_BASED_GC_H_
+#define MEMORY_MANAGER_MEMORY_EPOCH_BASED_GC_H_
 
 #include <array>
 #include <atomic>
@@ -356,3 +357,5 @@ class EpochBasedGC
 };
 
 }  // namespace dbgroup::memory
+
+#endif  // MEMORY_MANAGER_MEMORY_EPOCH_BASED_GC_H_

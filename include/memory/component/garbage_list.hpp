@@ -14,7 +14,8 @@
  * limitations under the License.
  */
 
-#pragma once
+#ifndef MEMORY_MANAGER_MEMORY_COMPONENT_GARBAGE_LIST_H_
+#define MEMORY_MANAGER_MEMORY_COMPONENT_GARBAGE_LIST_H_
 
 #include <array>
 #include <atomic>
@@ -202,3 +203,5 @@ class GarbageList
 };
 
 }  // namespace dbgroup::memory::component
+
+#endif  // MEMORY_MANAGER_MEMORY_COMPONENT_GARBAGE_LIST_H_

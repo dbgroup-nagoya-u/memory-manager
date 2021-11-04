@@ -14,7 +14,8 @@
  * limitations under the License.
  */
 
-#pragma once
+#ifndef MEMORY_MANAGER_MEMORY_COMPONENT_COMMON_H_
+#define MEMORY_MANAGER_MEMORY_COMPONENT_COMMON_H_
 
 #include "../utility.hpp"
 
@@ -24,3 +25,5 @@ namespace dbgroup::memory::component
 constexpr std::memory_order mo_relax = std::memory_order_relaxed;
 
 }  // namespace dbgroup::memory::component
+
+#endif  // MEMORY_MANAGER_MEMORY_COMPONENT_COMMON_H_

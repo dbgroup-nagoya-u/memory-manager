@@ -14,7 +14,8 @@
  * limitations under the License.
  */
 
-#pragma once
+#ifndef MEMORY_MANAGER_MEMORY_COMPONENT_EPOCH_GUARD_H_
+#define MEMORY_MANAGER_MEMORY_COMPONENT_EPOCH_GUARD_H_
 
 #include "epoch.hpp"
 
@@ -59,3 +60,5 @@ class EpochGuard
 };
 
 }  // namespace dbgroup::memory::component
+
+#endif  // MEMORY_MANAGER_MEMORY_COMPONENT_EPOCH_GUARD_H_
