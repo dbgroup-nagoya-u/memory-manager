@@ -36,17 +36,11 @@ class Epoch
    *##############################################################################################*/
 
   /**
-   * @brief Construct a new instance.
-   *
-   */
-  constexpr Epoch() : current_{}, entered_{std::numeric_limits<size_t>::max()} {}
-
-  /**
    * @brief Construct a new instance with an initial epoch.
    *
    * @param current_epoch an initial epoch value.
    */
-  constexpr explicit Epoch(const size_t current_epoch)
+  constexpr explicit Epoch(const std::atomic_size_t &current_epoch)
       : current_{current_epoch}, entered_{std::numeric_limits<size_t>::max()}
   {
   }
@@ -84,17 +78,6 @@ class Epoch
     return entered_.load(kMORelax);
   }
 
-  /**
-   * @brief Set a current epoch value.
-   *
-   * @param current_epoch a epoch value to be set.
-   */
-  void
-  SetCurrentEpoch(const size_t current_epoch)
-  {
-    current_.store(current_epoch, kMORelax);
-  }
-
   /*################################################################################################
    * Public utility functions
    *##############################################################################################*/
@@ -106,7 +89,7 @@ class Epoch
   void
   EnterEpoch()
   {
-    entered_.store(current_.load(kMORelax), kMORelax);
+    entered_.store(GetCurrentEpoch(), kMORelax);
   }
 
   /**
@@ -124,8 +107,8 @@ class Epoch
    * Internal member variables
    *##############################################################################################*/
 
-  /// a current epoch. Note: this is maintained individually to improve performance.
-  std::atomic_size_t current_;
+  /// a current epoch.
+  const std::atomic_size_t &current_;
 
   /// a snapshot to denote a protected epoch.
   std::atomic_size_t entered_;

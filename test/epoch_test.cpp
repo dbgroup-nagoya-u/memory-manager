@@ -46,7 +46,7 @@ class EpochFixture : public ::testing::Test
    * Internal member variables
    *##############################################################################################*/
 
-  size_t current_epoch;
+  std::atomic_size_t current_epoch;
 
   std::unique_ptr<Epoch> epoch;
 };
@@ -58,14 +58,6 @@ class EpochFixture : public ::testing::Test
 TEST_F(EpochFixture, Construct_CurrentEpochZero_MemberVariableCorrectlyInitialized)
 {
   EXPECT_EQ(0, epoch->GetCurrentEpoch());
-  EXPECT_EQ(kULMax, epoch->GetProtectedEpoch());
-}
-
-TEST_F(EpochFixture, SetCurrentEpoch_CurrentEpochZero_CurrentEpochCorrectlyUpdated)
-{
-  epoch->SetCurrentEpoch(1);
-
-  EXPECT_EQ(1, epoch->GetCurrentEpoch());
   EXPECT_EQ(kULMax, epoch->GetProtectedEpoch());
 }
 
