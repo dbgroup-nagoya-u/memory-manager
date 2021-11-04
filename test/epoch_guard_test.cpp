@@ -16,6 +16,7 @@
 
 #include "memory/component/epoch_guard.hpp"
 
+#include "common.hpp"
 #include "gtest/gtest.h"
 
 namespace dbgroup::memory::component::test
@@ -30,6 +31,8 @@ class EpochGuardFixture : public ::testing::Test
   void
   SetUp() override
   {
+    current_epoch = 0;
+    epoch = std::make_unique<Epoch>(current_epoch);
   }
 
   void
@@ -41,9 +44,9 @@ class EpochGuardFixture : public ::testing::Test
    * Internal member variables
    *##############################################################################################*/
 
-  std::atomic_size_t current_epoch{0};
+  std::atomic_size_t current_epoch;
 
-  Epoch epoch{current_epoch};
+  std::unique_ptr<Epoch> epoch;
 };
 
 /*##################################################################################################
@@ -52,18 +55,18 @@ class EpochGuardFixture : public ::testing::Test
 
 TEST_F(EpochGuardFixture, Construct_CurrentEpochZero_ProtectedEpochCorrectlyUpdated)
 {
-  const auto guard = EpochGuard{&epoch};
+  const auto guard = EpochGuard{epoch.get()};
 
-  EXPECT_EQ(0, epoch.GetProtectedEpoch());
+  EXPECT_EQ(0, epoch->GetProtectedEpoch());
 }
 
 TEST_F(EpochGuardFixture, Destruct_CurrentEpochZero_ProtectedEpochCorrectlyUpdated)
 {
   {
-    const auto guard = EpochGuard{&epoch};
+    const auto guard = EpochGuard{epoch.get()};
   }
 
-  EXPECT_EQ(std::numeric_limits<size_t>::max(), epoch.GetProtectedEpoch());
+  EXPECT_EQ(kULMax, epoch->GetProtectedEpoch());
 }
 
 }  // namespace dbgroup::memory::component::test
