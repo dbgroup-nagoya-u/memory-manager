@@ -44,10 +44,181 @@ class EpochBasedGC
   using EpochManager = component::EpochManager;
   using GarbageList_t = component::GarbageList<T>;
 
-  /// abbreviation for simplicity.
-  static constexpr std::memory_order mo_relax = std::memory_order_relaxed;
+ public:
+  /*################################################################################################
+   * Public constructors and assignment operators
+   *##############################################################################################*/
+
+  /**
+   * @brief Construct a new instance.
+   *
+   * @param gc_interval_micro_sec the duration of interval for GC (default: 1e5us = 100ms).
+   */
+  constexpr explicit EpochBasedGC(const size_t gc_interval_micro_sec = 100000)
+      : epoch_manager_{},
+        garbages_{nullptr},
+        gc_interval_micro_sec_{gc_interval_micro_sec},
+        gc_is_running_{false}
+  {
+  }
+
+  EpochBasedGC(const EpochBasedGC&) = delete;
+  EpochBasedGC& operator=(const EpochBasedGC&) = delete;
+  EpochBasedGC(EpochBasedGC&&) = delete;
+  EpochBasedGC& operator=(EpochBasedGC&&) = delete;
+
+  /*################################################################################################
+   * Public destructors
+   *##############################################################################################*/
+
+  /**
+   * @brief Destroy the instance.
+   *
+   * If protected garbages remains, this destructor waits for them to be free.
+   */
+  ~EpochBasedGC()
+  {
+    // stop garbage collection
+    StopGC();
+    epoch_manager_.ForwardGlobalEpoch();
+
+    // wait until all guards are freed
+    const auto current_epoch = epoch_manager_.GetCurrentEpoch();
+    size_t protected_epoch;
+    do {
+      // wait for garbages to be out of scope
+      std::this_thread::sleep_for(std::chrono::microseconds(gc_interval_micro_sec_));
+      protected_epoch = epoch_manager_.UpdateRegisteredEpochs(current_epoch);
+    } while (protected_epoch < current_epoch);
+
+    // delete all garbages
+    GarbageNode *current, *next;
+    next = garbages_.load();
+    while (next != nullptr) {
+      current = next;
+      current->garbage_tail = GarbageList_t::Clear(current->garbage_tail, protected_epoch);
+      next = current->next;
+      delete current;
+    }
+  }
+
+  /*################################################################################################
+   * Public getters/setters
+   *##############################################################################################*/
+
+  /**
+   * @return size_t the total number of registered garbages.
+   */
+  size_t
+  GetRegisteredGarbageSize() const
+  {
+    auto garbage_node = garbages_.load(kMORelax);
+    size_t sum = 0;
+    while (garbage_node != nullptr) {
+      sum += garbage_node->garbage_tail->Size();
+      garbage_node = garbage_node->next;
+    }
+
+    return sum;
+  }
+
+  /*################################################################################################
+   * Public utility functions
+   *##############################################################################################*/
+
+  /**
+   * @brief Create a guard instance to protect garbages based on the scoped locking pattern.
+   *
+   * @return EpochGuard a created epoch guard.
+   */
+  EpochGuard
+  CreateEpochGuard()
+  {
+    thread_local auto epoch = std::make_shared<Epoch>();
+
+    if (epoch.use_count() <= 1) {
+      epoch->SetCurrentEpoch(epoch_manager_.GetCurrentEpoch());
+      epoch_manager_.RegisterEpoch(epoch);
+    }
+
+    return EpochGuard{epoch.get()};
+  }
+
+  /**
+   * @brief Add a new garbage instance.
+   *
+   * @param target_ptr a pointer to a target garbage.
+   */
+  void
+  AddGarbage(const T* target_ptr)
+  {
+    thread_local auto garbage_keeper = std::make_shared<size_t>();
+    thread_local GarbageList_t* garbage_head = nullptr;
+
+    if (garbage_keeper.use_count() <= 1) {
+      garbage_head = new GarbageList_t{epoch_manager_.GetCurrentEpoch()};
+
+      // register this garbage list
+      auto garbage_node = new GarbageNode{garbage_head, garbage_keeper, garbages_.load(kMORelax)};
+      while (!garbages_.compare_exchange_weak(garbage_node->next, garbage_node, kMORelax)) {
+        // continue until inserting succeeds
+      }
+    }
+
+    const auto new_list = GarbageList_t::AddGarbage(garbage_head, target_ptr);
+    if (new_list != nullptr) {
+      garbage_head = new_list;
+    }
+  }
+
+  /*################################################################################################
+   * Public GC control functions
+   *##############################################################################################*/
+
+  /**
+   * @brief Start garbage collection.
+   *
+   * @retval true if garbage collection has started.
+   * @retval false if garbage collection is already running.
+   */
+  bool
+  StartGC()
+  {
+    if (gc_is_running_.load(kMORelax)) {
+      return false;
+    } else {
+      gc_is_running_.store(true, kMORelax);
+      gc_thread_ = std::thread{&EpochBasedGC::RunGC, this};
+      return true;
+    }
+  }
+
+  /**
+   * @brief Stop garbage collection.
+   *
+   * @retval true if garbage collection has stopped.
+   * @retval false if garbage collection is not running.
+   */
+  bool
+  StopGC()
+  {
+    if (!gc_is_running_.load(kMORelax)) {
+      return false;
+    } else {
+      gc_is_running_.store(false, kMORelax);
+      gc_thread_.join();
+      return true;
+    }
+  }
 
  private:
+  /*################################################################################################
+   * Internal constants
+   *##############################################################################################*/
+
+  /// abbreviation of std::memory_order_relaxed
+  static constexpr auto kMORelax = component::kMORelax;
+
   /*################################################################################################
    * Internal structs
    *##############################################################################################*/
@@ -103,25 +274,6 @@ class EpochBasedGC
   };
 
   /*################################################################################################
-   * Internal member variables
-   *##############################################################################################*/
-
-  /// an epoch manager.
-  EpochManager epoch_manager_;
-
-  /// the head of a linked list of garbage buffers.
-  std::atomic<GarbageNode*> garbages_;
-
-  /// the duration of garbage collection in micro seconds.
-  const size_t gc_interval_micro_sec_;
-
-  /// a thread to run garbage collection.
-  std::thread gc_thread_;
-
-  /// a flag to check whether garbage collection is running.
-  std::atomic_bool gc_is_running_;
-
-  /*################################################################################################
    * Internal utility functions
    *##############################################################################################*/
 
@@ -133,7 +285,7 @@ class EpochBasedGC
   void
   UpdateEpochsInGarbageLists(const size_t current_epoch)
   {
-    auto current = garbages_.load(mo_relax);
+    auto current = garbages_.load(kMORelax);
     while (current != nullptr) {
       current->garbage_tail->SetCurrentEpoch(current_epoch);
       current = current->next;
@@ -148,7 +300,7 @@ class EpochBasedGC
   void
   DeleteGarbages(const size_t protected_epoch)
   {
-    auto current = garbages_.load(mo_relax);
+    auto current = garbages_.load(kMORelax);
     GarbageNode* previous = nullptr;
 
     while (current != nullptr) {
@@ -178,7 +330,7 @@ class EpochBasedGC
   {
     const auto interval = std::chrono::microseconds(gc_interval_micro_sec_);
 
-    while (gc_is_running_.load(mo_relax)) {
+    while (gc_is_running_.load(kMORelax)) {
       const auto sleep_time = std::chrono::high_resolution_clock::now() + interval;
 
       // forward a global epoch and update registered epochs/garbage lists
@@ -192,168 +344,24 @@ class EpochBasedGC
     }
   }
 
- public:
   /*################################################################################################
-   * Public constructors/destructors
+   * Internal member variables
    *##############################################################################################*/
 
-  /**
-   * @brief Construct a new instance.
-   *
-   * @param gc_interval_micro_sec the duration of interval for GC (default: 1e5us = 100ms).
-   */
-  constexpr explicit EpochBasedGC(const size_t gc_interval_micro_sec = 100000)
-      : epoch_manager_{},
-        garbages_{nullptr},
-        gc_interval_micro_sec_{gc_interval_micro_sec},
-        gc_is_running_{false}
-  {
-  }
+  /// an epoch manager.
+  EpochManager epoch_manager_;
 
-  /**
-   * @brief Destroy the instance.
-   *
-   * If protected garbages remains, this destructor waits for them to be free.
-   */
-  ~EpochBasedGC()
-  {
-    // stop garbage collection
-    StopGC();
-    epoch_manager_.ForwardGlobalEpoch();
+  /// the head of a linked list of garbage buffers.
+  std::atomic<GarbageNode*> garbages_;
 
-    // wait until all guards are freed
-    const auto current_epoch = epoch_manager_.GetCurrentEpoch();
-    size_t protected_epoch;
-    do {
-      // wait for garbages to be out of scope
-      std::this_thread::sleep_for(std::chrono::microseconds(gc_interval_micro_sec_));
-      protected_epoch = epoch_manager_.UpdateRegisteredEpochs(current_epoch);
-    } while (protected_epoch < current_epoch);
+  /// the duration of garbage collection in micro seconds.
+  const size_t gc_interval_micro_sec_;
 
-    // delete all garbages
-    GarbageNode *current, *next;
-    next = garbages_.load();
-    while (next != nullptr) {
-      current = next;
-      current->garbage_tail = GarbageList_t::Clear(current->garbage_tail, protected_epoch);
-      next = current->next;
-      delete current;
-    }
-  }
+  /// a thread to run garbage collection.
+  std::thread gc_thread_;
 
-  EpochBasedGC(const EpochBasedGC&) = delete;
-  EpochBasedGC& operator=(const EpochBasedGC&) = delete;
-  EpochBasedGC(EpochBasedGC&&) = delete;
-  EpochBasedGC& operator=(EpochBasedGC&&) = delete;
-
-  /*################################################################################################
-   * Public getters/setters
-   *##############################################################################################*/
-
-  /**
-   * @return size_t the total number of registered garbages.
-   */
-  size_t
-  GetRegisteredGarbageSize() const
-  {
-    auto garbage_node = garbages_.load(mo_relax);
-    size_t sum = 0;
-    while (garbage_node != nullptr) {
-      sum += garbage_node->garbage_tail->Size();
-      garbage_node = garbage_node->next;
-    }
-
-    return sum;
-  }
-
-  /*################################################################################################
-   * Public utility functions
-   *##############################################################################################*/
-
-  /**
-   * @brief Create a guard instance to protect garbages based on the scoped locking pattern.
-   *
-   * @return EpochGuard a created epoch guard.
-   */
-  EpochGuard
-  CreateEpochGuard()
-  {
-    thread_local auto epoch = std::make_shared<Epoch>();
-
-    if (epoch.use_count() <= 1) {
-      epoch->SetCurrentEpoch(epoch_manager_.GetCurrentEpoch());
-      epoch_manager_.RegisterEpoch(epoch);
-    }
-
-    return EpochGuard{epoch.get()};
-  }
-
-  /**
-   * @brief Add a new garbage instance.
-   *
-   * @param target_ptr a pointer to a target garbage.
-   */
-  void
-  AddGarbage(const T* target_ptr)
-  {
-    thread_local auto garbage_keeper = std::make_shared<size_t>();
-    thread_local GarbageList_t* garbage_head = nullptr;
-
-    if (garbage_keeper.use_count() <= 1) {
-      garbage_head = new GarbageList_t{epoch_manager_.GetCurrentEpoch()};
-
-      // register this garbage list
-      auto garbage_node = new GarbageNode{garbage_head, garbage_keeper, garbages_.load(mo_relax)};
-      while (!garbages_.compare_exchange_weak(garbage_node->next, garbage_node, mo_relax)) {
-        // continue until inserting succeeds
-      }
-    }
-
-    const auto new_list = GarbageList_t::AddGarbage(garbage_head, target_ptr);
-    if (new_list != nullptr) {
-      garbage_head = new_list;
-    }
-  }
-
-  /*################################################################################################
-   * Public GC control functions
-   *##############################################################################################*/
-
-  /**
-   * @brief Start garbage collection.
-   *
-   * @retval true if garbage collection has started.
-   * @retval false if garbage collection is already running.
-   */
-  bool
-  StartGC()
-  {
-    if (gc_is_running_.load(mo_relax)) {
-      return false;
-    } else {
-      gc_is_running_.store(true, mo_relax);
-      gc_thread_ = std::thread{&EpochBasedGC::RunGC, this};
-      return true;
-    }
-  }
-
-  /**
-   * @brief Stop garbage collection.
-   *
-   * @retval true if garbage collection has stopped.
-   * @retval false if garbage collection is not running.
-   */
-  bool
-  StopGC()
-  {
-    if (!gc_is_running_.load(mo_relax)) {
-      return false;
-    } else {
-      gc_is_running_.store(false, mo_relax);
-      gc_thread_.join();
-      return true;
-    }
-  }
+  /// a flag to check whether garbage collection is running.
+  std::atomic_bool gc_is_running_;
 };
 
 }  // namespace dbgroup::memory

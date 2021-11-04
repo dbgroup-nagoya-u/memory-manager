@@ -27,17 +27,9 @@ namespace dbgroup::memory::component
  */
 class EpochGuard
 {
- private:
-  /*################################################################################################
-   * Internal member variables
-   *##############################################################################################*/
-
-  /// a reference to a target epoch.
-  Epoch *epoch_;
-
  public:
   /*################################################################################################
-   * Public constructors/destructors
+   * Public constructors and assignment operators
    *##############################################################################################*/
 
   /**
@@ -47,16 +39,28 @@ class EpochGuard
    */
   explicit EpochGuard(Epoch *epoch) : epoch_{epoch} { epoch_->EnterEpoch(); }
 
+  EpochGuard(const EpochGuard &) = delete;
+  EpochGuard &operator=(const EpochGuard &) = delete;
+  constexpr EpochGuard(EpochGuard &&) = default;
+  constexpr EpochGuard &operator=(EpochGuard &&) = default;
+
+  /*################################################################################################
+   * Public destructors
+   *##############################################################################################*/
+
   /**
    * @brief Destroy the instace and release a protected epoch.
    *
    */
   ~EpochGuard() { epoch_->LeaveEpoch(); }
 
-  EpochGuard(const EpochGuard &) = delete;
-  EpochGuard &operator=(const EpochGuard &) = delete;
-  constexpr EpochGuard(EpochGuard &&) = default;
-  constexpr EpochGuard &operator=(EpochGuard &&) = default;
+ private:
+  /*################################################################################################
+   * Internal member variables
+   *##############################################################################################*/
+
+  /// a reference to a target epoch.
+  Epoch *epoch_;
 };
 
 }  // namespace dbgroup::memory::component

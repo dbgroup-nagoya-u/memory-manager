@@ -30,20 +30,9 @@ namespace dbgroup::memory::component
  */
 class Epoch
 {
- private:
-  /*################################################################################################
-   * Internal member variables
-   *##############################################################################################*/
-
-  /// a current epoch. Note: this is maintained individually to improve performance.
-  std::atomic_size_t current_;
-
-  /// a snapshot to denote a protected epoch.
-  std::atomic_size_t entered_;
-
  public:
   /*################################################################################################
-   * Public constructors/destructors
+   * Public constructors and assignment operators
    *##############################################################################################*/
 
   /**
@@ -62,12 +51,16 @@ class Epoch
   {
   }
 
-  ~Epoch() = default;
-
   Epoch(const Epoch &) = delete;
   Epoch &operator=(const Epoch &) = delete;
   Epoch(Epoch &&orig) = delete;
   Epoch &operator=(Epoch &&orig) = delete;
+
+  /*################################################################################################
+   * Public destructors
+   *##############################################################################################*/
+
+  ~Epoch() = default;
 
   /*################################################################################################
    * Public getters/setters
@@ -79,7 +72,7 @@ class Epoch
   size_t
   GetCurrentEpoch() const
   {
-    return current_.load(mo_relax);
+    return current_.load(kMORelax);
   }
 
   /**
@@ -88,7 +81,7 @@ class Epoch
   size_t
   GetProtectedEpoch() const
   {
-    return entered_.load(mo_relax);
+    return entered_.load(kMORelax);
   }
 
   /**
@@ -99,7 +92,7 @@ class Epoch
   void
   SetCurrentEpoch(const size_t current_epoch)
   {
-    current_.store(current_epoch, mo_relax);
+    current_.store(current_epoch, kMORelax);
   }
 
   /*################################################################################################
@@ -113,7 +106,7 @@ class Epoch
   void
   EnterEpoch()
   {
-    entered_.store(current_.load(mo_relax), mo_relax);
+    entered_.store(current_.load(kMORelax), kMORelax);
   }
 
   /**
@@ -123,8 +116,19 @@ class Epoch
   void
   LeaveEpoch()
   {
-    entered_.store(std::numeric_limits<size_t>::max(), mo_relax);
+    entered_.store(std::numeric_limits<size_t>::max(), kMORelax);
   }
+
+ private:
+  /*################################################################################################
+   * Internal member variables
+   *##############################################################################################*/
+
+  /// a current epoch. Note: this is maintained individually to improve performance.
+  std::atomic_size_t current_;
+
+  /// a snapshot to denote a protected epoch.
+  std::atomic_size_t entered_;
 };
 
 }  // namespace dbgroup::memory::component

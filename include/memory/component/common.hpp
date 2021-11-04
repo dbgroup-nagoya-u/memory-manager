@@ -17,12 +17,14 @@
 #ifndef MEMORY_MANAGER_MEMORY_COMPONENT_COMMON_H_
 #define MEMORY_MANAGER_MEMORY_COMPONENT_COMMON_H_
 
+#include <atomic>
+
 #include "../utility.hpp"
 
 namespace dbgroup::memory::component
 {
-/// abbreviation for simplicity.
-constexpr std::memory_order mo_relax = std::memory_order_relaxed;
+/// abbreviation of std::memory_order_relaxed
+constexpr std::memory_order kMORelax = std::memory_order_relaxed;
 
 }  // namespace dbgroup::memory::component
 

@@ -22,7 +22,6 @@
 #include <memory>
 #include <utility>
 
-#include "../utility.hpp"
 #include "epoch_guard.hpp"
 
 namespace dbgroup::memory::component
@@ -33,6 +32,130 @@ namespace dbgroup::memory::component
  */
 class EpochManager
 {
+ public:
+  /*################################################################################################
+   * Public constructors and assignment operators
+   *##############################################################################################*/
+
+  /**
+   * @brief Construct a new instance.
+   *
+   */
+  constexpr EpochManager() : current_epoch_{0}, epochs_{nullptr} {}
+
+  EpochManager(const EpochManager &) = delete;
+  EpochManager &operator=(const EpochManager &) = delete;
+  EpochManager(EpochManager &&) = delete;
+  EpochManager &operator=(EpochManager &&) = delete;
+
+  /*################################################################################################
+   * Public destructors
+   *##############################################################################################*/
+
+  /**
+   * @brief Destroy the instance.
+   *
+   */
+  ~EpochManager()
+  {
+    auto next = epochs_.load(kMORelax);
+    while (next != nullptr) {
+      auto current = next;
+      next = current->next;
+      delete current;
+    }
+  }
+
+  /*################################################################################################
+   * Public getters/setters
+   *##############################################################################################*/
+
+  /**
+   * @return size_t a current epoch counter.
+   */
+  size_t
+  GetCurrentEpoch() const
+  {
+    return current_epoch_.load(kMORelax);
+  }
+
+  /*################################################################################################
+   * Public utility functions
+   *##############################################################################################*/
+
+  /**
+   * @brief Forward an original epoch counter.
+   *
+   * @return size_t a forwarded epoch value.
+   */
+  size_t
+  ForwardGlobalEpoch()
+  {
+    return current_epoch_.fetch_add(1, kMORelax) + 1;
+  }
+
+  /**
+   * @brief Register a new epoch with the manager.
+   *
+   * @param epoch an epoch to be registered.
+   */
+  void
+  RegisterEpoch(const std::shared_ptr<Epoch> &epoch)
+  {
+    // prepare a new epoch node
+    auto epoch_node = new EpochNode{epoch, epochs_.load(kMORelax)};
+
+    // insert a new epoch node into the epoch list
+    while (!epochs_.compare_exchange_weak(epoch_node->next, epoch_node, kMORelax)) {
+      // continue until inserting succeeds
+    }
+  }
+
+  /**
+   * @brief Update information of registered epochs.
+   *
+   * @param current_epoch a new epoch value to update registered epochs.
+   * @return size_t  a protected epoch value.
+   */
+  size_t
+  UpdateRegisteredEpochs(const size_t current_epoch)
+  {
+    // update the head of an epoch list
+    auto previous = epochs_.load(kMORelax);
+    if (previous == nullptr) return std::numeric_limits<size_t>::max();
+
+    auto min_protected_epoch = std::numeric_limits<size_t>::max();
+    if (previous->epoch.use_count() > 1) {
+      previous->epoch->SetCurrentEpoch(current_epoch);
+      const auto protected_epoch = previous->epoch->GetProtectedEpoch();
+      if (protected_epoch < min_protected_epoch) {
+        min_protected_epoch = protected_epoch;
+      }
+    }
+    auto current = previous->next;
+
+    // update the tail nodes of an epoch list
+    while (current != nullptr) {
+      if (current->epoch.use_count() > 1) {
+        // if an epoch remains, update epoch information
+        current->epoch->SetCurrentEpoch(current_epoch);
+        const auto protected_epoch = current->epoch->GetProtectedEpoch();
+        if (protected_epoch < min_protected_epoch) {
+          min_protected_epoch = protected_epoch;
+        }
+        previous = current;
+        current = current->next;
+      } else {
+        // if an epoch is deleted, delete this node from a list
+        previous->next = current->next;
+        delete current;
+        current = previous->next;
+      }
+    }
+
+    return min_protected_epoch;
+  }
+
  private:
   /*################################################################################################
    * Internal structs
@@ -92,126 +215,6 @@ class EpochManager
 
   /// the head pointer of a linked list of epochs.
   std::atomic<EpochNode *> epochs_;
-
- public:
-  /*################################################################################################
-   * Public constructors/destructors
-   *##############################################################################################*/
-
-  /**
-   * @brief Construct a new instance.
-   *
-   */
-  constexpr EpochManager() : current_epoch_{0}, epochs_{nullptr} {}
-
-  /**
-   * @brief Destroy the instance.
-   *
-   */
-  ~EpochManager()
-  {
-    auto next = epochs_.load(mo_relax);
-    while (next != nullptr) {
-      auto current = next;
-      next = current->next;
-      delete current;
-    }
-  }
-
-  EpochManager(const EpochManager &) = delete;
-  EpochManager &operator=(const EpochManager &) = delete;
-  EpochManager(EpochManager &&) = delete;
-  EpochManager &operator=(EpochManager &&) = delete;
-
-  /*################################################################################################
-   * Public getters/setters
-   *##############################################################################################*/
-
-  /**
-   * @return size_t a current epoch counter.
-   */
-  size_t
-  GetCurrentEpoch() const
-  {
-    return current_epoch_.load(mo_relax);
-  }
-
-  /*################################################################################################
-   * Public utility functions
-   *##############################################################################################*/
-
-  /**
-   * @brief Forward an original epoch counter.
-   *
-   * @return size_t a forwarded epoch value.
-   */
-  size_t
-  ForwardGlobalEpoch()
-  {
-    return current_epoch_.fetch_add(1, mo_relax) + 1;
-  }
-
-  /**
-   * @brief Register a new epoch with the manager.
-   *
-   * @param epoch an epoch to be registered.
-   */
-  void
-  RegisterEpoch(const std::shared_ptr<Epoch> &epoch)
-  {
-    // prepare a new epoch node
-    auto epoch_node = new EpochNode{epoch, epochs_.load(mo_relax)};
-
-    // insert a new epoch node into the epoch list
-    while (!epochs_.compare_exchange_weak(epoch_node->next, epoch_node, mo_relax)) {
-      // continue until inserting succeeds
-    }
-  }
-
-  /**
-   * @brief Update information of registered epochs.
-   *
-   * @param current_epoch a new epoch value to update registered epochs.
-   * @return size_t  a protected epoch value.
-   */
-  size_t
-  UpdateRegisteredEpochs(const size_t current_epoch)
-  {
-    // update the head of an epoch list
-    auto previous = epochs_.load(mo_relax);
-    if (previous == nullptr) return std::numeric_limits<size_t>::max();
-
-    auto min_protected_epoch = std::numeric_limits<size_t>::max();
-    if (previous->epoch.use_count() > 1) {
-      previous->epoch->SetCurrentEpoch(current_epoch);
-      const auto protected_epoch = previous->epoch->GetProtectedEpoch();
-      if (protected_epoch < min_protected_epoch) {
-        min_protected_epoch = protected_epoch;
-      }
-    }
-    auto current = previous->next;
-
-    // update the tail nodes of an epoch list
-    while (current != nullptr) {
-      if (current->epoch.use_count() > 1) {
-        // if an epoch remains, update epoch information
-        current->epoch->SetCurrentEpoch(current_epoch);
-        const auto protected_epoch = current->epoch->GetProtectedEpoch();
-        if (protected_epoch < min_protected_epoch) {
-          min_protected_epoch = protected_epoch;
-        }
-        previous = current;
-        current = current->next;
-      } else {
-        // if an epoch is deleted, delete this node from a list
-        previous->next = current->next;
-        delete current;
-        current = previous->next;
-      }
-    }
-
-    return min_protected_epoch;
-  }
 };
 
 }  // namespace dbgroup::memory::component

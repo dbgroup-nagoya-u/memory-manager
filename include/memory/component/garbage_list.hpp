@@ -25,7 +25,6 @@
 #include <utility>
 #include <vector>
 
-#include "../utility.hpp"
 #include "common.hpp"
 
 namespace dbgroup::memory::component
@@ -38,29 +37,9 @@ namespace dbgroup::memory::component
 template <class T>
 class GarbageList
 {
- private:
-  /*################################################################################################
-   * Internal member variables
-   *##############################################################################################*/
-
-  /// a buffer of garbage instances with added epochs.
-  std::array<std::pair<size_t, T*>, kGarbageBufferSize> garbages_;
-
-  /// the index to represent a head position.
-  std::atomic_size_t head_index_;
-
-  /// the index to represent a tail position.
-  size_t tail_index_;
-
-  /// a current epoch. Note: this is maintained individually to improve performance.
-  std::atomic_size_t current_epoch_;
-
-  /// a pointer to a next garbage buffer.
-  std::atomic<GarbageList*> next_;
-
  public:
   /*################################################################################################
-   * Public constructors/destructors
+   * Public constructors and assignment operators
    *##############################################################################################*/
 
   /**
@@ -73,22 +52,26 @@ class GarbageList
   {
   }
 
+  GarbageList(const GarbageList&) = delete;
+  GarbageList& operator=(const GarbageList&) = delete;
+  GarbageList(GarbageList&&) = delete;
+  GarbageList& operator=(GarbageList&&) = delete;
+
+  /*################################################################################################
+   * Public destructors
+   *##############################################################################################*/
+
   /**
    * @brief Destroy the instance.
    *
    */
   ~GarbageList()
   {
-    const auto current_head = head_index_.load(mo_relax);
+    const auto current_head = head_index_.load(kMORelax);
     for (size_t index = tail_index_; index < current_head; ++index) {
       Delete(garbages_[index].second);
     }
   }
-
-  GarbageList(const GarbageList&) = delete;
-  GarbageList& operator=(const GarbageList&) = delete;
-  GarbageList(GarbageList&&) = delete;
-  GarbageList& operator=(GarbageList&&) = delete;
 
   /*################################################################################################
    * Public getters/setters
@@ -100,8 +83,8 @@ class GarbageList
   size_t
   Size() const
   {
-    const auto size = head_index_.load(mo_relax) - tail_index_;
-    const auto next = next_.load(mo_relax);
+    const auto size = head_index_.load(kMORelax) - tail_index_;
+    const auto next = next_.load(kMORelax);
     if (next == nullptr) {
       return size;
     } else {
@@ -117,9 +100,9 @@ class GarbageList
   void
   SetCurrentEpoch(const size_t current_epoch)
   {
-    current_epoch_.store(current_epoch, mo_relax);
+    current_epoch_.store(current_epoch, kMORelax);
 
-    auto next_list = next_.load(mo_relax);
+    auto next_list = next_.load(kMORelax);
     if (next_list != nullptr) {
       next_list->SetCurrentEpoch(current_epoch);
     }
@@ -143,17 +126,17 @@ class GarbageList
       GarbageList* garbage_list,
       const T* garbage)
   {
-    const auto current_head = garbage_list->head_index_.load(mo_relax);
-    const auto current_epoch = garbage_list->current_epoch_.load(mo_relax);
+    const auto current_head = garbage_list->head_index_.load(kMORelax);
+    const auto current_epoch = garbage_list->current_epoch_.load(kMORelax);
 
     garbage_list->garbages_[current_head] = {current_epoch, const_cast<T*>(garbage)};
-    garbage_list->head_index_.fetch_add(1, mo_relax);
+    garbage_list->head_index_.fetch_add(1, kMORelax);
 
     if (current_head < kGarbageBufferSize - 1) {
       return nullptr;
     } else {
       const auto new_garbage_list = new GarbageList{current_epoch};
-      garbage_list->next_.store(new_garbage_list, mo_relax);
+      garbage_list->next_.store(new_garbage_list, kMORelax);
       return new_garbage_list;
     }
   }
@@ -173,7 +156,7 @@ class GarbageList
     if (garbage_list == nullptr) return nullptr;
 
     // release unprotected garbages
-    const auto current_head = garbage_list->head_index_.load(mo_relax);
+    const auto current_head = garbage_list->head_index_.load(kMORelax);
     auto index = garbage_list->tail_index_;
     for (; index < current_head; ++index) {
       const auto [epoch, garbage] = garbage_list->garbages_[index];
@@ -189,10 +172,10 @@ class GarbageList
       return garbage_list;
     } else {
       // release an empty list
-      auto next_list = garbage_list->next_.load(mo_relax);
+      auto next_list = garbage_list->next_.load(kMORelax);
       while (next_list == nullptr) {
         // if the garbage buffer is full but does not have a next buffer, wait insertion of it
-        next_list = garbage_list->next_.load(mo_relax);
+        next_list = garbage_list->next_.load(kMORelax);
       }
       delete garbage_list;
 
@@ -200,6 +183,26 @@ class GarbageList
       return GarbageList::Clear(next_list, protected_epoch);
     }
   }
+
+ private:
+  /*################################################################################################
+   * Internal member variables
+   *##############################################################################################*/
+
+  /// a buffer of garbage instances with added epochs.
+  std::array<std::pair<size_t, T*>, kGarbageBufferSize> garbages_;
+
+  /// the index to represent a head position.
+  std::atomic_size_t head_index_;
+
+  /// the index to represent a tail position.
+  size_t tail_index_;
+
+  /// a current epoch. Note: this is maintained individually to improve performance.
+  std::atomic_size_t current_epoch_;
+
+  /// a pointer to a next garbage buffer.
+  std::atomic<GarbageList*> next_;
 };
 
 }  // namespace dbgroup::memory::component
