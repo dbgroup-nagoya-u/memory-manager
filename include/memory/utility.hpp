@@ -14,15 +14,23 @@
  * limitations under the License.
  */
 
-#pragma once
+#ifndef MEMORY_MANAGER_MEMORY_UTILITY_H_
+#define MEMORY_MANAGER_MEMORY_UTILITY_H_
 
-#include <memory_resource>
-#include <utility>
-
-#include "component/common.hpp"
+#include <cassert>
+#include <cstddef>
+#include <cstdint>
 
 namespace dbgroup::memory
 {
+#ifdef MEMORY_MANAGER_GARBAGE_BUFFER_SIZE
+/// an initial buffer size for retaining garbages
+constexpr size_t kGarbageBufferSize = MEMORY_MANAGER_GARBAGE_BUFFER_SIZE;
+#else
+/// an initial buffer size for retaining garbages
+constexpr size_t kGarbageBufferSize = 1024;
+#endif
+
 /**
  * @brief A wrapper function to delete an dynamically created instance.
  *
@@ -39,3 +47,5 @@ Delete(T* obj)
 }
 
 }  // namespace dbgroup::memory
+
+#endif  // MEMORY_MANAGER_MEMORY_UTILITY_H_

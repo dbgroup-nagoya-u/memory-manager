@@ -14,18 +14,23 @@
  * limitations under the License.
  */
 
-#ifndef MEMORY_MANAGER_MEMORY_COMPONENT_COMMON_H_
-#define MEMORY_MANAGER_MEMORY_COMPONENT_COMMON_H_
+#ifndef MEMORY_MANAGER_TEST_COMMON_H_
+#define MEMORY_MANAGER_TEST_COMMON_H_
 
-#include <atomic>
+#include <limits>
 
-#include "../utility.hpp"
+#include "memory/utility.hpp"
 
-namespace dbgroup::memory::component
+namespace dbgroup::memory::test
 {
-/// abbreviation of std::memory_order_relaxed
-constexpr std::memory_order kMORelax = std::memory_order_relaxed;
+constexpr size_t kULMax = std::numeric_limits<size_t>::max();
 
-}  // namespace dbgroup::memory::component
+#ifdef MEMORY_MANAGER_TEST_THREAD_NUM
+constexpr size_t kThreadNum = MEMORY_MANAGER_TEST_THREAD_NUM;
+#else
+constexpr size_t kThreadNum = 8;
+#endif
 
-#endif  // MEMORY_MANAGER_MEMORY_COMPONENT_COMMON_H_
+}  // namespace dbgroup::memory::test
+
+#endif  // MEMORY_MANAGER_TEST_COMMON_H_

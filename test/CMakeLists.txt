@@ -32,42 +32,35 @@ add_subdirectory(${CMAKE_CURRENT_BINARY_DIR}/googletest-src
 
 # define function to add unit tests in the same format
 function(ADD_MEMORY_MANAGER_TEST MEMORY_MANAGER_TEST_TARGET)
-  add_executable(
-    ${MEMORY_MANAGER_TEST_TARGET}
+  add_executable(${MEMORY_MANAGER_TEST_TARGET}
     "${CMAKE_CURRENT_SOURCE_DIR}/${MEMORY_MANAGER_TEST_TARGET}.cpp"
   )
-  target_compile_features(
-    ${MEMORY_MANAGER_TEST_TARGET} PRIVATE
+  target_compile_features(${MEMORY_MANAGER_TEST_TARGET} PRIVATE
     "cxx_std_17"
   )
-  target_compile_options(
-    ${MEMORY_MANAGER_TEST_TARGET} PRIVATE
+  target_compile_options(${MEMORY_MANAGER_TEST_TARGET} PRIVATE
     -Wall
     -Wextra
     $<$<STREQUAL:${CMAKE_BUILD_TYPE},"Release">:"-O2 -march=native">
     $<$<STREQUAL:${CMAKE_BUILD_TYPE},"RelWithDebInfo">:"-g3 -Og -pg">
     $<$<STREQUAL:${CMAKE_BUILD_TYPE},"Debug">:"-g3 -O0 -pg">
   )
-  target_include_directories(
-    ${MEMORY_MANAGER_TEST_TARGET} PRIVATE
+  target_include_directories(${MEMORY_MANAGER_TEST_TARGET} PRIVATE
     "${MEMORY_MANAGER_SOURCE_DIR}/include"
   )
-  target_link_libraries(
-    ${MEMORY_MANAGER_TEST_TARGET} PRIVATE
-    memory_manager
+  target_link_libraries(${MEMORY_MANAGER_TEST_TARGET} PRIVATE
+    memory_manager::memory_manager
     gtest_main
   )
 
   if(DEFINED MEMORY_MANAGER_GARBAGE_BUFFER_SIZE)
-    target_compile_definitions(
-      ${MEMORY_MANAGER_TEST_TARGET} PRIVATE
+    target_compile_definitions(${MEMORY_MANAGER_TEST_TARGET} PRIVATE
       MEMORY_MANAGER_GARBAGE_BUFFER_SIZE=${MEMORY_MANAGER_GARBAGE_BUFFER_SIZE}
     )
   endif()
 
   if(DEFINED MEMORY_MANAGER_TEST_THREAD_NUM)
-    target_compile_definitions(
-      ${MEMORY_MANAGER_TEST_TARGET} PRIVATE
+    target_compile_definitions(${MEMORY_MANAGER_TEST_TARGET} PRIVATE
       MEMORY_MANAGER_TEST_THREAD_NUM=${MEMORY_MANAGER_TEST_THREAD_NUM}
     )
   endif()

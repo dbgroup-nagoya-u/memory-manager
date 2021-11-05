@@ -14,14 +14,13 @@
  * limitations under the License.
  */
 
-#pragma once
+#ifndef MEMORY_MANAGER_MEMORY_COMPONENT_EPOCH_MANAGER_H_
+#define MEMORY_MANAGER_MEMORY_COMPONENT_EPOCH_MANAGER_H_
 
 #include <atomic>
-#include <limits>
 #include <memory>
 #include <utility>
 
-#include "../utility.hpp"
 #include "epoch_guard.hpp"
 
 namespace dbgroup::memory::component
@@ -32,90 +31,16 @@ namespace dbgroup::memory::component
  */
 class EpochManager
 {
- private:
-  /*################################################################################################
-   * Internal structs
-   *##############################################################################################*/
-
-  /**
-   * @brief A class of nodes for composing a linked list of epochs in each thread.
-   *
-   */
-  struct EpochNode {
-    /*##############################################################################################
-     * Public member variables
-     *############################################################################################*/
-
-    /// a shared pointer for monitoring the lifetime of a target epoch.
-    std::shared_ptr<Epoch> epoch;
-
-    /// a pointer to a next node.
-    EpochNode *next;
-
-    /*##############################################################################################
-     * Public constructors/destructors
-     *############################################################################################*/
-
-    /**
-     * @brief Construct a dummy instance.
-     *
-     */
-    constexpr EpochNode() : epoch{}, next{nullptr} {}
-
-    /**
-     * @brief Construct a new instance.
-     *
-     * @param epoch a pointer to a target epoch.
-     * @param next a pointer to a next node.
-     */
-    EpochNode(  //
-        const std::shared_ptr<Epoch> &epoch,
-        const EpochNode *next)
-        : epoch{epoch}, next{const_cast<EpochNode *>(next)}
-    {
-    }
-
-    /**
-     * @brief Destroy the instance and set off a monitoring flag.
-     *
-     */
-    ~EpochNode() = default;
-  };
-
-  /*################################################################################################
-   * Internal member variables
-   *##############################################################################################*/
-
-  /// an original epoch counter.
-  std::atomic_size_t current_epoch_;
-
-  /// the head pointer of a linked list of epochs.
-  std::atomic<EpochNode *> epochs_;
-
  public:
   /*################################################################################################
-   * Public constructors/destructors
+   * Public constructors and assignment operators
    *##############################################################################################*/
 
   /**
    * @brief Construct a new instance.
    *
    */
-  constexpr EpochManager() : current_epoch_{0}, epochs_{nullptr} {}
-
-  /**
-   * @brief Destroy the instance.
-   *
-   */
-  ~EpochManager()
-  {
-    auto next = epochs_.load(mo_relax);
-    while (next != nullptr) {
-      auto current = next;
-      next = current->next;
-      delete current;
-    }
-  }
+  constexpr EpochManager() : global_epoch_{0}, epochs_{nullptr} {}
 
   EpochManager(const EpochManager &) = delete;
   EpochManager &operator=(const EpochManager &) = delete;
@@ -123,16 +48,21 @@ class EpochManager
   EpochManager &operator=(EpochManager &&) = delete;
 
   /*################################################################################################
-   * Public getters/setters
+   * Public destructors
    *##############################################################################################*/
 
   /**
-   * @return size_t a current epoch counter.
+   * @brief Destroy the instance.
+   *
    */
-  size_t
-  GetCurrentEpoch() const
+  ~EpochManager()
   {
-    return current_epoch_.load(mo_relax);
+    auto next = epochs_.load(kMORelax);
+    while (next != nullptr) {
+      auto current = next;
+      next = current->next;
+      delete current;
+    }
   }
 
   /*################################################################################################
@@ -142,67 +72,80 @@ class EpochManager
   /**
    * @brief Forward an original epoch counter.
    *
-   * @return size_t a forwarded epoch value.
-   */
-  size_t
-  ForwardGlobalEpoch()
-  {
-    return current_epoch_.fetch_add(1, mo_relax) + 1;
-  }
-
-  /**
-   * @brief Register a new epoch with the manager.
-   *
-   * @param epoch an epoch to be registered.
+   * @return a forwarded epoch value.
    */
   void
-  RegisterEpoch(const std::shared_ptr<Epoch> &epoch)
+  ForwardGlobalEpoch()
   {
-    // prepare a new epoch node
-    auto epoch_node = new EpochNode{epoch, epochs_.load(mo_relax)};
-
-    // insert a new epoch node into the epoch list
-    while (!epochs_.compare_exchange_weak(epoch_node->next, epoch_node, mo_relax)) {
-      // continue until inserting succeeds
-    }
+    global_epoch_.fetch_add(1, kMORelax);
   }
 
   /**
-   * @brief Update information of registered epochs.
-   *
-   * @param current_epoch a new epoch value to update registered epochs.
-   * @return size_t  a protected epoch value.
+   * @return a reference to the global epoch.
+   */
+  const std::atomic_size_t &
+  GetGlobalEpochReference() const
+  {
+    return global_epoch_;
+  }
+  /**
+   * @return a current global epoch value.
    */
   size_t
-  UpdateRegisteredEpochs(const size_t current_epoch)
+  GetCurrentEpoch() const
   {
-    // update the head of an epoch list
-    auto previous = epochs_.load(mo_relax);
-    if (previous == nullptr) return std::numeric_limits<size_t>::max();
+    return global_epoch_.load(kMORelax);
+  }
 
-    auto min_protected_epoch = std::numeric_limits<size_t>::max();
-    if (previous->epoch.use_count() > 1) {
-      previous->epoch->SetCurrentEpoch(current_epoch);
-      const auto protected_epoch = previous->epoch->GetProtectedEpoch();
-      if (protected_epoch < min_protected_epoch) {
-        min_protected_epoch = protected_epoch;
+  /**
+   * @return an epoch to be kept in each thread
+   */
+  Epoch *
+  GetEpoch()
+  {
+    thread_local auto epoch = std::make_shared<Epoch>(global_epoch_);
+
+    if (epoch.use_count() <= 1) {
+      // insert a new epoch node into the epoch list
+      auto epoch_node = new EpochNode{epoch, epochs_.load(kMORelax)};
+      while (!epochs_.compare_exchange_weak(epoch_node->next, epoch_node, kMORelax)) {
+        // continue until inserting succeeds
       }
     }
-    auto current = previous->next;
 
-    // update the tail nodes of an epoch list
+    return epoch.get();
+  }
+
+  /**
+   * @brief Compute the minimum epoch value for epoch-based protection.
+   *
+   * This function also removes dead epochs from the internal list while computing.
+   *
+   * @return a protected epoch value.
+   */
+  size_t
+  GetProtectedEpoch()
+  {
+    auto min_protected_epoch = global_epoch_.load(kMORelax);
+
+    // check the head node of the epoch list
+    auto previous = epochs_.load(kMORelax);
+    if (previous == nullptr) {
+      return min_protected_epoch;
+    } else if (previous->IsAlive()) {
+      previous->UpdateProtectedEpoch(min_protected_epoch);
+    }
+
+    // check the tail nodes of the epoch list
+    auto current = previous->next;
     while (current != nullptr) {
-      if (current->epoch.use_count() > 1) {
-        // if an epoch remains, update epoch information
-        current->epoch->SetCurrentEpoch(current_epoch);
-        const auto protected_epoch = current->epoch->GetProtectedEpoch();
-        if (protected_epoch < min_protected_epoch) {
-          min_protected_epoch = protected_epoch;
-        }
+      if (current->IsAlive()) {
+        // if the epoch is alive, check the protected value
+        current->UpdateProtectedEpoch(min_protected_epoch);
         previous = current;
         current = current->next;
       } else {
-        // if an epoch is deleted, delete this node from a list
+        // if the epoch is dead, delete this node from the list
         previous->next = current->next;
         delete current;
         current = previous->next;
@@ -211,6 +154,97 @@ class EpochManager
 
     return min_protected_epoch;
   }
+
+ private:
+  /*################################################################################################
+   * Internal structs
+   *##############################################################################################*/
+
+  /**
+   * @brief A class of nodes for composing a linked list of epochs in each thread.
+   *
+   */
+  class EpochNode
+  {
+   public:
+    /*##############################################################################################
+     * Public constructors/destructors
+     *############################################################################################*/
+
+    /**
+     * @brief Construct a new instance.
+     *
+     * @param epoch a pointer to a target epoch.
+     * @param next a pointer to a next node.
+     */
+    EpochNode(  //
+        const std::shared_ptr<Epoch> &epoch,
+        EpochNode *next)
+        : next{next}, epoch_{epoch}
+    {
+    }
+
+    /**
+     * @brief Destroy the instance.
+     *
+     */
+    ~EpochNode() = default;
+
+    /*##############################################################################################
+     * Public utility functions
+     *############################################################################################*/
+
+    /**
+     * @retval true if the registered thread is still active.
+     * @retval false if the registered thread has already left.
+     */
+    bool
+    IsAlive() const
+    {
+      return epoch_.use_count() > 1;
+    }
+
+    /**
+     * @brief Update the minimum epoch value.
+     *
+     * @param min_protected_epoch the current minimum value to be updated.
+     */
+    void
+    UpdateProtectedEpoch(size_t &min_protected_epoch) const
+    {
+      const auto protected_epoch = epoch_->GetProtectedEpoch();
+      if (protected_epoch < min_protected_epoch) {
+        min_protected_epoch = protected_epoch;
+      }
+    }
+
+    /*##############################################################################################
+     * Public member variables
+     *############################################################################################*/
+
+    /// a pointer to the next node.
+    EpochNode *next;
+
+   private:
+    /*##############################################################################################
+     * Internal member variables
+     *############################################################################################*/
+
+    /// a shared pointer for monitoring the lifetime of a target epoch.
+    const std::shared_ptr<Epoch> epoch_;
+  };
+
+  /*################################################################################################
+   * Internal member variables
+   *##############################################################################################*/
+
+  /// an original epoch counter.
+  std::atomic_size_t global_epoch_;
+
+  /// the head pointer of a linked list of epochs.
+  std::atomic<EpochNode *> epochs_;
 };
 
 }  // namespace dbgroup::memory::component
+
+#endif  // MEMORY_MANAGER_MEMORY_COMPONENT_EPOCH_MANAGER_H_

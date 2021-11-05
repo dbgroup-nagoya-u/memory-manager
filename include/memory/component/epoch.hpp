@@ -14,7 +14,8 @@
  * limitations under the License.
  */
 
-#pragma once
+#ifndef MEMORY_MANAGER_MEMORY_COMPONENT_EPOCH_H_
+#define MEMORY_MANAGER_MEMORY_COMPONENT_EPOCH_H_
 
 #include <atomic>
 #include <limits>
@@ -29,44 +30,31 @@ namespace dbgroup::memory::component
  */
 class Epoch
 {
- private:
-  /*################################################################################################
-   * Internal member variables
-   *##############################################################################################*/
-
-  /// a current epoch. Note: this is maintained individually to improve performance.
-  std::atomic_size_t current_;
-
-  /// a snapshot to denote a protected epoch.
-  std::atomic_size_t entered_;
-
  public:
   /*################################################################################################
-   * Public constructors/destructors
+   * Public constructors and assignment operators
    *##############################################################################################*/
-
-  /**
-   * @brief Construct a new instance.
-   *
-   */
-  constexpr Epoch() : current_{}, entered_{std::numeric_limits<size_t>::max()} {}
 
   /**
    * @brief Construct a new instance with an initial epoch.
    *
    * @param current_epoch an initial epoch value.
    */
-  constexpr explicit Epoch(const size_t current_epoch)
+  constexpr explicit Epoch(const std::atomic_size_t &current_epoch)
       : current_{current_epoch}, entered_{std::numeric_limits<size_t>::max()}
   {
   }
-
-  ~Epoch() = default;
 
   Epoch(const Epoch &) = delete;
   Epoch &operator=(const Epoch &) = delete;
   Epoch(Epoch &&orig) = delete;
   Epoch &operator=(Epoch &&orig) = delete;
+
+  /*################################################################################################
+   * Public destructors
+   *##############################################################################################*/
+
+  ~Epoch() = default;
 
   /*################################################################################################
    * Public getters/setters
@@ -78,7 +66,7 @@ class Epoch
   size_t
   GetCurrentEpoch() const
   {
-    return current_.load(mo_relax);
+    return current_.load(kMORelax);
   }
 
   /**
@@ -87,18 +75,7 @@ class Epoch
   size_t
   GetProtectedEpoch() const
   {
-    return entered_.load(mo_relax);
-  }
-
-  /**
-   * @brief Set a current epoch value.
-   *
-   * @param current_epoch a epoch value to be set.
-   */
-  void
-  SetCurrentEpoch(const size_t current_epoch)
-  {
-    current_.store(current_epoch, mo_relax);
+    return entered_.load(kMORelax);
   }
 
   /*################################################################################################
@@ -112,7 +89,7 @@ class Epoch
   void
   EnterEpoch()
   {
-    entered_.store(current_.load(mo_relax), mo_relax);
+    entered_.store(GetCurrentEpoch(), kMORelax);
   }
 
   /**
@@ -122,8 +99,21 @@ class Epoch
   void
   LeaveEpoch()
   {
-    entered_.store(std::numeric_limits<size_t>::max(), mo_relax);
+    entered_.store(std::numeric_limits<size_t>::max(), kMORelax);
   }
+
+ private:
+  /*################################################################################################
+   * Internal member variables
+   *##############################################################################################*/
+
+  /// a current epoch.
+  const std::atomic_size_t &current_;
+
+  /// a snapshot to denote a protected epoch.
+  std::atomic_size_t entered_;
 };
 
 }  // namespace dbgroup::memory::component
+
+#endif  // MEMORY_MANAGER_MEMORY_COMPONENT_EPOCH_H_

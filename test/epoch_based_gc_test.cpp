@@ -22,26 +22,45 @@
 #include <thread>
 #include <vector>
 
+#include "common.hpp"
 #include "gtest/gtest.h"
 
 namespace dbgroup::memory::test
 {
 class TLSBasedMemoryManagerFixture : public ::testing::Test
 {
- public:
+ protected:
+  /*################################################################################################
+   * Type aliases
+   *##############################################################################################*/
   using Target = size_t;
 
+  /*################################################################################################
+   * Internal constants
+   *##############################################################################################*/
+
   static constexpr size_t kGCInterval = 1000;
-#ifdef MEMORY_MANAGER_TEST_THREAD_NUM
-  static constexpr size_t kThreadNum = MEMORY_MANAGER_TEST_THREAD_NUM;
-#else
-  static constexpr size_t kThreadNum = 8;
-#endif
   static constexpr size_t kGarbageNumLarge = 1E5;
   static constexpr size_t kGarbageNumSmall = 10;
 
-  std::mutex mtx;
+  /*################################################################################################
+   * Test setup/teardown
+   *##############################################################################################*/
 
+  void
+  SetUp() override
+  {
+  }
+
+  void
+  TearDown() override
+  {
+  }
+
+  /*################################################################################################
+   * Internal utility functions
+   *##############################################################################################*/
+ public:
   void
   AddGarbages(  //
       std::promise<std::vector<std::weak_ptr<Target>>> p,
@@ -94,16 +113,11 @@ class TLSBasedMemoryManagerFixture : public ::testing::Test
     return target_weak_ptrs;
   }
 
- protected:
-  void
-  SetUp() override
-  {
-  }
+  /*################################################################################################
+   * Internal member variables
+   *##############################################################################################*/
 
-  void
-  TearDown() override
-  {
-  }
+  std::mutex mtx;
 };
 
 /*--------------------------------------------------------------------------------------------------
@@ -136,35 +150,6 @@ TEST_F(TLSBasedMemoryManagerFixture, Destruct_SingleThread_GarbagesCorrectlyFree
   // check there is no referece to target pointers
   for (auto &&target_weak : target_weak_ptrs) {
     EXPECT_EQ(0, target_weak.use_count());
-  }
-}
-
-TEST_F(TLSBasedMemoryManagerFixture, Destruct_RecreatedGC_GarbagesCorrectlyFreed)
-{
-  for (size_t count = 0; count < 2; ++count) {
-    // keep garbage targets
-    std::vector<std::weak_ptr<Target>> target_weak_ptrs;
-
-    // register garbages to GC
-    {
-      auto gc = EpochBasedGC<std::shared_ptr<Target>>{kGCInterval};
-      gc.StartGC();
-      for (size_t loop = 0; loop < kGarbageNumLarge; ++loop) {
-        std::shared_ptr<Target> *target_shared;
-        {
-          const auto guard = gc.CreateEpochGuard();
-          target_shared = new std::shared_ptr<Target>{new Target{loop}};
-          target_weak_ptrs.emplace_back(*target_shared);
-        }
-        gc.AddGarbage(target_shared);
-      }
-      // GC deletes all targets when it leaves this scope
-    }
-
-    // check there is no referece to target pointers
-    for (auto &&target_weak : target_weak_ptrs) {
-      EXPECT_EQ(0, target_weak.use_count());
-    }
   }
 }
 
