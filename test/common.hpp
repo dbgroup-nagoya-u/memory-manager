@@ -21,10 +21,16 @@
 
 #include "memory/utility.hpp"
 
-namespace dbgroup::memory::component::test
+namespace dbgroup::memory::test
 {
 constexpr size_t kULMax = std::numeric_limits<size_t>::max();
 
-}  // namespace dbgroup::memory::component::test
+#ifdef MEMORY_MANAGER_TEST_THREAD_NUM
+constexpr size_t kThreadNum = MEMORY_MANAGER_TEST_THREAD_NUM;
+#else
+constexpr size_t kThreadNum = 8;
+#endif
+
+}  // namespace dbgroup::memory::test
 
 #endif  // MEMORY_MANAGER_TEST_COMMON_H_

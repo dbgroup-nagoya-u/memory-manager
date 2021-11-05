@@ -74,10 +74,10 @@ class EpochManager
    *
    * @return a forwarded epoch value.
    */
-  size_t
+  void
   ForwardGlobalEpoch()
   {
-    return global_epoch_.fetch_add(1, kMORelax) + 1;
+    global_epoch_.fetch_add(1, kMORelax);
   }
 
   /**
@@ -87,6 +87,14 @@ class EpochManager
   GetGlobalEpochReference() const
   {
     return global_epoch_;
+  }
+  /**
+   * @return a current global epoch value.
+   */
+  size_t
+  GetCurrentEpoch() const
+  {
+    return global_epoch_.load(kMORelax);
   }
 
   /**

@@ -89,6 +89,20 @@ class GarbageList
     }
   }
 
+  /**
+   * @retval true if this list is empty.
+   * @retval false otherwise
+   */
+  bool
+  Empty() const
+  {
+    if (end_idx_.load(kMORelax) - begin_idx_ > 0) return false;
+
+    const auto next = next_.load(kMORelax);
+    if (next == nullptr) return true;
+    return next->Empty();
+  }
+
   /*################################################################################################
    * Public utility functions
    *##############################################################################################*/

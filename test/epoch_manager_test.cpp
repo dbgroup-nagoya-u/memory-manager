@@ -35,6 +35,7 @@ class EpochManagerFixture : public ::testing::Test
    *##############################################################################################*/
 
   static constexpr size_t kLoopNum = 1e5;
+  static constexpr auto kULMax = ::dbgroup::memory::test::kULMax;
 
   /*################################################################################################
    * Test setup/teardown
@@ -73,7 +74,7 @@ TEST_F(EpochManagerFixture, ForwardGlobalEpoch_AfterConstruct_GlobalEpochUpdated
 {
   epoch_manager->ForwardGlobalEpoch();
 
-  EXPECT_EQ(1, epoch_manager->GetGlobalEpochReference().load());
+  EXPECT_EQ(1, epoch_manager->GetCurrentEpoch());
 }
 
 TEST_F(EpochManagerFixture, GetEpoch_AfterConstruct_EpochCorrectlyCreated)
