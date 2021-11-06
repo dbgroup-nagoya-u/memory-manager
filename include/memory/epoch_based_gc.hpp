@@ -19,11 +19,11 @@
 
 #include <atomic>
 #include <chrono>
-#include <future>
-#include <list>
 #include <memory>
+#include <shared_mutex>
 #include <thread>
 #include <utility>
+#include <vector>
 
 #include "component/epoch_guard.hpp"
 #include "component/epoch_manager.hpp"
@@ -64,16 +64,20 @@ class EpochBasedGC
    */
   constexpr EpochBasedGC(  //
       const size_t gc_interval_micro_sec = 1e5,
-      const size_t gc_thread_num = 2,
+      const size_t gc_thread_num = 1,
       const bool start_gc = false)
       : gc_interval_{gc_interval_micro_sec},
         gc_thread_num_{gc_thread_num},
         epoch_manager_{},
         garbage_lists_{nullptr},
+        garbage_lists_lock_{},
         gc_thread_{},
         cleaner_threads_{},
+        protected_epoch_{0},
+        sleep_until_{0},
         gc_is_running_{false}
   {
+    cleaner_threads_.reserve(gc_thread_num_);
     if (start_gc) StartGC();
   }
 
@@ -262,12 +266,19 @@ class EpochBasedGC
      * Public getters
      *############################################################################################*/
 
+    /**
+     * @retval true if the corresponding thread is still running.
+     * @retval false otherwise.
+     */
     bool
     IsAlive() const
     {
       return node_keeper_.use_count() > 1 || !garbage_list_->Empty();
     }
 
+    /**
+     * @return the number of remaining garbages.
+     */
     size_t
     Size() const
     {
@@ -278,6 +289,11 @@ class EpochBasedGC
      * Public utility functions
      *############################################################################################*/
 
+    /**
+     * @brief Release registered garbages if possible.
+     *
+     * @param protected_epoch an epoch value to check whether garbages can be freed.
+     */
     void
     ReleaseGarbages(const size_t protected_epoch)
     {
@@ -306,7 +322,7 @@ class EpochBasedGC
     /// a shared pointer for monitoring the lifetime of a target list.
     std::shared_ptr<std::atomic_bool> node_keeper_;
 
-    ///
+    /// a flag to indicate that a certain thread modifies this node.
     std::atomic_bool in_progress_;
   };
 
@@ -314,24 +330,32 @@ class EpochBasedGC
    * Internal utility functions
    *##############################################################################################*/
 
+  /**
+   * @brief Remove expired nodes from the internal list.
+   *
+   */
   void
   RemoveExpiredNodes()
   {
     // if garbage-list nodes are variable, do nothing
     auto cur_node = garbage_lists_.load(kMORelax);
-    if (!cleaner_threads_.empty() || cur_node == nullptr) return;
+    if (cur_node == nullptr) return;
 
-    // check whether there are expired nodes
-    auto prev_node = cur_node;
-    while (true) {
-      cur_node = prev_node->next;
-      if (cur_node == nullptr) break;
+    // create lock to prevent cleaner threads from running
+    std::unique_lock guard{garbage_lists_lock_, std::defer_lock};
+    if (guard.try_lock()) {
+      // check whether there are expired nodes
+      auto prev_node = cur_node;
+      while (true) {
+        cur_node = prev_node->next;
+        if (cur_node == nullptr) break;
 
-      if (cur_node->IsAlive()) {
-        prev_node = cur_node;
-      } else {
-        prev_node->next = cur_node->next;
-        delete cur_node;
+        if (cur_node->IsAlive()) {
+          prev_node = cur_node;
+        } else {
+          prev_node->next = cur_node->next;
+          delete cur_node;
+        }
       }
     }
   }
@@ -342,36 +366,15 @@ class EpochBasedGC
    * @param protected_epoch a protected epoch value.
    */
   void
-  DeleteGarbages(const size_t protected_epoch)
+  DeleteGarbages()
   {
-    // if all the cleaner thread are already running, do nothing
-    if (cleaner_threads_.size() >= gc_thread_num_) return;
+    const auto protected_epoch = protected_epoch_.load(kMORelax);
+    const std::shared_lock guard{garbage_lists_lock_};
 
-    // add a new cleaner thread
-    cleaner_threads_.emplace_back(std::async([&] {
-      auto cur_node = garbage_lists_.load(kMORelax);
-      while (cur_node != nullptr) {
-        cur_node->ReleaseGarbages(protected_epoch);
-        cur_node = cur_node->next;
-      }
-    }));
-  }
-
-  /**
-   * @brief Wait cleaner threads until the next GC interval
-   *
-   * @param sleep_time
-   */
-  void
-  WaitCleanerThreads(const Clock_t::time_point sleep_time)
-  {
-    auto iter = cleaner_threads_.begin();
-    while (iter != cleaner_threads_.end()) {
-      if (iter->wait_until(sleep_time) == std::future_status::ready) {
-        iter = cleaner_threads_.erase(iter);
-      } else {
-        ++iter;
-      }
+    auto cur_node = garbage_lists_.load(kMORelax);
+    while (cur_node != nullptr) {
+      cur_node->ReleaseGarbages(protected_epoch);
+      cur_node = cur_node->next;
     }
   }
 
@@ -383,20 +386,63 @@ class EpochBasedGC
   void
   RunGC()
   {
-    auto sleep_time = Clock_t::now();
+    Clock_t::time_point sleep_time;
 
-    while (gc_is_running_.load(kMORelax)) {
-      sleep_time += gc_interval_;
+    {
+      // create a lock to prevent cleaner threads from running
+      const std::unique_lock guard{garbage_lists_lock_};
 
-      // forward a global epoch
-      epoch_manager_.ForwardGlobalEpoch();
-      const auto protected_epoch = epoch_manager_.GetProtectedEpoch();
+      // create cleaner threads
+      for (size_t i = 0; i < gc_thread_num_; ++i) {
+        cleaner_threads_.emplace_back([&] {
+          while (gc_is_running_.load(kMORelax)) {
+            DeleteGarbages();
+            std::this_thread::sleep_until(LongToTimePoint(sleep_until_.load(kMORelax)));
+          }
+        });
+      }
 
-      // release garbages with multi-threads
-      RemoveExpiredNodes();
-      DeleteGarbages(protected_epoch);
-      WaitCleanerThreads(sleep_time);
+      // set sleep-interval
+      sleep_time = Clock_t::now() + gc_interval_;
+      sleep_until_.store(TimePointToLong(sleep_time), kMORelax);
     }
+
+    // manage epochs and sleep-interval
+    while (gc_is_running_.load(kMORelax)) {
+      std::this_thread::sleep_until(sleep_time);
+      sleep_time += gc_interval_;
+      sleep_until_.store(TimePointToLong(sleep_time), kMORelax);
+
+      epoch_manager_.ForwardGlobalEpoch();
+      protected_epoch_.store(epoch_manager_.GetProtectedEpoch(), kMORelax);
+      RemoveExpiredNodes();
+    }
+
+    // wait all the cleaner threads return
+    for (auto&& t : cleaner_threads_) t.join();
+    cleaner_threads_.clear();
+  }
+
+  /**
+   * @param t a time point.
+   * @return a converted unsigned integer value.
+   */
+  size_t
+  TimePointToLong(const Clock_t::time_point t)
+  {
+    auto t_us = std::chrono::time_point_cast<std::chrono::microseconds>(t);
+    return t_us.time_since_epoch().count();
+  }
+
+  /**
+   * @param t an unsigned interger value.
+   * @return a converted time point.
+   */
+  Clock_t::time_point
+  LongToTimePoint(const size_t t)
+  {
+    std::chrono::microseconds t_us{t};
+    return Clock_t::time_point{t_us};
   }
 
   /*################################################################################################
@@ -415,10 +461,20 @@ class EpochBasedGC
   /// the head of a linked list of garbage buffers.
   std::atomic<GarbageNode*> garbage_lists_;
 
+  /// a mutex to protect liked garbage lists
+  std::shared_mutex garbage_lists_lock_;
+
   /// a thread to run garbage collection.
   std::thread gc_thread_;
 
-  std::list<std::future<void>> cleaner_threads_;
+  /// worker threads to release garbages
+  std::vector<std::thread> cleaner_threads_;
+
+  /// an epoch value to protect garbages
+  std::atomic_size_t protected_epoch_;
+
+  /// a converted time point for GC interval
+  std::atomic_size_t sleep_until_;
 
   /// a flag to check whether garbage collection is running.
   std::atomic_bool gc_is_running_;
