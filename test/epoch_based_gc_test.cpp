@@ -72,7 +72,15 @@ class EpochBasedGCFixture : public ::testing::Test
       std::shared_ptr<Target> *target_shared;
       {
         const auto guard = gc->CreateEpochGuard();
-        target_shared = new std::shared_ptr<Target>{new Target{loop}};
+
+        auto target = new Target{loop};
+        void *page = gc->GetPageIfPossible();
+        if (page == nullptr) {
+          target_shared = new std::shared_ptr<Target>{target};
+        } else {
+          target_shared = new (page) std::shared_ptr<Target>{target};
+        }
+
         target_weak_ptrs.emplace_back(*target_shared);
       }
       gc->AddGarbage(target_shared);
