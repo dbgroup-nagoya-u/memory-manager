@@ -223,7 +223,7 @@ class GarbageList
       // check whether the list is full
       if (end_idx >= kGarbageBufferSize - 1) {
         auto full_list = garbage_list;
-        garbage_list = new GarbageBuffer{current_epoch};
+        garbage_list = new GarbageBuffer{garbage_list->current_epoch_};
         full_list->next_.store(garbage_list, kMORelax);
       }
 

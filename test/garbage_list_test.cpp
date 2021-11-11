@@ -44,6 +44,8 @@ class GarbageListFixture : public ::testing::Test
   SetUp() override
   {
     current_epoch = 0;
+    garbage_list = std::make_shared<GarbageList_t>();
+    garbage_list->SetEpoch(current_epoch);
   }
 
   void
@@ -52,187 +54,153 @@ class GarbageListFixture : public ::testing::Test
   }
 
   /*################################################################################################
+   * Internal utility functions
+   *##############################################################################################*/
+
+  void
+  AddGarbages(const size_t n)
+  {
+    for (size_t i = 0; i < n; ++i) {
+      auto target = new Target{0};
+      auto page = garbage_list->GetPageIfPossible();
+
+      std::shared_ptr<Target> *garbage;
+      if (page == nullptr) {
+        garbage = new std::shared_ptr<Target>{target};
+      } else {
+        garbage = new (page) std::shared_ptr<Target>{target};
+      }
+
+      garbage_list->AddGarbage(garbage);
+      references.emplace_back(*garbage);
+    }
+  }
+
+  void
+  CheckGarbages(const size_t n)
+  {
+    for (size_t i = 0; i < n; ++i) {
+      EXPECT_TRUE(references[i].expired());
+    }
+    for (size_t i = n; i < references.size(); ++i) {
+      EXPECT_FALSE(references[i].expired());
+    }
+  }
+
+  /*################################################################################################
+   * Internal constants
+   *##############################################################################################*/
+
+  static constexpr size_t kSmallNum = kGarbageBufferSize / 2;
+  static constexpr size_t kLargeNum = kGarbageBufferSize * 2;
+  static constexpr size_t kMaxLong = std::numeric_limits<size_t>::max();
+
+  /*################################################################################################
    * Internal member variables
    *##############################################################################################*/
 
   std::atomic_size_t current_epoch;
+
+  std::shared_ptr<GarbageList_t> garbage_list;
+
+  std::vector<std::weak_ptr<Target>> references;
 };
 
 /*##################################################################################################
  * Unit test definitions
  *################################################################################################*/
 
-TEST_F(GarbageListFixture, Construct_WithoutArgs_MemberVariablesCorrectlyInitialized)
+TEST_F(GarbageListFixture, Destruct_AFewGarbages_AddedGarbagesCorrectlyFreed)
 {
-  auto garbage_list = GarbageList_t{current_epoch};
+  AddGarbages(kSmallNum);
+  garbage_list.reset(static_cast<GarbageList_t *>(nullptr));
 
-  EXPECT_EQ(0, garbage_list.Size());
+  CheckGarbages(kSmallNum);
 }
 
-TEST_F(GarbageListFixture, Destruct_AddLessGarbages_AddedGarbagesCorrectlyFreed)
+TEST_F(GarbageListFixture, Destruct_ManyGarbages_AddedGarbagesCorrectlyFreed)
 {
-  constexpr size_t kGarbageNum = kGarbageBufferSize * 0.5;
+  AddGarbages(kLargeNum);
+  garbage_list.reset(static_cast<GarbageList_t *>(nullptr));
 
-  std::vector<std::weak_ptr<Target>> garbage_references;
-
-  {
-    auto garbage_list = GarbageList_t{current_epoch};
-    for (size_t count = 0; count < kGarbageNum; ++count) {
-      auto garbage = new std::shared_ptr<Target>{new Target{0}};
-      GarbageList_t::AddGarbage(&garbage_list, garbage);
-      garbage_references.emplace_back(*garbage);
-    }
-
-    // garbages are deleted in destructor
-  }
-
-  for (auto&& garbage_reference : garbage_references) {
-    EXPECT_TRUE(garbage_reference.expired());
-  }
+  CheckGarbages(kLargeNum);
 }
 
-TEST_F(GarbageListFixture, Destruct_AddLotOfGarbages_AddedGarbagesCorrectlyFreed)
-{
-  constexpr size_t kGarbageNum = kGarbageBufferSize * 1.5;
-
-  std::vector<std::weak_ptr<Target>> garbage_references;
-
-  {
-    auto garbage_list = GarbageList_t{current_epoch};
-    GarbageList_t* current_list = &garbage_list;
-    for (size_t count = 0; count < kGarbageNum; ++count) {
-      auto garbage = new std::shared_ptr<Target>{new Target{0}};
-      const auto new_list = GarbageList_t::AddGarbage(current_list, garbage);
-      if (new_list != nullptr) {
-        current_list = new_list;
-      }
-      garbage_references.emplace_back(*garbage);
-    }
-
-    // garbages are deleted in destructor
-    delete current_list;
-  }
-
-  for (auto&& garbage_reference : garbage_references) {
-    EXPECT_TRUE(garbage_reference.expired());
-  }
+TEST_F(GarbageListFixture, Empty_NoGarbages_ListIsEmpty)
+{  //
+  EXPECT_TRUE(garbage_list->Empty());
 }
 
-TEST_F(GarbageListFixture, AddGarbage_LessGarbages_ListSizeCorrectlyUpdated)
+TEST_F(GarbageListFixture, Empty_GarbagesAdded_ListIsNotEmpty)
 {
-  constexpr size_t kGarbageNum = kGarbageBufferSize * 0.5;
+  AddGarbages(kLargeNum);
 
-  auto garbage_list = GarbageList<Target>{current_epoch};
-  for (size_t count = 0; count < kGarbageNum; ++count) {
-    auto garbage = new Target{0UL};
-    GarbageList<Target>::AddGarbage(&garbage_list, garbage);
-  }
-
-  EXPECT_EQ(kGarbageNum, garbage_list.Size());
+  EXPECT_FALSE(garbage_list->Empty());
 }
 
-TEST_F(GarbageListFixture, AddGarbage_LotOfGarbages_ListSizeCorrectlyUpdated)
+TEST_F(GarbageListFixture, Empty_GarbagesCleared_ListIsEmpty)
 {
-  constexpr size_t kGarbageNum = kGarbageBufferSize * 1.5;
+  AddGarbages(kLargeNum);
+  garbage_list->ClearGarbages(kMaxLong);
 
-  auto garbage_list = GarbageList<Target>{current_epoch};
-  GarbageList<Target>* current_list = &garbage_list;
-  for (size_t count = 0; count < kGarbageNum; ++count) {
-    auto garbage = new Target{0UL};
-    const auto new_list = GarbageList<Target>::AddGarbage(current_list, garbage);
-    if (new_list != nullptr) {
-      current_list = new_list;
-    }
-  }
-
-  EXPECT_EQ(kGarbageNum, garbage_list.Size());
-
-  delete current_list;
+  EXPECT_TRUE(garbage_list->Empty());
 }
 
-TEST_F(GarbageListFixture, Clear_WithLessGarbages_ProtectedGarbagesRemain)
-{
-  constexpr size_t kTotalGarbageNum = kGarbageBufferSize / 2;
-  constexpr size_t kHalfGarbageNum = kTotalGarbageNum / 2;
+TEST_F(GarbageListFixture, Size_NoGarbages_GetCorrectSize)
+{  //
+  EXPECT_EQ(0, garbage_list->Size());
+}
 
-  auto garbage_list = GarbageList_t{current_epoch};
-  std::vector<std::weak_ptr<Target>> garbage_references;
+TEST_F(GarbageListFixture, Size_GarbagesAdded_GetCorrectSize)
+{
+  AddGarbages(kLargeNum);
+
+  EXPECT_EQ(kLargeNum, garbage_list->Size());
+}
+
+TEST_F(GarbageListFixture, Size_GarbagesCleared_GetCorrectSize)
+{
+  AddGarbages(kLargeNum);
+  garbage_list->ClearGarbages(kMaxLong);
+
+  EXPECT_EQ(0, garbage_list->Size());
+}
+
+TEST_F(GarbageListFixture, ClearGarbages_WithoutProtectedEpoch_AllGarbagesCleared)
+{
+  AddGarbages(kLargeNum);
+  garbage_list->ClearGarbages(kMaxLong);
+
+  CheckGarbages(kLargeNum);
+}
+
+TEST_F(GarbageListFixture, ClearGarbages_WithProtectedEpoch_ProtectedGarbagesRemain)
+{
   const size_t protected_epoch = 1;
+  AddGarbages(kLargeNum);
+  current_epoch = protected_epoch;
+  AddGarbages(kLargeNum);
+  garbage_list->ClearGarbages(protected_epoch);
 
-  // add unprotected garbages
-  size_t count = 0;
-  for (; count < kHalfGarbageNum; ++count) {
-    auto garbage = new std::shared_ptr<Target>{new Target{0}};
-    GarbageList_t::AddGarbage(&garbage_list, garbage);
-    garbage_references.emplace_back(*garbage);
-  }
-
-  current_epoch += 1;
-
-  // add protected garbages
-  for (; count < kTotalGarbageNum; ++count) {
-    auto garbage = new std::shared_ptr<Target>{new Target{0}};
-    GarbageList_t::AddGarbage(&garbage_list, garbage);
-    garbage_references.emplace_back(*garbage);
-  }
-
-  GarbageList_t::Clear(&garbage_list, protected_epoch);
-
-  EXPECT_EQ(kTotalGarbageNum - kHalfGarbageNum, garbage_list.Size());
-  for (count = 0; count < kTotalGarbageNum; ++count) {
-    if (count < kHalfGarbageNum) {
-      EXPECT_TRUE(garbage_references[count].expired());
-    } else {
-      EXPECT_FALSE(garbage_references[count].expired());
-    }
-  }
+  CheckGarbages(kLargeNum);
 }
 
-TEST_F(GarbageListFixture, Clear_WithLotOfGarbages_ProtectedGarbagesRemain)
+TEST_F(GarbageListFixture, GetPageIfPossible_WithoutPages_GetNullptr)
 {
-  constexpr size_t kTotalGarbageNum = kGarbageBufferSize * 1.5;
-  constexpr size_t kHalfGarbageNum = kTotalGarbageNum / 2;
+  auto page = garbage_list->GetPageIfPossible();
 
-  auto garbage_list = GarbageList_t{current_epoch};
-  GarbageList_t* current_list = &garbage_list;
-  std::vector<std::weak_ptr<Target>> garbage_references;
-  const size_t protected_epoch = 1;
+  EXPECT_EQ(nullptr, page);
+}
 
-  // add unprotected garbages
-  size_t count = 0;
-  for (; count < kHalfGarbageNum; ++count) {
-    auto garbage = new std::shared_ptr<Target>{new Target{0}};
-    const auto new_list = GarbageList_t::AddGarbage(current_list, garbage);
-    if (new_list != nullptr) {
-      current_list = new_list;
-    }
-    garbage_references.emplace_back(*garbage);
+TEST_F(GarbageListFixture, GetPageIfPossible_WithPages_GetReusablePages)
+{
+  AddGarbages(kLargeNum);
+  garbage_list->ClearGarbages(kMaxLong);
+
+  for (size_t i = 0; i < kLargeNum; ++i) {
+    EXPECT_NE(nullptr, garbage_list->GetPageIfPossible());
   }
-
-  current_epoch += 1;
-
-  // add protected garbages
-  for (; count < kTotalGarbageNum; ++count) {
-    auto garbage = new std::shared_ptr<Target>{new Target{0}};
-    const auto new_list = GarbageList_t::AddGarbage(current_list, garbage);
-    if (new_list != nullptr) {
-      current_list = new_list;
-    }
-    garbage_references.emplace_back(*garbage);
-  }
-
-  GarbageList_t::Clear(&garbage_list, protected_epoch);
-
-  EXPECT_EQ(kTotalGarbageNum - kHalfGarbageNum, garbage_list.Size());
-  for (count = 0; count < kTotalGarbageNum; ++count) {
-    if (count < kHalfGarbageNum) {
-      EXPECT_TRUE(garbage_references[count].expired());
-    } else {
-      EXPECT_FALSE(garbage_references[count].expired());
-    }
-  }
-
-  delete current_list;
+  EXPECT_EQ(nullptr, garbage_list->GetPageIfPossible());
 }
 
 }  // namespace dbgroup::memory::component::test
