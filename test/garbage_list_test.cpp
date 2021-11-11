@@ -43,7 +43,7 @@ class GarbageListFixture : public ::testing::Test
   void
   SetUp() override
   {
-    current_epoch = 0;
+    current_epoch = 1;
     garbage_list = std::make_shared<GarbageList_t>();
     garbage_list->SetEpoch(current_epoch);
   }
@@ -64,10 +64,11 @@ class GarbageListFixture : public ::testing::Test
       auto target = new Target{0};
       auto page = garbage_list->GetPageIfPossible();
 
-      std::shared_ptr<Target> *garbage;
+      std::shared_ptr<Target> *garbage, *tmp;
       if (page == nullptr) {
         garbage = new std::shared_ptr<Target>{target};
       } else {
+        tmp = reinterpret_cast<std::shared_ptr<Target> *>(page);
         garbage = new (page) std::shared_ptr<Target>{target};
       }
 
@@ -176,7 +177,7 @@ TEST_F(GarbageListFixture, ClearGarbages_WithoutProtectedEpoch_AllGarbagesCleare
 
 TEST_F(GarbageListFixture, ClearGarbages_WithProtectedEpoch_ProtectedGarbagesRemain)
 {
-  const size_t protected_epoch = 1;
+  const size_t protected_epoch = current_epoch.load(kMORelax) + 1;
   AddGarbages(kLargeNum);
   current_epoch = protected_epoch;
   AddGarbages(kLargeNum);
@@ -201,6 +202,30 @@ TEST_F(GarbageListFixture, GetPageIfPossible_WithPages_GetReusablePages)
     EXPECT_NE(nullptr, garbage_list->GetPageIfPossible());
   }
   EXPECT_EQ(nullptr, garbage_list->GetPageIfPossible());
+}
+
+TEST_F(GarbageListFixture, AddClearGarbages_WithMultiThreads_AllGarbagesCleared)
+{
+  constexpr size_t LoopNum = 1e6;
+  std::atomic_bool is_running = true;
+
+  std::thread loader{[&]() {
+    for (size_t i = 0; i < LoopNum; ++i) {
+      this->AddGarbages(1);
+      this->current_epoch.fetch_add(1, kMORelax);
+    }
+  }};
+
+  std::thread cleaner{[&]() {
+    while (is_running.load(kMORelax)) {
+      this->garbage_list->ClearGarbages(this->current_epoch.load(kMORelax) - 1);
+    }
+    this->garbage_list->ClearGarbages(this->kMaxLong);
+  }};
+
+  loader.join();
+  is_running.store(false, kMORelax);
+  cleaner.join();
 }
 
 }  // namespace dbgroup::memory::component::test

@@ -152,7 +152,7 @@ class GarbageList
       // if the list has garbages, release them before deleting oneself
       const auto end_idx = end_idx_.load(kMORelax);
       for (size_t idx = begin_idx_; idx < end_idx; ++idx) {
-        delete garbages_[idx].second;
+        delete garbages_[idx].GetGarbage();
       }
     }
 
@@ -217,7 +217,8 @@ class GarbageList
       const auto current_epoch = garbage_list->current_epoch_.load(kMORelax);
 
       // insert a new garbage
-      garbage_list->garbages_[end_idx] = {current_epoch, const_cast<T*>(garbage)};
+      garbage_list->garbages_[end_idx].SetEpoch(current_epoch);
+      garbage_list->garbages_[end_idx].SetGarbage(garbage);
       garbage_list->end_idx_.fetch_add(1, kMORelax);
 
       // check whether the list is full
@@ -237,14 +238,12 @@ class GarbageList
       auto cur_idx = garbage_list->begin_idx_;
 
       // check whether there are released garbages
-      if (cur_idx == released_idx) return {nullptr, garbage_list};
+      if (cur_idx >= released_idx) return {nullptr, garbage_list};
 
       // get a released page
-      void* page = garbage_list->garbages_[cur_idx].second;
-      if (++cur_idx < kGarbageBufferSize) {
-        // the list has reusable pages
-        garbage_list->begin_idx_ = cur_idx;
-      } else {
+      void* page = garbage_list->garbages_[cur_idx].GetGarbage();
+      garbage_list->begin_idx_ = ++cur_idx;
+      if (cur_idx >= kGarbageBufferSize) {
         // the list has become empty, so delete it
         auto empty_list = garbage_list;
         do {  // if the garbage buffer is empty but does not have a next buffer, wait insertion
@@ -272,11 +271,10 @@ class GarbageList
       const auto end_idx = garbage_list->end_idx_.load(kMORelax);
       auto idx = garbage_list->released_idx_.load(kMORelax);
       for (; idx < end_idx; ++idx) {
-        auto [epoch, garbage] = garbage_list->garbages_[idx];
-        if (epoch >= protected_epoch) break;
+        if (garbage_list->garbages_[idx].GetEpoch() >= protected_epoch) break;
 
         // only call destructor to reuse pages
-        garbage->~T();
+        garbage_list->garbages_[idx].GetGarbage()->~T();
       }
       garbage_list->released_idx_.store(idx, kMORelax);
 
@@ -289,11 +287,50 @@ class GarbageList
 
    private:
     /*##############################################################################################
+     * Internal classes
+     *############################################################################################*/
+
+    class Garbage
+    {
+     public:
+      constexpr Garbage() : epoch_{}, ptr_{} {}
+      ~Garbage() = default;
+
+      void
+      SetEpoch(const size_t epoch)
+      {
+        epoch_.store(epoch, kMORelax);
+      }
+
+      void
+      SetGarbage(const T* ptr)
+      {
+        ptr_.store(const_cast<T*>(ptr), kMORelax);
+      }
+
+      size_t
+      GetEpoch() const
+      {
+        return epoch_.load(kMORelax);
+      }
+
+      T*
+      GetGarbage() const
+      {
+        return ptr_.load(kMORelax);
+      }
+
+     private:
+      std::atomic_size_t epoch_;
+      std::atomic<T*> ptr_;
+    };
+
+    /*##############################################################################################
      * Internal member variables
      *############################################################################################*/
 
     /// a buffer of garbage instances with added epochs.
-    std::array<std::pair<size_t, T*>, kGarbageBufferSize> garbages_;
+    std::array<Garbage, kGarbageBufferSize> garbages_;
 
     /// the index to represent a head position.
     size_t begin_idx_;
