@@ -235,96 +235,6 @@ class EpochBasedGC
    * Internal structs
    *##############################################################################################*/
 
-  class ThreadGarbage
-  {
-   public:
-    /*##############################################################################################
-     * Public constructors and assignment operators
-     *############################################################################################*/
-
-    constexpr ThreadGarbage() : head_{nullptr}, reuse_{nullptr}, tail_{nullptr} {}
-
-    /*##############################################################################################
-     * Public destructor
-     *############################################################################################*/
-
-    ~ThreadGarbage()
-    {
-      ClearGarbages(std::numeric_limits<size_t>::max());
-      delete head_;
-    }
-
-    /*##############################################################################################
-     * Public getters/setters
-     *############################################################################################*/
-
-    bool
-    Empty() const
-    {
-      return head_->Empty();
-    }
-
-    size_t
-    Size() const
-    {
-      return head_->Size();
-    }
-
-    /*##############################################################################################
-     * Public utility functions
-     *############################################################################################*/
-
-    void
-    SetEpoch(const std::atomic_size_t& global_epoch)
-    {
-      delete head_;
-
-      head_ = new GarbageList_t{global_epoch};
-      reuse_ = head_;
-      tail_ = head_;
-    }
-
-    /**
-     * @brief Add a new garbage instance.
-     *
-     * @param garbage_ptr a pointer to a target garbage.
-     */
-    void
-    AddGarbage(const T* garbage_ptr)
-    {
-      tail_ = GarbageList_t::AddGarbage(tail_, garbage_ptr);
-    }
-
-    void*
-    GetPageIfPossible()
-    {
-      void* page;
-      std::tie(page, reuse_) = GarbageList_t::ReusePage(reuse_);
-
-      return page;
-    }
-
-    void
-    ClearGarbages(const size_t protected_epoch)
-    {
-      head_ = GarbageList_t::Clear(head_, protected_epoch);
-    }
-
-   private:
-    /*##############################################################################################
-     * Internal member variables
-     *############################################################################################*/
-
-    /// a pointer to a target garbage list.
-    GarbageList_t* head_;
-
-    /// a pointer to a target garbage list.
-    GarbageList_t* reuse_;
-
-    /// a pointer to a target garbage list.
-    GarbageList_t* tail_;
-  };
-
   /**
    * @brief A class of nodes for composing a linked list of gabage lists in each thread.
    *
@@ -345,7 +255,7 @@ class EpochBasedGC
      */
     GarbageNode(  //
         GarbageNode* next,
-        const std::shared_ptr<ThreadGarbage>& garbage_list)
+        const std::shared_ptr<GarbageList_t>& garbage_list)
         : next{next}, garbage_list_{garbage_list}, in_progress_{false}
     {
     }
@@ -415,7 +325,7 @@ class EpochBasedGC
      *############################################################################################*/
 
     /// a pointer to a target garbage list.
-    std::shared_ptr<ThreadGarbage> garbage_list_;
+    std::shared_ptr<GarbageList_t> garbage_list_;
 
     /// a flag to indicate that a certain thread modifies this node.
     std::atomic_bool in_progress_;
@@ -574,8 +484,8 @@ class EpochBasedGC
   /// a flag to check whether garbage collection is running.
   std::atomic_bool gc_is_running_;
 
-  inline static thread_local std::shared_ptr<ThreadGarbage> garbage_list_ =
-      std::make_shared<ThreadGarbage>();
+  inline static thread_local std::shared_ptr<GarbageList_t> garbage_list_ =
+      std::make_shared<GarbageList_t>();
 };
 
 }  // namespace dbgroup::memory
