@@ -80,7 +80,7 @@ class GarbageList
   size_t
   Size() const
   {
-    const auto size = end_idx_.load(kMORelax) - begin_idx_;
+    const auto size = end_idx_.load(kMORelax) - released_idx_.load(kMORelax);
     const auto next = next_.load(kMORelax);
     if (next == nullptr) {
       return size;
@@ -142,7 +142,7 @@ class GarbageList
   ReusePage(GarbageList* garbage_list)
   {
     const auto released_idx = garbage_list->released_idx_.load(kMORelax);
-    auto cur_idx = begin_idx_;
+    auto cur_idx = garbage_list->begin_idx_;
 
     // check whether there are released garbages
     if (cur_idx == released_idx) return {nullptr, garbage_list};
