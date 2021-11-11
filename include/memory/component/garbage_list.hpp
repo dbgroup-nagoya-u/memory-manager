@@ -44,7 +44,7 @@ class GarbageList
    * @param global_epoch a reference to the global epoch.
    */
   constexpr explicit GarbageList(const std::atomic_size_t& global_epoch)
-      : begin_idx_{0}, end_idx_{0}, current_epoch_{global_epoch}, next_{nullptr}
+      : begin_idx_{0}, end_idx_{0}, released_idx_{0}, current_epoch_{global_epoch}, next_{nullptr}
   {
   }
 
@@ -139,6 +139,32 @@ class GarbageList
     }
   }
 
+  static std::pair<void*, GarbageList*>
+  ReusePage(GarbageList* garbage_list)
+  {
+    const auto released_idx = garbage_list->released_idx_.load(kMORelax);
+    auto cur_idx = begin_idx_;
+
+    // check whether there are released garbages
+    if (cur_idx == released_idx) return {nullptr, garbage_list};
+
+    // get a released page
+    void* page = garbage_list->garbages_[cur_idx].second;
+    if (++cur_idx < kGarbageBufferSize) {
+      // the list has reusable pages
+      garbage_list->begin_idx_ = cur_idx;
+    } else {
+      // the list has become empty, so delete it
+      auto empty_list = garbage_list;
+      do {  // if the garbage buffer is empty but does not have a next buffer, wait insertion
+        garbage_list = empty_list->next_.load(kMORelax);
+      } while (garbage_list == nullptr);
+      delete empty_list;
+    }
+
+    return {page, garbage_list};
+  }
+
   /**
    * @brief Clear garbages where their epoch is less than a protected one.
    *
@@ -189,6 +215,9 @@ class GarbageList
 
   /// the index to represent a tail position.
   std::atomic_size_t end_idx_;
+
+  /// the end of released indexes
+  std::atomic_size_t released_idx_;
 
   /// a current epoch. Note: this is maintained individually to improve performance.
   const std::atomic_size_t& current_epoch_;
