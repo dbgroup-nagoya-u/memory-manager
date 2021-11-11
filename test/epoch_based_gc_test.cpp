@@ -27,7 +27,7 @@
 
 namespace dbgroup::memory::test
 {
-class TLSBasedMemoryManagerFixture : public ::testing::Test
+class EpochBasedGCFixture : public ::testing::Test
 {
  protected:
   /*################################################################################################
@@ -100,8 +100,7 @@ class TLSBasedMemoryManagerFixture : public ::testing::Test
     for (size_t i = 0; i < thread_num; ++i) {
       std::promise<std::vector<std::weak_ptr<Target>>> p;
       futures.emplace_back(p.get_future());
-      std::thread{&TLSBasedMemoryManagerFixture::AddGarbages, this, std::move(p), gc, garbage_num}
-          .detach();
+      std::thread{&EpochBasedGCFixture::AddGarbages, this, std::move(p), gc, garbage_num}.detach();
     }
 
     std::vector<std::weak_ptr<Target>> target_weak_ptrs;
@@ -124,7 +123,7 @@ class TLSBasedMemoryManagerFixture : public ::testing::Test
  * Public utility tests
  *------------------------------------------------------------------------------------------------*/
 
-TEST_F(TLSBasedMemoryManagerFixture, Construct_GCStoped_MemberVariablesCorrectlyInitialized)
+TEST_F(EpochBasedGCFixture, Construct_GCStoped_MemberVariablesCorrectlyInitialized)
 {
   auto gc = EpochBasedGC<Target>{kGCInterval};
 
@@ -133,7 +132,7 @@ TEST_F(TLSBasedMemoryManagerFixture, Construct_GCStoped_MemberVariablesCorrectly
   EXPECT_FALSE(gc_is_running);
 }
 
-TEST_F(TLSBasedMemoryManagerFixture, Destruct_SingleThread_GarbagesCorrectlyFreed)
+TEST_F(EpochBasedGCFixture, Destruct_SingleThread_GarbagesCorrectlyFreed)
 {
   // keep garbage targets
   std::vector<std::weak_ptr<Target>> target_weak_ptrs;
@@ -149,18 +148,18 @@ TEST_F(TLSBasedMemoryManagerFixture, Destruct_SingleThread_GarbagesCorrectlyFree
 
   // check there is no referece to target pointers
   for (auto &&target_weak : target_weak_ptrs) {
-    EXPECT_EQ(0, target_weak.use_count());
+    EXPECT_TRUE(target_weak.expired());
   }
 }
 
-TEST_F(TLSBasedMemoryManagerFixture, Destruct_MultiThreads_GarbagesCorrectlyFreed)
+TEST_F(EpochBasedGCFixture, Destruct_MultiThreads_GarbagesCorrectlyFreed)
 {
   // keep garbage targets
   std::vector<std::weak_ptr<Target>> target_weak_ptrs;
 
   // register garbages to GC
   {
-    auto gc = EpochBasedGC<std::shared_ptr<Target>>{kGCInterval};
+    auto gc = EpochBasedGC<std::shared_ptr<Target>>{kGCInterval, kThreadNum};
     gc.StartGC();
     target_weak_ptrs = TestGC(&gc, kThreadNum, kGarbageNumLarge);
 
@@ -169,11 +168,11 @@ TEST_F(TLSBasedMemoryManagerFixture, Destruct_MultiThreads_GarbagesCorrectlyFree
 
   // check there is no referece to target pointers
   for (auto &&target_weak : target_weak_ptrs) {
-    EXPECT_EQ(0, target_weak.use_count());
+    EXPECT_TRUE(target_weak.expired());
   }
 }
 
-TEST_F(TLSBasedMemoryManagerFixture, RunGC_SingleThread_GarbagesCorrectlyFreed)
+TEST_F(EpochBasedGCFixture, RunGC_SingleThread_GarbagesCorrectlyFreed)
 {
   auto gc = EpochBasedGC<std::shared_ptr<Target>>{kGCInterval};
   gc.StartGC();
@@ -189,13 +188,13 @@ TEST_F(TLSBasedMemoryManagerFixture, RunGC_SingleThread_GarbagesCorrectlyFreed)
 
   // check there is no referece to target pointers
   for (auto &&target_weak : target_weak_ptrs) {
-    EXPECT_EQ(0, target_weak.use_count());
+    EXPECT_TRUE(target_weak.expired());
   }
 }
 
-TEST_F(TLSBasedMemoryManagerFixture, RunGC_MultiThreads_GarbagesCorrectlyFreed)
+TEST_F(EpochBasedGCFixture, RunGC_MultiThreads_GarbagesCorrectlyFreed)
 {
-  auto gc = EpochBasedGC<std::shared_ptr<Target>>{kGCInterval};
+  auto gc = EpochBasedGC<std::shared_ptr<Target>>{kGCInterval, kThreadNum};
   gc.StartGC();
 
   // keep garbage targets
@@ -209,11 +208,11 @@ TEST_F(TLSBasedMemoryManagerFixture, RunGC_MultiThreads_GarbagesCorrectlyFreed)
 
   // check there is no referece to target pointers
   for (auto &&target_weak : target_weak_ptrs) {
-    EXPECT_EQ(0, target_weak.use_count());
+    EXPECT_TRUE(target_weak.expired());
   }
 }
 
-TEST_F(TLSBasedMemoryManagerFixture, CreateEpochGuard_SingleThread_PreventGarbagesFromDeleeting)
+TEST_F(EpochBasedGCFixture, CreateEpochGuard_SingleThread_PreventGarbagesFromDeleeting)
 {
   auto gc = EpochBasedGC<std::shared_ptr<Target>>{kGCInterval};
   gc.StartGC();
@@ -228,7 +227,7 @@ TEST_F(TLSBasedMemoryManagerFixture, CreateEpochGuard_SingleThread_PreventGarbag
     const auto thread_lock = std::unique_lock<std::mutex>{mtx};
     std::promise<Target> p;
     auto f = p.get_future();
-    guarder = std::thread{&TLSBasedMemoryManagerFixture::KeepEpochGuard, this, std::move(p), &gc};
+    guarder = std::thread{&EpochBasedGCFixture::KeepEpochGuard, this, std::move(p), &gc};
     f.get();
 
     // register garbages to GC
@@ -239,16 +238,16 @@ TEST_F(TLSBasedMemoryManagerFixture, CreateEpochGuard_SingleThread_PreventGarbag
 
     // check target pointers remain
     for (auto &&target_weak : target_weak_ptrs) {
-      EXPECT_EQ(1, target_weak.use_count());
+      EXPECT_FALSE(target_weak.expired());
     }
   }
 
   guarder.join();
 }
 
-TEST_F(TLSBasedMemoryManagerFixture, CreateEpochGuard_MultiThreads_PreventGarbagesFromDeleeting)
+TEST_F(EpochBasedGCFixture, CreateEpochGuard_MultiThreads_PreventGarbagesFromDeleeting)
 {
-  auto gc = EpochBasedGC<std::shared_ptr<Target>>{kGCInterval};
+  auto gc = EpochBasedGC<std::shared_ptr<Target>>{kGCInterval, kThreadNum};
   gc.StartGC();
 
   // keep garbage targets
@@ -261,7 +260,7 @@ TEST_F(TLSBasedMemoryManagerFixture, CreateEpochGuard_MultiThreads_PreventGarbag
     const auto thread_lock = std::unique_lock<std::mutex>{mtx};
     std::promise<Target> p;
     auto f = p.get_future();
-    guarder = std::thread{&TLSBasedMemoryManagerFixture::KeepEpochGuard, this, std::move(p), &gc};
+    guarder = std::thread{&EpochBasedGCFixture::KeepEpochGuard, this, std::move(p), &gc};
     f.get();
 
     // register garbages to GC
@@ -272,7 +271,7 @@ TEST_F(TLSBasedMemoryManagerFixture, CreateEpochGuard_MultiThreads_PreventGarbag
 
     // check target pointers remain
     for (auto &&target_weak : target_weak_ptrs) {
-      EXPECT_EQ(1, target_weak.use_count());
+      EXPECT_FALSE(target_weak.expired());
     }
   }
 

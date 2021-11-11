@@ -64,11 +64,10 @@ class GarbageListFixture : public ::testing::Test
       auto target = new Target{0};
       auto page = garbage_list->GetPageIfPossible();
 
-      std::shared_ptr<Target> *garbage, *tmp;
+      std::shared_ptr<Target> *garbage;
       if (page == nullptr) {
         garbage = new std::shared_ptr<Target>{target};
       } else {
-        tmp = reinterpret_cast<std::shared_ptr<Target> *>(page);
         garbage = new (page) std::shared_ptr<Target>{target};
       }
 

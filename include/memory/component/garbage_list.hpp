@@ -150,9 +150,13 @@ class GarbageList
     ~GarbageBuffer()
     {
       // if the list has garbages, release them before deleting oneself
+      const auto released_idx = released_idx_.load(kMORelax);
       const auto end_idx = end_idx_.load(kMORelax);
-      for (size_t idx = begin_idx_; idx < end_idx; ++idx) {
-        delete garbages_[idx].GetGarbage();
+      for (size_t i = begin_idx_; i < released_idx; ++i) {
+        operator delete(garbages_[i].GetGarbage());
+      }
+      for (size_t i = released_idx; i < end_idx; ++i) {
+        delete garbages_[i].GetGarbage();
       }
     }
 
