@@ -286,7 +286,11 @@ class GarbageList
       if (idx < kGarbageBufferSize) return garbage_list;
 
       // release the next list recursively
-      return GarbageBuffer::Clear(garbage_list->next_.load(kMORelax), protected_epoch);
+      GarbageBuffer* next;
+      do {  // if the garbage buffer is empty but does not have a next buffer, wait insertion
+        next = garbage_list->next_.load(kMORelax);
+      } while (next == nullptr);
+      return GarbageBuffer::Clear(next, protected_epoch);
     }
 
    private:
