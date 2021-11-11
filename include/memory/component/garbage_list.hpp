@@ -66,7 +66,7 @@ class GarbageList
     // if the list has garbages, release them before deleting oneself
     const auto end_idx = end_idx_.load(kMORelax);
     for (size_t idx = begin_idx_; idx < end_idx; ++idx) {
-      Delete(garbages_[idx].second);
+      delete garbages_[idx].second;
     }
   }
 
@@ -128,15 +128,14 @@ class GarbageList
     garbage_list->garbages_[end_idx] = {current_epoch, const_cast<T*>(garbage)};
     garbage_list->end_idx_.fetch_add(1, kMORelax);
 
-    if (end_idx < kGarbageBufferSize - 1) {
-      // the list still has space for garbages
-      return garbage_list;
-    } else {
-      // the list is full, so create a new garbage list
-      const auto new_garbage_list = new GarbageList{current_epoch};
-      garbage_list->next_.store(new_garbage_list, kMORelax);
-      return new_garbage_list;
+    // check whether the list is full
+    if (end_idx >= kGarbageBufferSize - 1) {
+      auto full_list = garbage_list;
+      garbage_list = new GarbageList{current_epoch};
+      full_list->next_.store(garbage_list, kMORelax);
     }
+
+    return garbage_list;
   }
 
   static std::pair<void*, GarbageList*>
@@ -179,27 +178,21 @@ class GarbageList
   {
     // release unprotected garbages
     const auto end_idx = garbage_list->end_idx_.load(kMORelax);
-    auto idx = garbage_list->begin_idx_;
+    auto idx = garbage_list->released_idx_.load(kMORelax);
     for (; idx < end_idx; ++idx) {
       auto [epoch, garbage] = garbage_list->garbages_[idx];
       if (epoch >= protected_epoch) break;
-      Delete(garbage);
+
+      // only call destructor to reuse pages
+      garbage->~T();
     }
-    garbage_list->begin_idx_ = idx;
+    garbage_list->released_idx_.store(idx, kMORelax);
 
     // check whether there is space in this list
     if (idx < kGarbageBufferSize) return garbage_list;
 
-    // delete the empty list
-    GarbageList* next_list;
-    do {
-      next_list = garbage_list->next_.load(kMORelax);
-      // if the garbage buffer is full but does not have a next buffer, wait insertion of it
-    } while (next_list == nullptr);
-    delete garbage_list;
-
     // release the next list recursively
-    return GarbageList::Clear(next_list, protected_epoch);
+    return GarbageList::Clear(garbage_list->next_.load(kMORelax), protected_epoch);
   }
 
  private:
