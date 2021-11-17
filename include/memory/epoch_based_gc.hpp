@@ -176,6 +176,12 @@ class EpochBasedGC
     garbage_list_->AddGarbage(garbage_ptr);
   }
 
+  /**
+   * @brief Reuse a released memory page if it exists.
+   *
+   * @retval nullptr if there are no reusable pages.
+   * @retval a memory page.
+   */
   void*
   GetPageIfPossible()
   {
@@ -484,6 +490,7 @@ class EpochBasedGC
   /// a flag to check whether garbage collection is running.
   std::atomic_bool gc_is_running_;
 
+  /// a thread-local garbage list.
   inline static thread_local std::shared_ptr<GarbageList_t> garbage_list_ =
       std::make_shared<GarbageList_t>();
 };
