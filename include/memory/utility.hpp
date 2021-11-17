@@ -30,22 +30,6 @@ constexpr size_t kGarbageBufferSize = MEMORY_MANAGER_GARBAGE_BUFFER_SIZE;
 /// an initial buffer size for retaining garbages
 constexpr size_t kGarbageBufferSize = 1024;
 #endif
-
-/**
- * @brief A wrapper function to delete an dynamically created instance.
- *
- * This function is equivalent with "delete".
-
- * @tparam T a class to be deleted.
- * @param obj a target instance.
- */
-template <class T>
-void
-Delete(T* obj)
-{
-  delete obj;
-}
-
 }  // namespace dbgroup::memory
 
 #endif  // MEMORY_MANAGER_MEMORY_UTILITY_H_
