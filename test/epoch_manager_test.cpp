@@ -34,7 +34,7 @@ class EpochManagerFixture : public ::testing::Test
    * Internal constants
    *##############################################################################################*/
 
-  static constexpr size_t kLoopNum = 1e5;
+  static constexpr size_t kLoopNum = 100;
   static constexpr auto kULMax = ::dbgroup::memory::test::kULMax;
 
   /*################################################################################################
@@ -104,7 +104,10 @@ TEST_F(EpochManagerFixture, GetProtectedEpoch_WithEnteredEpoch_GetEnteredEpoch)
 
   // forward global epoch
   std::thread forwarder{[&]() {
-    for (size_t i = 0; i < kLoopNum; ++i) epoch_manager->ForwardGlobalEpoch();
+    for (size_t i = 0; i < kLoopNum; ++i) {
+      std::this_thread::sleep_for(std::chrono::milliseconds{1});
+      epoch_manager->ForwardGlobalEpoch();
+    }
   }};
 
   // create entered epochs
