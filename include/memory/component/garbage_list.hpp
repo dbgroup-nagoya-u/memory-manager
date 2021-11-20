@@ -44,7 +44,7 @@ class GarbageList
    * @brief Create a new GarbageList object.
    *
    */
-  constexpr GarbageList() : head_{nullptr}, reuse_{nullptr}, tail_{nullptr} {}
+  constexpr GarbageList() : inter_{nullptr}, head_{nullptr}, tail_{nullptr} {}
 
   /*##############################################################################################
    * Public destructor
@@ -75,7 +75,7 @@ class GarbageList
   bool
   Empty() const
   {
-    return head_->Empty();
+    return inter_->Empty();
   }
 
   /**
@@ -84,7 +84,7 @@ class GarbageList
   size_t
   Size() const
   {
-    return head_->Size();
+    return inter_->Size();
   }
 
   /*##############################################################################################
@@ -101,10 +101,8 @@ class GarbageList
   void
   SetEpoch(const std::atomic_size_t& global_epoch)
   {
-    delete head_;
-
     head_ = new GarbageBuffer{global_epoch};
-    reuse_ = head_;
+    inter_ = head_;
     tail_ = head_;
   }
 
@@ -129,7 +127,7 @@ class GarbageList
   GetPageIfPossible()
   {
     void* page;
-    std::tie(page, reuse_) = GarbageBuffer::ReusePage(reuse_);
+    std::tie(page, head_) = GarbageBuffer::ReusePage(head_);
 
     return page;
   }
@@ -142,7 +140,7 @@ class GarbageList
   void
   ClearGarbages(const size_t protected_epoch)
   {
-    head_ = GarbageBuffer::Clear(head_, protected_epoch);
+    inter_ = GarbageBuffer::Clear(inter_, protected_epoch);
   }
 
  private:
@@ -451,10 +449,10 @@ class GarbageList
    *##############################################################################################*/
 
   /// a pointer to a target garbage list.
-  GarbageBuffer* head_;
+  GarbageBuffer* inter_;
 
   /// a pointer to a target garbage list.
-  GarbageBuffer* reuse_;
+  GarbageBuffer* head_;
 
   /// a pointer to a target garbage list.
   GarbageBuffer* tail_;
