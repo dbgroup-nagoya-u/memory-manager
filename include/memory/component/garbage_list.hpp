@@ -44,7 +44,10 @@ class GarbageList
    * @brief Create a new GarbageList object.
    *
    */
-  constexpr GarbageList() : inter_{nullptr}, head_{nullptr}, tail_{nullptr} {}
+  explicit GarbageList(const std::atomic_size_t& global_epoch)
+      : head_{new GarbageBuffer{global_epoch}}, inter_{head_}, tail_{head_}
+  {
+  }
 
   /*##############################################################################################
    * Public destructor
@@ -90,21 +93,6 @@ class GarbageList
   /*##############################################################################################
    * Public utility functions
    *############################################################################################*/
-
-  /**
-   * @brief Set a reference to a global epoch.
-   *
-   * Note that this function expires the old internal list and creates a new list.
-   *
-   * @param global_epoch a reference to a global epoch.
-   */
-  void
-  SetEpoch(const std::atomic_size_t& global_epoch)
-  {
-    head_ = new GarbageBuffer{global_epoch};
-    inter_ = head_;
-    tail_ = head_;
-  }
 
   /**
    * @brief Add a new garbage instance.
@@ -448,13 +436,13 @@ class GarbageList
    * Internal member variables
    *##############################################################################################*/
 
-  /// a pointer to a target garbage list.
-  GarbageBuffer* inter_;
-
-  /// a pointer to a target garbage list.
+  /// a pointer to the head of a target garbage list.
   GarbageBuffer* head_;
 
-  /// a pointer to a target garbage list.
+  /// a pointer to the internal node of a target garbage list.
+  GarbageBuffer* inter_;
+
+  /// a pointer to the tail a target garbage list.
   GarbageBuffer* tail_;
 };
 

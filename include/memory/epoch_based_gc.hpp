@@ -163,8 +163,8 @@ class EpochBasedGC
   void
   AddGarbage(const T* garbage_ptr)
   {
-    if (garbage_list_.use_count() <= 1) {
-      garbage_list_->SetEpoch(epoch_manager_.GetGlobalEpochReference());
+    if (!garbage_list_) {
+      garbage_list_ = std::make_shared<GarbageList_t>(epoch_manager_.GetGlobalEpochReference());
 
       // register this garbage list
       auto garbage_node = new GarbageNode{garbage_lists_.load(kMORelax), garbage_list_};
@@ -185,7 +185,7 @@ class EpochBasedGC
   void*
   GetPageIfPossible()
   {
-    if (garbage_list_.use_count() <= 1) return nullptr;
+    if (!garbage_list_) return nullptr;
     return garbage_list_->GetPageIfPossible();
   }
 
@@ -491,8 +491,7 @@ class EpochBasedGC
   std::atomic_bool gc_is_running_;
 
   /// a thread-local garbage list.
-  inline static thread_local std::shared_ptr<GarbageList_t> garbage_list_ =
-      std::make_shared<GarbageList_t>();
+  inline static thread_local std::shared_ptr<GarbageList_t> garbage_list_ = nullptr;
 };
 
 }  // namespace dbgroup::memory
