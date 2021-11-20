@@ -44,7 +44,10 @@ class GarbageList
    * @brief Create a new GarbageList object.
    *
    */
-  constexpr GarbageList() : head_{nullptr}, reuse_{nullptr}, tail_{nullptr} {}
+  explicit GarbageList(const std::atomic_size_t& global_epoch)
+      : head_{new GarbageBuffer{global_epoch}}, inter_{head_}, tail_{head_}
+  {
+  }
 
   /*##############################################################################################
    * Public destructor
@@ -75,7 +78,7 @@ class GarbageList
   bool
   Empty() const
   {
-    return head_->Empty();
+    return inter_->Empty();
   }
 
   /**
@@ -84,29 +87,12 @@ class GarbageList
   size_t
   Size() const
   {
-    return head_->Size();
+    return inter_->Size();
   }
 
   /*##############################################################################################
    * Public utility functions
    *############################################################################################*/
-
-  /**
-   * @brief Set a reference to a global epoch.
-   *
-   * Note that this function expires the old internal list and creates a new list.
-   *
-   * @param global_epoch a reference to a global epoch.
-   */
-  void
-  SetEpoch(const std::atomic_size_t& global_epoch)
-  {
-    delete head_;
-
-    head_ = new GarbageBuffer{global_epoch};
-    reuse_ = head_;
-    tail_ = head_;
-  }
 
   /**
    * @brief Add a new garbage instance.
@@ -129,7 +115,7 @@ class GarbageList
   GetPageIfPossible()
   {
     void* page;
-    std::tie(page, reuse_) = GarbageBuffer::ReusePage(reuse_);
+    std::tie(page, head_) = GarbageBuffer::ReusePage(head_);
 
     return page;
   }
@@ -142,7 +128,7 @@ class GarbageList
   void
   ClearGarbages(const size_t protected_epoch)
   {
-    head_ = GarbageBuffer::Clear(head_, protected_epoch);
+    inter_ = GarbageBuffer::Clear(inter_, protected_epoch);
   }
 
  private:
@@ -167,7 +153,12 @@ class GarbageList
      * @param global_epoch a reference to the global epoch.
      */
     constexpr explicit GarbageBuffer(const std::atomic_size_t& global_epoch)
-        : begin_idx_{0}, end_idx_{0}, released_idx_{0}, current_epoch_{global_epoch}, next_{nullptr}
+        : begin_idx_{0},
+          end_idx_{0},
+          released_idx_{0},
+          current_epoch_{global_epoch},
+          cleaner_ref_this_{false},
+          next_{nullptr}
     {
     }
 
@@ -299,6 +290,10 @@ class GarbageList
         do {  // if the garbage buffer is empty but does not have a next buffer, wait insertion
           garbage_buf = empty_buf->next_.load(kMORelax);
         } while (garbage_buf == nullptr);
+
+        while (empty_buf->cleaner_ref_this_.load(kMORelax)) {
+          // wait for a cleaner thread to leave this list
+        }
         delete empty_buf;
       }
 
@@ -317,6 +312,9 @@ class GarbageList
         GarbageBuffer* garbage_buf,
         const size_t protected_epoch)
     {
+      // set a flag for single-counter based GC
+      garbage_buf->cleaner_ref_this_.store(true, kMORelax);
+
       // release unprotected garbages
       const auto end_idx = garbage_buf->end_idx_.load(kMORelax);
       auto idx = garbage_buf->released_idx_.load(kMORelax);
@@ -328,15 +326,20 @@ class GarbageList
       }
       garbage_buf->released_idx_.store(idx, kMORelax);
 
-      // check whether there is space in this list
-      if (idx < kGarbageBufferSize) return garbage_buf;
+      if (idx < kGarbageBufferSize) {
+        // the buffer has unreleased garbages
+        garbage_buf->cleaner_ref_this_.store(false, kMORelax);
+        return garbage_buf;
+      } else {
+        // release the next buffer recursively
+        GarbageBuffer* next;
+        do {  // if the garbage buffer is empty but does not have a next buffer, wait insertion
+          next = garbage_buf->next_.load(kMORelax);
+        } while (next == nullptr);
 
-      // release the next list recursively
-      GarbageBuffer* next;
-      do {  // if the garbage buffer is empty but does not have a next buffer, wait insertion
-        next = garbage_buf->next_.load(kMORelax);
-      } while (next == nullptr);
-      return GarbageBuffer::Clear(next, protected_epoch);
+        garbage_buf->cleaner_ref_this_.store(false, kMORelax);
+        return GarbageBuffer::Clear(next, protected_epoch);
+      }
     }
 
    private:
@@ -442,6 +445,9 @@ class GarbageList
     /// a current epoch. Note: this is maintained individually to improve performance.
     const std::atomic_size_t& current_epoch_;
 
+    /// a flag to indicate a cleaner thread is modifying the list
+    std::atomic_bool cleaner_ref_this_;
+
     /// a pointer to a next garbage buffer.
     std::atomic<GarbageBuffer*> next_;
   };
@@ -450,13 +456,13 @@ class GarbageList
    * Internal member variables
    *##############################################################################################*/
 
-  /// a pointer to a target garbage list.
+  /// a pointer to the head of a target garbage list.
   GarbageBuffer* head_;
 
-  /// a pointer to a target garbage list.
-  GarbageBuffer* reuse_;
+  /// a pointer to the internal node of a target garbage list.
+  GarbageBuffer* inter_;
 
-  /// a pointer to a target garbage list.
+  /// a pointer to the tail a target garbage list.
   GarbageBuffer* tail_;
 };
 

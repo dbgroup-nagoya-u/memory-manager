@@ -44,8 +44,7 @@ class GarbageListFixture : public ::testing::Test
   SetUp() override
   {
     current_epoch = 1;
-    garbage_list = std::make_shared<GarbageList_t>();
-    garbage_list->SetEpoch(current_epoch);
+    garbage_list = std::make_shared<GarbageList_t>(current_epoch);
   }
 
   void
