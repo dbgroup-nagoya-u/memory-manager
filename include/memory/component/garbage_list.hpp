@@ -153,7 +153,12 @@ class GarbageList
      * @param global_epoch a reference to the global epoch.
      */
     constexpr explicit GarbageBuffer(const std::atomic_size_t& global_epoch)
-        : begin_idx_{0}, end_idx_{0}, released_idx_{0}, current_epoch_{global_epoch}, next_{nullptr}
+        : begin_idx_{0},
+          end_idx_{0},
+          released_idx_{0},
+          current_epoch_{global_epoch},
+          cleaner_ref_this_{false},
+          next_{nullptr}
     {
     }
 
@@ -285,6 +290,10 @@ class GarbageList
         do {  // if the garbage buffer is empty but does not have a next buffer, wait insertion
           garbage_buf = empty_buf->next_.load(kMORelax);
         } while (garbage_buf == nullptr);
+
+        while (empty_buf->cleaner_ref_this_.load(kMORelax)) {
+          // wait for a cleaner thread to leave this list
+        }
         delete empty_buf;
       }
 
@@ -303,6 +312,9 @@ class GarbageList
         GarbageBuffer* garbage_buf,
         const size_t protected_epoch)
     {
+      // set a flag for single-counter based GC
+      garbage_buf->cleaner_ref_this_.store(true, kMORelax);
+
       // release unprotected garbages
       const auto end_idx = garbage_buf->end_idx_.load(kMORelax);
       auto idx = garbage_buf->released_idx_.load(kMORelax);
@@ -314,15 +326,20 @@ class GarbageList
       }
       garbage_buf->released_idx_.store(idx, kMORelax);
 
-      // check whether there is space in this list
-      if (idx < kGarbageBufferSize) return garbage_buf;
+      if (idx < kGarbageBufferSize) {
+        // the buffer has unreleased garbages
+        garbage_buf->cleaner_ref_this_.store(false, kMORelax);
+        return garbage_buf;
+      } else {
+        // release the next buffer recursively
+        GarbageBuffer* next;
+        do {  // if the garbage buffer is empty but does not have a next buffer, wait insertion
+          next = garbage_buf->next_.load(kMORelax);
+        } while (next == nullptr);
 
-      // release the next list recursively
-      GarbageBuffer* next;
-      do {  // if the garbage buffer is empty but does not have a next buffer, wait insertion
-        next = garbage_buf->next_.load(kMORelax);
-      } while (next == nullptr);
-      return GarbageBuffer::Clear(next, protected_epoch);
+        garbage_buf->cleaner_ref_this_.store(false, kMORelax);
+        return GarbageBuffer::Clear(next, protected_epoch);
+      }
     }
 
    private:
@@ -427,6 +444,9 @@ class GarbageList
 
     /// a current epoch. Note: this is maintained individually to improve performance.
     const std::atomic_size_t& current_epoch_;
+
+    /// a flag to indicate a cleaner thread is modifying the list
+    std::atomic_bool cleaner_ref_this_;
 
     /// a pointer to a next garbage buffer.
     std::atomic<GarbageBuffer*> next_;
