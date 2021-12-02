@@ -39,8 +39,8 @@ class EpochFixture : public ::testing::Test
   void
   SetUp() override
   {
-    current_epoch = 0;
-    epoch = std::make_unique<Epoch>(current_epoch);
+    current_epoch_ = 0;
+    epoch_ = std::make_unique<Epoch>(current_epoch_);
   }
 
   void
@@ -52,36 +52,36 @@ class EpochFixture : public ::testing::Test
    * Internal member variables
    *##############################################################################################*/
 
-  std::atomic_size_t current_epoch;
+  std::atomic_size_t current_epoch_{};  // NOLINT
 
-  std::unique_ptr<Epoch> epoch;
+  std::unique_ptr<Epoch> epoch_{};  // NOLINT
 };
 
 /*##################################################################################################
  * Unit test definitions
  *################################################################################################*/
 
-TEST_F(EpochFixture, Construct_CurrentEpochZero_MemberVariableCorrectlyInitialized)
+TEST_F(EpochFixture, ConstructorWithZeroEpochInitializeMemberVariablesCorrectly)
 {
-  EXPECT_EQ(0, epoch->GetCurrentEpoch());
-  EXPECT_EQ(kULMax, epoch->GetProtectedEpoch());
+  EXPECT_EQ(0, epoch_->GetCurrentEpoch());
+  EXPECT_EQ(kULMax, epoch_->GetProtectedEpoch());
 }
 
-TEST_F(EpochFixture, EnterEpoch_CurrentZero_ProtectedEpochCorrectlyUpdated)
+TEST_F(EpochFixture, EnterEpochWithZeroEpochProtectEpoch)
 {
-  epoch->EnterEpoch();
+  epoch_->EnterEpoch();
 
-  EXPECT_EQ(0, epoch->GetCurrentEpoch());
-  EXPECT_EQ(0, epoch->GetProtectedEpoch());
+  EXPECT_EQ(0, epoch_->GetCurrentEpoch());
+  EXPECT_EQ(0, epoch_->GetProtectedEpoch());
 }
 
-TEST_F(EpochFixture, LeaveEpoch_AfterEntered_ProtectedEpochCorrectlyUpdated)
+TEST_F(EpochFixture, LeaveEpochAfterEnteredUnprotectEpoch)
 {
-  epoch->EnterEpoch();
-  epoch->LeaveEpoch();
+  epoch_->EnterEpoch();
+  epoch_->LeaveEpoch();
 
-  EXPECT_EQ(0, epoch->GetCurrentEpoch());
-  EXPECT_EQ(kULMax, epoch->GetProtectedEpoch());
+  EXPECT_EQ(0, epoch_->GetCurrentEpoch());
+  EXPECT_EQ(kULMax, epoch_->GetProtectedEpoch());
 }
 
 }  // namespace dbgroup::memory::component::test

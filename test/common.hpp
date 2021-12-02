@@ -14,8 +14,8 @@
  * limitations under the License.
  */
 
-#ifndef MEMORY_MANAGER_TEST_COMMON_H_
-#define MEMORY_MANAGER_TEST_COMMON_H_
+#ifndef TEST_COMMON_HPP  // NOLINT
+#define TEST_COMMON_HPP
 
 #include <limits>
 
@@ -33,4 +33,4 @@ constexpr size_t kThreadNum = 8;
 
 }  // namespace dbgroup::memory::test
 
-#endif  // MEMORY_MANAGER_TEST_COMMON_H_
+#endif  // TEST_COMMON_HPP

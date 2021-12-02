@@ -14,8 +14,8 @@
  * limitations under the License.
  */
 
-#ifndef MEMORY_MANAGER_MEMORY_COMPONENT_EPOCH_MANAGER_H_
-#define MEMORY_MANAGER_MEMORY_COMPONENT_EPOCH_MANAGER_H_
+#ifndef MEMORY_COMPONENT_EPOCH_MANAGER_HPP
+#define MEMORY_COMPONENT_EPOCH_MANAGER_HPP
 
 #include <atomic>
 #include <memory>
@@ -57,9 +57,9 @@ class EpochManager
    */
   ~EpochManager()
   {
-    auto next = epochs_.load(kMORelax);
+    auto *next = epochs_.load(kMORelax);
     while (next != nullptr) {
-      auto current = next;
+      auto *current = next;
       next = current->next;
       delete current;
     }
@@ -83,7 +83,7 @@ class EpochManager
   /**
    * @return a reference to the global epoch.
    */
-  const std::atomic_size_t &
+  [[nodiscard]] const std::atomic_size_t &
   GetGlobalEpochReference() const
   {
     return global_epoch_;
@@ -91,7 +91,7 @@ class EpochManager
   /**
    * @return a current global epoch value.
    */
-  size_t
+  [[nodiscard]] size_t
   GetCurrentEpoch() const
   {
     return global_epoch_.load(kMORelax);
@@ -107,7 +107,7 @@ class EpochManager
 
     if (epoch.use_count() <= 1) {
       // insert a new epoch node into the epoch list
-      auto epoch_node = new EpochNode{epoch, epochs_.load(kMORelax)};
+      auto *epoch_node = new EpochNode{epoch, epochs_.load(kMORelax)};
       while (!epochs_.compare_exchange_weak(epoch_node->next, epoch_node, kMORelax)) {
         // continue until inserting succeeds
       }
@@ -129,19 +129,25 @@ class EpochManager
     auto min_protected_epoch = global_epoch_.load(kMORelax);
 
     // check the head node of the epoch list
-    auto previous = epochs_.load(kMORelax);
-    if (previous == nullptr) {
-      return min_protected_epoch;
-    } else if (previous->IsAlive()) {
-      previous->UpdateProtectedEpoch(min_protected_epoch);
+    auto *previous = epochs_.load(kMORelax);
+    if (previous == nullptr) return min_protected_epoch;
+
+    if (previous->IsAlive()) {
+      const auto protected_epoch = previous->GetProtectedEpoch();
+      if (protected_epoch < min_protected_epoch) {
+        min_protected_epoch = protected_epoch;
+      }
     }
 
     // check the tail nodes of the epoch list
-    auto current = previous->next;
+    auto *current = previous->next;
     while (current != nullptr) {
       if (current->IsAlive()) {
         // if the epoch is alive, check the protected value
-        current->UpdateProtectedEpoch(min_protected_epoch);
+        const auto protected_epoch = current->GetProtectedEpoch();
+        if (protected_epoch < min_protected_epoch) {
+          min_protected_epoch = protected_epoch;
+        }
         previous = current;
         current = current->next;
       } else {
@@ -157,7 +163,7 @@ class EpochManager
 
  private:
   /*################################################################################################
-   * Internal structs
+   * Internal structs and assignment operators
    *##############################################################################################*/
 
   /**
@@ -178,11 +184,20 @@ class EpochManager
      * @param next a pointer to a next node.
      */
     EpochNode(  //
-        const std::shared_ptr<Epoch> &epoch,
+        std::shared_ptr<Epoch> epoch,
         EpochNode *next)
-        : next{next}, epoch_{epoch}
+        : next{next}, epoch_{std::move(epoch)}
     {
     }
+
+    EpochNode(const EpochNode &) = delete;
+    EpochNode &operator=(const EpochNode &) = delete;
+    EpochNode(EpochNode &&) = delete;
+    EpochNode &operator=(EpochNode &&) = delete;
+
+    /*##############################################################################################
+     * Public destructors
+     *############################################################################################*/
 
     /**
      * @brief Destroy the instance.
@@ -198,24 +213,19 @@ class EpochManager
      * @retval true if the registered thread is still active.
      * @retval false if the registered thread has already left.
      */
-    bool
+    [[nodiscard]] bool
     IsAlive() const
     {
       return epoch_.use_count() > 1;
     }
 
     /**
-     * @brief Update the minimum epoch value.
-     *
-     * @param min_protected_epoch the current minimum value to be updated.
+     * @return the protected epoch value.
      */
-    void
-    UpdateProtectedEpoch(size_t &min_protected_epoch) const
+    [[nodiscard]] size_t
+    GetProtectedEpoch() const
     {
-      const auto protected_epoch = epoch_->GetProtectedEpoch();
-      if (protected_epoch < min_protected_epoch) {
-        min_protected_epoch = protected_epoch;
-      }
+      return epoch_->GetProtectedEpoch();
     }
 
     /*##############################################################################################
@@ -223,7 +233,7 @@ class EpochManager
      *############################################################################################*/
 
     /// a pointer to the next node.
-    EpochNode *next;
+    EpochNode *next;  // NOLINT
 
    private:
     /*##############################################################################################
@@ -247,4 +257,4 @@ class EpochManager
 
 }  // namespace dbgroup::memory::component
 
-#endif  // MEMORY_MANAGER_MEMORY_COMPONENT_EPOCH_MANAGER_H_
+#endif  // MEMORY_COMPONENT_EPOCH_MANAGER_HPP

@@ -14,8 +14,8 @@
  * limitations under the License.
  */
 
-#ifndef MEMORY_MANAGER_MEMORY_COMPONENT_COMMON_H_
-#define MEMORY_MANAGER_MEMORY_COMPONENT_COMMON_H_
+#ifndef MEMORY_COMPONENT_COMMON_HPP
+#define MEMORY_COMPONENT_COMMON_HPP
 
 #include <atomic>
 
@@ -28,4 +28,4 @@ constexpr std::memory_order kMORelax = std::memory_order_relaxed;
 
 }  // namespace dbgroup::memory::component
 
-#endif  // MEMORY_MANAGER_MEMORY_COMPONENT_COMMON_H_
+#endif  // MEMORY_COMPONENT_COMMON_HPP

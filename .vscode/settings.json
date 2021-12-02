@@ -25,18 +25,19 @@
   "cmake.generator": "Ninja",
   // extra words for spell checking
   "cSpell.words": [
+    "alignas",
+    "ctest",
     "DCMAKE",
     "DMEMORY",
     "DSIMPLE",
-    "JEMALLOC",
-    "MIMALLOC",
-    "STREQ",
-    "Wextra",
-    "alignas",
-    "ctest",
     "gtest",
+    "JEMALLOC",
     "libjemalloc",
-    "pthread"
+    "MIMALLOC",
+    "NOLINT",
+    "pthread",
+    "STREQ",
+    "Wextra"
   ],
   "files.associations": {
     "fstream": "cpp",

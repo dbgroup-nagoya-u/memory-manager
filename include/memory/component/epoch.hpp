@@ -14,8 +14,8 @@
  * limitations under the License.
  */
 
-#ifndef MEMORY_MANAGER_MEMORY_COMPONENT_EPOCH_H_
-#define MEMORY_MANAGER_MEMORY_COMPONENT_EPOCH_H_
+#ifndef MEMORY_COMPONENT_EPOCH_HPP
+#define MEMORY_COMPONENT_EPOCH_HPP
 
 #include <atomic>
 #include <limits>
@@ -67,7 +67,7 @@ class Epoch
   /**
    * @return size_t a current epoch value.
    */
-  size_t
+  [[nodiscard]] size_t
   GetCurrentEpoch() const
   {
     return current_.load(kMORelax);
@@ -76,7 +76,7 @@ class Epoch
   /**
    * @return size_t a protected epoch value.
    */
-  size_t
+  [[nodiscard]] size_t
   GetProtectedEpoch() const
   {
     return entered_.load(kMORelax);
@@ -120,4 +120,4 @@ class Epoch
 
 }  // namespace dbgroup::memory::component
 
-#endif  // MEMORY_MANAGER_MEMORY_COMPONENT_EPOCH_H_
+#endif  // MEMORY_COMPONENT_EPOCH_HPP

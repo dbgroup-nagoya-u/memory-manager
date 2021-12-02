@@ -14,8 +14,8 @@
  * limitations under the License.
  */
 
-#ifndef MEMORY_MANAGER_MEMORY_COMPONENT_EPOCH_GUARD_H_
-#define MEMORY_MANAGER_MEMORY_COMPONENT_EPOCH_GUARD_H_
+#ifndef MEMORY_COMPONENT_EPOCH_GUARD_HPP
+#define MEMORY_COMPONENT_EPOCH_GUARD_HPP
 
 #include "epoch.hpp"
 
@@ -42,7 +42,7 @@ class EpochGuard
   EpochGuard(const EpochGuard &) = delete;
   EpochGuard &operator=(const EpochGuard &) = delete;
   constexpr EpochGuard(EpochGuard &&) = default;
-  constexpr EpochGuard &operator=(EpochGuard &&) = default;
+  EpochGuard &operator=(EpochGuard &&) = default;
 
   /*################################################################################################
    * Public destructors
@@ -65,4 +65,4 @@ class EpochGuard
 
 }  // namespace dbgroup::memory::component
 
-#endif  // MEMORY_MANAGER_MEMORY_COMPONENT_EPOCH_GUARD_H_
+#endif  // MEMORY_COMPONENT_EPOCH_GUARD_HPP
