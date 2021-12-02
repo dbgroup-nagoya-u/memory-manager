@@ -43,8 +43,8 @@ class GarbageListFixture : public ::testing::Test
   void
   SetUp() override
   {
-    current_epoch = 1;
-    garbage_list = std::make_shared<GarbageList_t>(current_epoch);
+    current_epoch_ = 1;
+    garbage_list_ = std::make_shared<GarbageList_t>(current_epoch_);
   }
 
   void
@@ -60,18 +60,18 @@ class GarbageListFixture : public ::testing::Test
   AddGarbages(const size_t n)
   {
     for (size_t i = 0; i < n; ++i) {
-      auto target = new Target{0};
-      auto page = garbage_list->GetPageIfPossible();
+      auto *target = new Target{0};
+      auto *page = garbage_list_->GetPageIfPossible();
 
-      std::shared_ptr<Target> *garbage;
+      std::shared_ptr<Target> *garbage{};
       if (page == nullptr) {
         garbage = new std::shared_ptr<Target>{target};
       } else {
         garbage = new (page) std::shared_ptr<Target>{target};
       }
 
-      garbage_list->AddGarbage(garbage);
-      references.emplace_back(*garbage);
+      garbage_list_->AddGarbage(garbage);
+      references_.emplace_back(*garbage);
     }
   }
 
@@ -79,10 +79,10 @@ class GarbageListFixture : public ::testing::Test
   CheckGarbages(const size_t n)
   {
     for (size_t i = 0; i < n; ++i) {
-      EXPECT_TRUE(references[i].expired());
+      EXPECT_TRUE(references_[i].expired());
     }
-    for (size_t i = n; i < references.size(); ++i) {
-      EXPECT_FALSE(references[i].expired());
+    for (size_t i = n; i < references_.size(); ++i) {
+      EXPECT_FALSE(references_[i].expired());
     }
   }
 
@@ -98,127 +98,127 @@ class GarbageListFixture : public ::testing::Test
    * Internal member variables
    *##############################################################################################*/
 
-  std::atomic_size_t current_epoch;
+  std::atomic_size_t current_epoch_{};  // NOLINT
 
-  std::shared_ptr<GarbageList_t> garbage_list;
+  std::shared_ptr<GarbageList_t> garbage_list_{};  // NOLINT
 
-  std::vector<std::weak_ptr<Target>> references;
+  std::vector<std::weak_ptr<Target>> references_{};  // NOLINT
 };
 
 /*##################################################################################################
  * Unit test definitions
  *################################################################################################*/
 
-TEST_F(GarbageListFixture, Destruct_AFewGarbages_AddedGarbagesCorrectlyFreed)
+TEST_F(GarbageListFixture, DestructorWithAFewGarbagesReleaseAllGarbages)
 {
   AddGarbages(kSmallNum);
-  garbage_list.reset(static_cast<GarbageList_t *>(nullptr));
+  garbage_list_.reset(static_cast<GarbageList_t *>(nullptr));
 
   CheckGarbages(kSmallNum);
 }
 
-TEST_F(GarbageListFixture, Destruct_ManyGarbages_AddedGarbagesCorrectlyFreed)
+TEST_F(GarbageListFixture, DestructorWithManyGarbagesReleaseAllGarbages)
 {
   AddGarbages(kLargeNum);
-  garbage_list.reset(static_cast<GarbageList_t *>(nullptr));
+  garbage_list_.reset(static_cast<GarbageList_t *>(nullptr));
 
   CheckGarbages(kLargeNum);
 }
 
-TEST_F(GarbageListFixture, Empty_NoGarbages_ListIsEmpty)
+TEST_F(GarbageListFixture, EmptyWithNoGarbagesReturnTrue)
 {  //
-  EXPECT_TRUE(garbage_list->Empty());
+  EXPECT_TRUE(garbage_list_->Empty());
 }
 
-TEST_F(GarbageListFixture, Empty_GarbagesAdded_ListIsNotEmpty)
+TEST_F(GarbageListFixture, EmptyWithGarbagesReturnFalse)
 {
   AddGarbages(kLargeNum);
 
-  EXPECT_FALSE(garbage_list->Empty());
+  EXPECT_FALSE(garbage_list_->Empty());
 }
 
-TEST_F(GarbageListFixture, Empty_GarbagesCleared_ListIsEmpty)
+TEST_F(GarbageListFixture, EmptyAfterClearingGarbagesReturnTrue)
 {
   AddGarbages(kLargeNum);
-  garbage_list->ClearGarbages(kMaxLong);
+  garbage_list_->ClearGarbages(kMaxLong);
 
-  EXPECT_TRUE(garbage_list->Empty());
+  EXPECT_TRUE(garbage_list_->Empty());
 }
 
-TEST_F(GarbageListFixture, Size_NoGarbages_GetCorrectSize)
+TEST_F(GarbageListFixture, SizeWithNoGarbagesReturnZero)
 {  //
-  EXPECT_EQ(0, garbage_list->Size());
+  EXPECT_EQ(0, garbage_list_->Size());
 }
 
-TEST_F(GarbageListFixture, Size_GarbagesAdded_GetCorrectSize)
+TEST_F(GarbageListFixture, SizeWithGarbagesReturnCorrectSize)
 {
   AddGarbages(kLargeNum);
 
-  EXPECT_EQ(kLargeNum, garbage_list->Size());
+  EXPECT_EQ(kLargeNum, garbage_list_->Size());
 }
 
-TEST_F(GarbageListFixture, Size_GarbagesCleared_GetCorrectSize)
+TEST_F(GarbageListFixture, SizeAfterClearingGarbagesReturnZero)
 {
   AddGarbages(kLargeNum);
-  garbage_list->ClearGarbages(kMaxLong);
+  garbage_list_->ClearGarbages(kMaxLong);
 
-  EXPECT_EQ(0, garbage_list->Size());
+  EXPECT_EQ(0, garbage_list_->Size());
 }
 
-TEST_F(GarbageListFixture, ClearGarbages_WithoutProtectedEpoch_AllGarbagesCleared)
+TEST_F(GarbageListFixture, ClearGarbagesWithoutProtectedEpochReleaseAllGarbages)
 {
   AddGarbages(kLargeNum);
-  garbage_list->ClearGarbages(kMaxLong);
+  garbage_list_->ClearGarbages(kMaxLong);
 
   CheckGarbages(kLargeNum);
 }
 
-TEST_F(GarbageListFixture, ClearGarbages_WithProtectedEpoch_ProtectedGarbagesRemain)
+TEST_F(GarbageListFixture, ClearGarbagesWithProtectedEpochKeepProtectedGarbages)
 {
-  const size_t protected_epoch = current_epoch.load(kMORelax) + 1;
+  const size_t protected_epoch = current_epoch_.load(kMORelax) + 1;
   AddGarbages(kLargeNum);
-  current_epoch = protected_epoch;
+  current_epoch_ = protected_epoch;
   AddGarbages(kLargeNum);
-  garbage_list->ClearGarbages(protected_epoch);
+  garbage_list_->ClearGarbages(protected_epoch);
 
   CheckGarbages(kLargeNum);
 }
 
-TEST_F(GarbageListFixture, GetPageIfPossible_WithoutPages_GetNullptr)
+TEST_F(GarbageListFixture, GetPageIfPossibleWithoutPagesReturnNullptr)
 {
-  auto page = garbage_list->GetPageIfPossible();
+  auto *page = garbage_list_->GetPageIfPossible();
 
   EXPECT_EQ(nullptr, page);
 }
 
-TEST_F(GarbageListFixture, GetPageIfPossible_WithPages_GetReusablePages)
+TEST_F(GarbageListFixture, GetPageIfPossibleWithPagesReturnReusablePage)
 {
   AddGarbages(kLargeNum);
-  garbage_list->ClearGarbages(kMaxLong);
+  garbage_list_->ClearGarbages(kMaxLong);
 
   for (size_t i = 0; i < kLargeNum; ++i) {
-    EXPECT_NE(nullptr, garbage_list->GetPageIfPossible());
+    EXPECT_NE(nullptr, garbage_list_->GetPageIfPossible());
   }
-  EXPECT_EQ(nullptr, garbage_list->GetPageIfPossible());
+  EXPECT_EQ(nullptr, garbage_list_->GetPageIfPossible());
 }
 
-TEST_F(GarbageListFixture, AddClearGarbages_WithMultiThreads_AllGarbagesCleared)
+TEST_F(GarbageListFixture, AddAndClearGarbagesWithMultiThreadsReleaseAllGarbages)
 {
-  constexpr size_t LoopNum = 1e6;
+  constexpr size_t kLoopNum = 1e6;
   std::atomic_bool is_running = true;
 
   std::thread loader{[&]() {
-    for (size_t i = 0; i < LoopNum; ++i) {
-      this->AddGarbages(1);
-      this->current_epoch.fetch_add(1, kMORelax);
+    for (size_t i = 0; i < kLoopNum; ++i) {
+      AddGarbages(1);
+      current_epoch_.fetch_add(1, kMORelax);
     }
   }};
 
   std::thread cleaner{[&]() {
     while (is_running.load(kMORelax)) {
-      this->garbage_list->ClearGarbages(this->current_epoch.load(kMORelax) - 1);
+      garbage_list_->ClearGarbages(current_epoch_.load(kMORelax) - 1);
     }
-    this->garbage_list->ClearGarbages(this->kMaxLong);
+    garbage_list_->ClearGarbages(kMaxLong);
   }};
 
   loader.join();

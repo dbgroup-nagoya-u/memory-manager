@@ -52,7 +52,7 @@ class EpochBasedGCFixture : public ::testing::Test
   void
   SetUp() override
   {
-    gc = std::make_unique<EpochBasedGC_t>(kGCInterval, kThreadNum, true);
+    gc_ = std::make_unique<EpochBasedGC_t>(kGCInterval, kThreadNum, true);
   }
 
   void
@@ -71,14 +71,14 @@ class EpochBasedGCFixture : public ::testing::Test
   {
     GarbageRef target_weak_ptrs;
     for (size_t loop = 0; loop < garbage_num; ++loop) {
-      auto target = new Target{loop};
-      void *page = gc->GetPageIfPossible();
+      auto *target = new Target{loop};
+      auto *page = gc_->GetPageIfPossible();
       std::shared_ptr<Target> *target_shared =  //
           (page == nullptr) ? new std::shared_ptr<Target>{target}
                             : new (page) std::shared_ptr<Target>{target};
 
       target_weak_ptrs.emplace_back(*target_shared);
-      gc->AddGarbage(target_shared);
+      gc_->AddGarbage(target_shared);
     }
 
     p.set_value(std::move(target_weak_ptrs));
@@ -87,9 +87,9 @@ class EpochBasedGCFixture : public ::testing::Test
   void
   KeepEpochGuard(std::promise<Target> p)
   {
-    const auto guard = gc->CreateEpochGuard();
+    const auto guard = gc_->CreateEpochGuard();
     p.set_value(0);  // set promise to notice
-    const auto lock = std::unique_lock<std::mutex>{mtx};
+    const auto lock = std::unique_lock<std::mutex>{mtx_};
   }
 
   GarbageRef
@@ -117,22 +117,22 @@ class EpochBasedGCFixture : public ::testing::Test
    * Internal member variables
    *##############################################################################################*/
 
-  std::unique_ptr<EpochBasedGC_t> gc;
+  std::unique_ptr<EpochBasedGC_t> gc_{};  // NOLINT
 
-  std::mutex mtx;
+  std::mutex mtx_{};  // NOLINT
 };
 
 /*--------------------------------------------------------------------------------------------------
  * Public utility tests
  *------------------------------------------------------------------------------------------------*/
 
-TEST_F(EpochBasedGCFixture, Destruct_SingleThread_GarbagesCorrectlyFreed)
+TEST_F(EpochBasedGCFixture, DestructorWithSingleThreadReleaseAllGarbages)
 {
   // register garbages to GC
   auto target_weak_ptrs = TestGC(1, kGarbageNumLarge);
 
   // GC deletes all targets during its deconstruction
-  gc.reset(nullptr);
+  gc_.reset(nullptr);
 
   // check there is no referece to target pointers
   for (auto &&target_weak : target_weak_ptrs) {
@@ -140,13 +140,13 @@ TEST_F(EpochBasedGCFixture, Destruct_SingleThread_GarbagesCorrectlyFreed)
   }
 }
 
-TEST_F(EpochBasedGCFixture, Destruct_MultiThreads_GarbagesCorrectlyFreed)
+TEST_F(EpochBasedGCFixture, DestructorWithMultiThreadsReleaseAllGarbages)
 {
   // register garbages to GC
   auto target_weak_ptrs = TestGC(kThreadNum, kGarbageNumLarge);
 
   // GC deletes all targets during its deconstruction
-  gc.reset(nullptr);
+  gc_.reset(nullptr);
 
   // check there is no referece to target pointers
   for (auto &&target_weak : target_weak_ptrs) {
@@ -154,11 +154,11 @@ TEST_F(EpochBasedGCFixture, Destruct_MultiThreads_GarbagesCorrectlyFreed)
   }
 }
 
-TEST_F(EpochBasedGCFixture, StartGC_SingleThreadWithoutEpochGuard_GarbagesCorrectlyFreed)
+TEST_F(EpochBasedGCFixture, StartGCWithSingleThreadWOEpochGuardReleaseAllGarbages)
 {
   // register garbages to GC
   auto target_weak_ptrs = TestGC(1, kGarbageNumLarge);
-  while (gc->GetRegisteredGarbageSize() > 0) {
+  while (gc_->GetRegisteredGarbageSize() > 0) {
     // wait all garbages are freed
   }
 
@@ -168,11 +168,11 @@ TEST_F(EpochBasedGCFixture, StartGC_SingleThreadWithoutEpochGuard_GarbagesCorrec
   }
 }
 
-TEST_F(EpochBasedGCFixture, StartGC_MultiThreadsWithoutEpochGuard_GarbagesCorrectlyFreed)
+TEST_F(EpochBasedGCFixture, StartGCWithMultiThreadsWOEpochGuardReleaseAllGarbages)
 {
   // register garbages to GC
   auto target_weak_ptrs = TestGC(kThreadNum, kGarbageNumLarge);
-  while (gc->GetRegisteredGarbageSize() > 0) {
+  while (gc_->GetRegisteredGarbageSize() > 0) {
     // wait all garbages are freed
   }
 
@@ -182,13 +182,13 @@ TEST_F(EpochBasedGCFixture, StartGC_MultiThreadsWithoutEpochGuard_GarbagesCorrec
   }
 }
 
-TEST_F(EpochBasedGCFixture, StartGC_SingleThreadWithEpochGuard_PreventGarbagesFromDeleeting)
+TEST_F(EpochBasedGCFixture, StartGCWithSingleThreadWithEpochGuardPreventGarbagesFromDeleeting)
 {
   // a lambda function to keep an epoch guard
   auto guard = [&](std::promise<Target> p) {
-    const auto guard = gc->CreateEpochGuard();
+    const auto guard = gc_->CreateEpochGuard();
     p.set_value(0);  // set promise to notice
-    const auto lock = std::unique_lock<std::mutex>{mtx};
+    const auto lock = std::unique_lock<std::mutex>{mtx_};
   };
 
   // create an epoch guard on anther thread
@@ -196,7 +196,7 @@ TEST_F(EpochBasedGCFixture, StartGC_SingleThreadWithEpochGuard_PreventGarbagesFr
 
   {
     // create a lock to keep an epoch guard
-    const auto thread_lock = std::unique_lock<std::mutex>{mtx};
+    const auto thread_lock = std::unique_lock<std::mutex>{mtx_};
 
     // create an epoch guard
     std::promise<Target> p;
@@ -216,13 +216,13 @@ TEST_F(EpochBasedGCFixture, StartGC_SingleThreadWithEpochGuard_PreventGarbagesFr
   guarder.join();
 }
 
-TEST_F(EpochBasedGCFixture, StartGC_MultiThreadsWithEpochGuard_PreventGarbagesFromDeleeting)
+TEST_F(EpochBasedGCFixture, StartGCWithMultiThreadsWithEpochGuardPreventGarbagesFromDeleeting)
 {
   // a lambda function to keep an epoch guard
   auto guard = [&](std::promise<Target> p) {
-    const auto guard = gc->CreateEpochGuard();
+    const auto guard = gc_->CreateEpochGuard();
     p.set_value(0);  // set promise to notice
-    const auto lock = std::unique_lock<std::mutex>{mtx};
+    const auto lock = std::unique_lock<std::mutex>{mtx_};
   };
 
   // create an epoch guard on anther thread
@@ -230,7 +230,7 @@ TEST_F(EpochBasedGCFixture, StartGC_MultiThreadsWithEpochGuard_PreventGarbagesFr
 
   {
     // create a lock to keep an epoch guard
-    const auto thread_lock = std::unique_lock<std::mutex>{mtx};
+    const auto thread_lock = std::unique_lock<std::mutex>{mtx_};
 
     // create an epoch guard
     std::promise<Target> p;

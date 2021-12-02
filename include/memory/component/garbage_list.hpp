@@ -14,8 +14,8 @@
  * limitations under the License.
  */
 
-#ifndef MEMORY_MANAGER_MEMORY_COMPONENT_GARBAGE_LIST_H_
-#define MEMORY_MANAGER_MEMORY_COMPONENT_GARBAGE_LIST_H_
+#ifndef MEMORY_COMPONENT_GARBAGE_LIST_HPP
+#define MEMORY_COMPONENT_GARBAGE_LIST_HPP
 
 #include <array>
 #include <atomic>
@@ -49,6 +49,11 @@ class GarbageList
   {
   }
 
+  GarbageList(const GarbageList&) = delete;
+  GarbageList& operator=(const GarbageList&) = delete;
+  GarbageList(GarbageList&&) = delete;
+  GarbageList& operator=(GarbageList&&) = delete;
+
   /*##############################################################################################
    * Public destructor
    *############################################################################################*/
@@ -75,7 +80,7 @@ class GarbageList
    * @retval true if the list is empty.
    * @retval false otherwise.
    */
-  bool
+  [[nodiscard]] bool
   Empty() const
   {
     return inter_->Empty();
@@ -84,7 +89,7 @@ class GarbageList
   /**
    * @return the number of unreleased garbases in the list.
    */
-  size_t
+  [[nodiscard]] size_t
   Size() const
   {
     return inter_->Size();
@@ -114,7 +119,7 @@ class GarbageList
   void*
   GetPageIfPossible()
   {
-    void* page;
+    void* page{};
     std::tie(page, head_) = GarbageBuffer::ReusePage(head_);
 
     return page;
@@ -195,23 +200,22 @@ class GarbageList
     /**
      * @return the number of unreleased garbases in entire lists.
      */
-    size_t
+    [[nodiscard]] size_t
     Size() const
     {
       const auto size = end_idx_.load(kMORelax) - released_idx_.load(kMORelax);
       const auto next = next_.load(kMORelax);
       if (next == nullptr) {
         return size;
-      } else {
-        return next->Size() + size;
       }
+      return next->Size() + size;
     }
 
     /**
      * @retval true if this list is empty.
      * @retval false otherwise
      */
-    bool
+    [[nodiscard]] bool
     Empty() const
     {
       if (end_idx_.load(kMORelax) - released_idx_.load(kMORelax) > 0) return false;
@@ -224,7 +228,7 @@ class GarbageList
     /**
      * @return a pointer to the next garbage buffer.
      */
-    GarbageBuffer*
+    [[nodiscard]] GarbageBuffer*
     GetNext() const
     {
       return next_.load(kMORelax);
@@ -330,16 +334,16 @@ class GarbageList
         // the buffer has unreleased garbages
         garbage_buf->cleaner_ref_this_.store(false, kMORelax);
         return garbage_buf;
-      } else {
-        // release the next buffer recursively
-        GarbageBuffer* next;
-        do {  // if the garbage buffer is empty but does not have a next buffer, wait insertion
-          next = garbage_buf->next_.load(kMORelax);
-        } while (next == nullptr);
-
-        garbage_buf->cleaner_ref_this_.store(false, kMORelax);
-        return GarbageBuffer::Clear(next, protected_epoch);
       }
+
+      // release the next buffer recursively
+      GarbageBuffer* next{};
+      do {  // if the garbage buffer is empty but does not have a next buffer, wait insertion
+        next = garbage_buf->next_.load(kMORelax);
+      } while (next == nullptr);
+
+      garbage_buf->cleaner_ref_this_.store(false, kMORelax);
+      return GarbageBuffer::Clear(next, protected_epoch);
     }
 
    private:
@@ -362,7 +366,12 @@ class GarbageList
        * @brief Create a new garbage object.
        *
        */
-      constexpr Garbage() : epoch_{}, ptr_{} {}
+      constexpr Garbage() = default;
+
+      Garbage(const Garbage&) = delete;
+      Garbage& operator=(const Garbage&) = delete;
+      Garbage(Garbage&&) = delete;
+      Garbage& operator=(Garbage&&) = delete;
 
       /*############################################################################################
        * Public destructors
@@ -393,13 +402,13 @@ class GarbageList
       void
       SetGarbage(const T* ptr)
       {
-        ptr_.store(const_cast<T*>(ptr), kMORelax);
+        ptr_.store(const_cast<T*>(ptr), kMORelax);  // NOLINT
       }
 
       /**
        * @return the epoch value when the garbage is registered.
        */
-      size_t
+      [[nodiscard]] size_t
       GetEpoch() const
       {
         return epoch_.load(kMORelax);
@@ -408,7 +417,7 @@ class GarbageList
       /**
        * @return the pointer to the registered garbage.
        */
-      T*
+      [[nodiscard]] T*
       GetGarbage() const
       {
         return ptr_.load(kMORelax);
@@ -420,10 +429,10 @@ class GarbageList
        *##########################################################################################*/
 
       /// an epoch value when the garbage is registered.
-      std::atomic_size_t epoch_;
+      std::atomic_size_t epoch_{};
 
       /// a pointer to the registered garbage.
-      std::atomic<T*> ptr_;
+      std::atomic<T*> ptr_{};
     };
 
     /*##############################################################################################
@@ -468,4 +477,4 @@ class GarbageList
 
 }  // namespace dbgroup::memory::component
 
-#endif  // MEMORY_MANAGER_MEMORY_COMPONENT_GARBAGE_LIST_H_
+#endif  // MEMORY_COMPONENT_GARBAGE_LIST_HPP

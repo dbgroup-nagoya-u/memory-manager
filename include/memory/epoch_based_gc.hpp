@@ -14,8 +14,8 @@
  * limitations under the License.
  */
 
-#ifndef MEMORY_MANAGER_MEMORY_EPOCH_BASED_GC_H_
-#define MEMORY_MANAGER_MEMORY_EPOCH_BASED_GC_H_
+#ifndef MEMORY_EPOCH_BASED_GC_HPP
+#define MEMORY_EPOCH_BASED_GC_HPP
 
 #include <atomic>
 #include <chrono>
@@ -63,20 +63,11 @@ class EpochBasedGC
    * @param gc_thread_num the maximum number of threads to perform GC.
    * @param start_gc a flag to start GC after construction
    */
-  constexpr EpochBasedGC(  //
-      const size_t gc_interval_micro_sec = 1e5,
+  explicit constexpr EpochBasedGC(  //
+      const size_t gc_interval_micro_sec,
       const size_t gc_thread_num = 1,
       const bool start_gc = false)
-      : gc_interval_{gc_interval_micro_sec},
-        gc_thread_num_{gc_thread_num},
-        epoch_manager_{},
-        garbage_lists_{nullptr},
-        garbage_lists_lock_{},
-        gc_thread_{},
-        cleaner_threads_{},
-        protected_epoch_{0},
-        sleep_until_{0},
-        gc_is_running_{false}
+      : gc_interval_{gc_interval_micro_sec}, gc_thread_num_{gc_thread_num}
   {
     cleaner_threads_.reserve(gc_thread_num_);
     if (start_gc) StartGC();
@@ -110,8 +101,8 @@ class EpochBasedGC
     }
 
     // delete all garbages
-    GarbageNode *cur_node, *next_node;
-    next_node = garbage_lists_.load();
+    GarbageNode* cur_node{};
+    auto* next_node = garbage_lists_.load();
     while (next_node != nullptr) {
       cur_node = next_node;
       next_node = cur_node->next;
@@ -127,7 +118,7 @@ class EpochBasedGC
   /**
    * @return the total number of registered garbages.
    */
-  size_t
+  [[nodiscard]] size_t
   GetRegisteredGarbageSize() const
   {
     auto garbage_node = garbage_lists_.load(kMORelax);
@@ -204,11 +195,10 @@ class EpochBasedGC
   {
     if (gc_is_running_.load(kMORelax)) {
       return false;
-    } else {
-      gc_is_running_.store(true, kMORelax);
-      gc_thread_ = std::thread{&EpochBasedGC::RunGC, this};
-      return true;
     }
+    gc_is_running_.store(true, kMORelax);
+    gc_thread_ = std::thread{&EpochBasedGC::RunGC, this};
+    return true;
   }
 
   /**
@@ -222,11 +212,10 @@ class EpochBasedGC
   {
     if (!gc_is_running_.load(kMORelax)) {
       return false;
-    } else {
-      gc_is_running_.store(false, kMORelax);
-      gc_thread_.join();
-      return true;
     }
+    gc_is_running_.store(false, kMORelax);
+    gc_thread_.join();
+    return true;
   }
 
  private:
@@ -261,10 +250,15 @@ class EpochBasedGC
      */
     GarbageNode(  //
         GarbageNode* next,
-        const std::shared_ptr<GarbageList_t>& garbage_list)
-        : next{next}, garbage_list_{garbage_list}, in_progress_{false}
+        std::shared_ptr<GarbageList_t> garbage_list)
+        : next{next}, garbage_list_{std::move(garbage_list)}, in_progress_{false}
     {
     }
+
+    GarbageNode(const GarbageNode&) = delete;
+    GarbageNode& operator=(const GarbageNode&) = delete;
+    GarbageNode(GarbageNode&&) = delete;
+    GarbageNode& operator=(GarbageNode&&) = delete;
 
     /*##############################################################################################
      * Public destructor
@@ -284,7 +278,7 @@ class EpochBasedGC
      * @retval true if the corresponding thread is still running.
      * @retval false otherwise.
      */
-    bool
+    [[nodiscard]] bool
     IsAlive() const
     {
       return garbage_list_.use_count() > 1 || !garbage_list_->Empty();
@@ -293,7 +287,7 @@ class EpochBasedGC
     /**
      * @return the number of remaining garbages.
      */
-    size_t
+    [[nodiscard]] size_t
     Size() const
     {
       return garbage_list_->Size();
@@ -323,7 +317,7 @@ class EpochBasedGC
      *############################################################################################*/
 
     /// a pointer to a next node.
-    GarbageNode* next;
+    GarbageNode* next;  // NOLINT
 
    private:
     /*##############################################################################################
@@ -461,39 +455,39 @@ class EpochBasedGC
    *##############################################################################################*/
 
   /// the duration of garbage collection in micro seconds.
-  const std::chrono::microseconds gc_interval_;
+  const std::chrono::microseconds gc_interval_{static_cast<size_t>(1e5)};
 
   /// the maximum number of cleaner threads
-  const size_t gc_thread_num_;
+  const size_t gc_thread_num_{1};
 
   /// an epoch manager.
-  EpochManager epoch_manager_;
+  EpochManager epoch_manager_{};
 
   /// the head of a linked list of garbage buffers.
-  std::atomic<GarbageNode*> garbage_lists_;
+  std::atomic<GarbageNode*> garbage_lists_{nullptr};
 
   /// a mutex to protect liked garbage lists
-  std::shared_mutex garbage_lists_lock_;
+  std::shared_mutex garbage_lists_lock_{};
 
   /// a thread to run garbage collection.
-  std::thread gc_thread_;
+  std::thread gc_thread_{};
 
   /// worker threads to release garbages
-  std::vector<std::thread> cleaner_threads_;
+  std::vector<std::thread> cleaner_threads_{};
 
   /// an epoch value to protect garbages
-  std::atomic_size_t protected_epoch_;
+  std::atomic_size_t protected_epoch_{0};
 
   /// a converted time point for GC interval
-  std::atomic_size_t sleep_until_;
+  std::atomic_size_t sleep_until_{0};
 
   /// a flag to check whether garbage collection is running.
-  std::atomic_bool gc_is_running_;
+  std::atomic_bool gc_is_running_{false};
 
   /// a thread-local garbage list.
-  inline static thread_local std::shared_ptr<GarbageList_t> garbage_list_ = nullptr;
+  inline static thread_local std::shared_ptr<GarbageList_t> garbage_list_ = nullptr;  // NOLINT
 };
 
 }  // namespace dbgroup::memory
 
-#endif  // MEMORY_MANAGER_MEMORY_EPOCH_BASED_GC_H_
+#endif  // MEMORY_EPOCH_BASED_GC_HPP

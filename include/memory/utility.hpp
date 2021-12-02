@@ -14,8 +14,8 @@
  * limitations under the License.
  */
 
-#ifndef MEMORY_MANAGER_MEMORY_UTILITY_H_
-#define MEMORY_MANAGER_MEMORY_UTILITY_H_
+#ifndef MEMORY_UTILITY_HPP
+#define MEMORY_UTILITY_HPP
 
 #include <cassert>
 #include <cstddef>
@@ -32,4 +32,4 @@ constexpr size_t kGarbageBufferSize = 1024;
 #endif
 }  // namespace dbgroup::memory
 
-#endif  // MEMORY_MANAGER_MEMORY_UTILITY_H_
+#endif  // MEMORY_UTILITY_HPP

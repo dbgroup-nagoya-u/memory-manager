@@ -37,8 +37,8 @@ class EpochGuardFixture : public ::testing::Test
   void
   SetUp() override
   {
-    current_epoch = 0;
-    epoch = std::make_unique<Epoch>(current_epoch);
+    current_epoch_ = 0;
+    epoch_ = std::make_unique<Epoch>(current_epoch_);
   }
 
   void
@@ -50,29 +50,29 @@ class EpochGuardFixture : public ::testing::Test
    * Internal member variables
    *##############################################################################################*/
 
-  std::atomic_size_t current_epoch;
+  std::atomic_size_t current_epoch_{};  // NOLINT
 
-  std::unique_ptr<Epoch> epoch;
+  std::unique_ptr<Epoch> epoch_{};  // NOLINT
 };
 
 /*##################################################################################################
  * Unit test definitions
  *################################################################################################*/
 
-TEST_F(EpochGuardFixture, Construct_CurrentEpochZero_ProtectedEpochCorrectlyUpdated)
+TEST_F(EpochGuardFixture, ConstructorWithCurrentEpochProtectEpoch)
 {
-  const auto guard = EpochGuard{epoch.get()};
+  const auto guard = EpochGuard{epoch_.get()};
 
-  EXPECT_EQ(0, epoch->GetProtectedEpoch());
+  EXPECT_EQ(0, epoch_->GetProtectedEpoch());
 }
 
-TEST_F(EpochGuardFixture, Destruct_CurrentEpochZero_ProtectedEpochCorrectlyUpdated)
+TEST_F(EpochGuardFixture, DestructorWithCurrentEpochUnprotectEpoch)
 {
   {
-    const auto guard = EpochGuard{epoch.get()};
+    const auto guard = EpochGuard{epoch_.get()};
   }
 
-  EXPECT_EQ(kULMax, epoch->GetProtectedEpoch());
+  EXPECT_EQ(kULMax, epoch_->GetProtectedEpoch());
 }
 
 }  // namespace dbgroup::memory::component::test
