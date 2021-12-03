@@ -50,9 +50,9 @@ class EpochGuardFixture : public ::testing::Test
    * Internal member variables
    *##############################################################################################*/
 
-  std::atomic_size_t current_epoch_{};  // NOLINT
+  std::atomic_size_t current_epoch_{};
 
-  std::unique_ptr<Epoch> epoch_{};  // NOLINT
+  std::unique_ptr<Epoch> epoch_{};
 };
 
 /*##################################################################################################

@@ -184,9 +184,9 @@ class EpochBasedGCFixture : public ::testing::Test
    * Internal member variables
    *##############################################################################################*/
 
-  std::unique_ptr<EpochBasedGC_t> gc_{};  // NOLINT
+  std::unique_ptr<EpochBasedGC_t> gc_{};
 
-  std::mutex mtx_{};  // NOLINT
+  std::mutex mtx_{};
 };
 
 /*--------------------------------------------------------------------------------------------------

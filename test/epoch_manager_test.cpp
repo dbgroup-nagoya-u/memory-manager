@@ -56,9 +56,9 @@ class EpochManagerFixture : public ::testing::Test
    * Internal member variables
    *##############################################################################################*/
 
-  std::unique_ptr<EpochManager> epoch_manager_{};  // NOLINT
+  std::unique_ptr<EpochManager> epoch_manager_{};
 
-  std::mutex mtx_{};  // NOLINT
+  std::mutex mtx_{};
 };
 
 /*##################################################################################################

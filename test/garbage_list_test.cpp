@@ -98,11 +98,11 @@ class GarbageListFixture : public ::testing::Test
    * Internal member variables
    *##############################################################################################*/
 
-  std::atomic_size_t current_epoch_{};  // NOLINT
+  std::atomic_size_t current_epoch_{};
 
-  std::shared_ptr<GarbageList_t> garbage_list_{};  // NOLINT
+  std::shared_ptr<GarbageList_t> garbage_list_{};
 
-  std::vector<std::weak_ptr<Target>> references_{};  // NOLINT
+  std::vector<std::weak_ptr<Target>> references_{};
 };
 
 /*##################################################################################################
