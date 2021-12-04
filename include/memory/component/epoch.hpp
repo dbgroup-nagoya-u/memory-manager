@@ -40,10 +40,7 @@ class Epoch
    *
    * @param current_epoch an initial epoch value.
    */
-  constexpr explicit Epoch(const std::atomic_size_t &current_epoch)
-      : current_{current_epoch}, entered_{std::numeric_limits<size_t>::max()}
-  {
-  }
+  constexpr explicit Epoch(const std::atomic_size_t &current_epoch) : current_{current_epoch} {}
 
   Epoch(const Epoch &) = delete;
   Epoch &operator=(const Epoch &) = delete;
@@ -67,19 +64,21 @@ class Epoch
   /**
    * @return size_t a current epoch value.
    */
-  [[nodiscard]] size_t
-  GetCurrentEpoch() const
+  [[nodiscard]] auto
+  GetCurrentEpoch() const  //
+      -> size_t
   {
-    return current_.load(kMORelax);
+    return current_.load(std::memory_order_relaxed);
   }
 
   /**
    * @return size_t a protected epoch value.
    */
-  [[nodiscard]] size_t
-  GetProtectedEpoch() const
+  [[nodiscard]] auto
+  GetProtectedEpoch() const  //
+      -> size_t
   {
-    return entered_.load(kMORelax);
+    return entered_.load(std::memory_order_relaxed);
   }
 
   /*################################################################################################
@@ -93,7 +92,7 @@ class Epoch
   void
   EnterEpoch()
   {
-    entered_.store(GetCurrentEpoch(), kMORelax);
+    entered_.store(GetCurrentEpoch(), std::memory_order_release);
   }
 
   /**
@@ -103,7 +102,7 @@ class Epoch
   void
   LeaveEpoch()
   {
-    entered_.store(std::numeric_limits<size_t>::max(), kMORelax);
+    entered_.store(std::numeric_limits<size_t>::max(), std::memory_order_relaxed);
   }
 
  private:
@@ -115,7 +114,7 @@ class Epoch
   const std::atomic_size_t &current_;
 
   /// a snapshot to denote a protected epoch.
-  std::atomic_size_t entered_;
+  std::atomic_size_t entered_{std::numeric_limits<size_t>::max()};
 };
 
 }  // namespace dbgroup::memory::component

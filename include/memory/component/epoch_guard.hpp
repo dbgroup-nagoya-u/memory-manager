@@ -60,7 +60,7 @@ class EpochGuard
    *##############################################################################################*/
 
   /// a reference to a target epoch.
-  Epoch *epoch_;
+  Epoch *epoch_{nullptr};
 };
 
 }  // namespace dbgroup::memory::component

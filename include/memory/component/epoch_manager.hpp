@@ -40,7 +40,7 @@ class EpochManager
    * @brief Construct a new instance.
    *
    */
-  constexpr EpochManager() : global_epoch_{0}, epochs_{nullptr} {}
+  constexpr EpochManager() = default;
 
   EpochManager(const EpochManager &) = delete;
   EpochManager &operator=(const EpochManager &) = delete;
@@ -57,7 +57,7 @@ class EpochManager
    */
   ~EpochManager()
   {
-    auto *next = epochs_.load(kMORelax);
+    auto *next = epochs_.load(std::memory_order_acquire);
     while (next != nullptr) {
       auto *current = next;
       next = current->next;
@@ -77,38 +77,42 @@ class EpochManager
   void
   ForwardGlobalEpoch()
   {
-    global_epoch_.fetch_add(1, kMORelax);
+    global_epoch_.fetch_add(1, std::memory_order_acq_rel);
   }
 
   /**
    * @return a reference to the global epoch.
    */
-  [[nodiscard]] const std::atomic_size_t &
-  GetGlobalEpochReference() const
+  [[nodiscard]] auto
+  GetGlobalEpochReference() const  //
+      -> const std::atomic_size_t &
   {
     return global_epoch_;
   }
   /**
    * @return a current global epoch value.
    */
-  [[nodiscard]] size_t
-  GetCurrentEpoch() const
+  [[nodiscard]] auto
+  GetCurrentEpoch() const  //
+      -> size_t
   {
-    return global_epoch_.load(kMORelax);
+    return global_epoch_.load(std::memory_order_acquire);
   }
 
   /**
    * @return an epoch to be kept in each thread
    */
-  Epoch *
-  GetEpoch()
+  auto
+  GetEpoch()  //
+      -> Epoch *
   {
     thread_local auto epoch = std::make_shared<Epoch>(global_epoch_);
 
     if (epoch.use_count() <= 1) {
       // insert a new epoch node into the epoch list
-      auto *epoch_node = new EpochNode{epoch, epochs_.load(kMORelax)};
-      while (!epochs_.compare_exchange_weak(epoch_node->next, epoch_node, kMORelax)) {
+      auto *epoch_node = new EpochNode{epoch, epochs_.load(std::memory_order_acquire)};
+      while (!epochs_.compare_exchange_weak(epoch_node->next, epoch_node,  //
+                                            std::memory_order_acq_rel)) {
         // continue until inserting succeeds
       }
     }
@@ -123,13 +127,14 @@ class EpochManager
    *
    * @return a protected epoch value.
    */
-  size_t
-  GetProtectedEpoch()
+  auto
+  GetProtectedEpoch()  //
+      -> size_t
   {
-    auto min_protected_epoch = global_epoch_.load(kMORelax);
+    auto min_protected_epoch = global_epoch_.load(std::memory_order_acquire);
 
     // check the head node of the epoch list
-    auto *previous = epochs_.load(kMORelax);
+    auto *previous = epochs_.load(std::memory_order_acquire);
     if (previous == nullptr) return min_protected_epoch;
 
     if (previous->IsAlive()) {
@@ -213,8 +218,9 @@ class EpochManager
      * @retval true if the registered thread is still active.
      * @retval false if the registered thread has already left.
      */
-    [[nodiscard]] bool
-    IsAlive() const
+    [[nodiscard]] auto
+    IsAlive() const  //
+        -> bool
     {
       return epoch_.use_count() > 1;
     }
@@ -222,8 +228,9 @@ class EpochManager
     /**
      * @return the protected epoch value.
      */
-    [[nodiscard]] size_t
-    GetProtectedEpoch() const
+    [[nodiscard]] auto
+    GetProtectedEpoch() const  //
+        -> size_t
     {
       return epoch_->GetProtectedEpoch();
     }
@@ -233,7 +240,7 @@ class EpochManager
      *############################################################################################*/
 
     /// a pointer to the next node.
-    EpochNode *next;  // NOLINT
+    EpochNode *next{nullptr};  // NOLINT
 
    private:
     /*##############################################################################################
@@ -241,7 +248,7 @@ class EpochManager
      *############################################################################################*/
 
     /// a shared pointer for monitoring the lifetime of a target epoch.
-    const std::shared_ptr<Epoch> epoch_;
+    const std::shared_ptr<Epoch> epoch_{};
   };
 
   /*################################################################################################
@@ -249,10 +256,10 @@ class EpochManager
    *##############################################################################################*/
 
   /// an original epoch counter.
-  std::atomic_size_t global_epoch_;
+  std::atomic_size_t global_epoch_{0};
 
   /// the head pointer of a linked list of epochs.
-  std::atomic<EpochNode *> epochs_;
+  std::atomic<EpochNode *> epochs_{nullptr};
 };
 
 }  // namespace dbgroup::memory::component
