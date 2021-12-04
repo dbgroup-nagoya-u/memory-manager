@@ -42,7 +42,7 @@ class EpochBasedGCFixture : public ::testing::Test
    * Internal constants
    *##############################################################################################*/
 
-  static constexpr size_t kGCInterval = 1000;
+  static constexpr size_t kGCInterval = 100000;
   static constexpr size_t kGarbageNumLarge = 1E5;
   static constexpr size_t kGarbageNumSmall = 10;
 
@@ -143,9 +143,8 @@ class EpochBasedGCFixture : public ::testing::Test
         // embed the page
         const auto pos = id_dist(rand_engine);
         auto *expected = arr.at(pos).load(std::memory_order_acquire);
-        while (arr.at(pos).compare_exchange_weak(expected, target_shared,  //
-                                                 std::memory_order_release,
-                                                 std::memory_order_acquire)) {
+        while (!arr.at(pos).compare_exchange_weak(expected, target_shared,  //
+                                                  std::memory_order_acq_rel)) {
           // continue until embedding succeeds
         }
 
@@ -225,9 +224,7 @@ TEST_F(EpochBasedGCFixture, StartGCWithSingleThreadWOEpochGuardReleaseAllGarbage
 {
   // register garbages to GC
   auto target_weak_ptrs = TestGC(1, kGarbageNumLarge);
-  while (gc_->GetRegisteredGarbageSize() > 0) {
-    // wait all garbages are freed
-  }
+  gc_->StopGC();
 
   // check there is no referece to target pointers
   for (auto &&target_weak : target_weak_ptrs) {
@@ -239,9 +236,7 @@ TEST_F(EpochBasedGCFixture, StartGCWithMultiThreadsWOEpochGuardReleaseAllGarbage
 {
   // register garbages to GC
   auto target_weak_ptrs = TestGC(kThreadNum, kGarbageNumLarge);
-  while (gc_->GetRegisteredGarbageSize() > 0) {
-    // wait all garbages are freed
-  }
+  gc_->StopGC();
 
   // check there is no referece to target pointers
   for (auto &&target_weak : target_weak_ptrs) {
@@ -321,9 +316,7 @@ TEST_F(EpochBasedGCFixture, ReusePagesOfOtherThreadsRunCorrectly)
 {
   // register garbages to GC
   auto target_weak_ptrs = TestReuse(kGarbageNumLarge);
-  while (gc_->GetRegisteredGarbageSize() > 0) {
-    // wait all garbages are freed
-  }
+  gc_->StopGC();
 
   // check there is no referece to target pointers
   for (auto &&target_weak : target_weak_ptrs) {
