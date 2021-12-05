@@ -180,6 +180,88 @@ class EpochBasedGCFixture : public ::testing::Test
   }
 
   /*################################################################################################
+   * Functions for verification
+   *##############################################################################################*/
+
+  void
+  VerifyDestructor(const size_t thread_num)
+  {
+    // register garbages to GC
+    auto target_weak_ptrs = TestGC(thread_num, kGarbageNumLarge);
+
+    // GC deletes all targets during its deconstruction
+    gc_.reset(nullptr);
+
+    // check there is no referece to target pointers
+    for (auto &&target_weak : target_weak_ptrs) {
+      EXPECT_TRUE(target_weak.expired());
+    }
+  }
+
+  void
+  VerifyStopGC(const size_t thread_num)
+  {
+    // register garbages to GC
+    auto target_weak_ptrs = TestGC(thread_num, kGarbageNumLarge);
+
+    // GC deletes all targets
+    gc_->StopGC();
+
+    // check there is no referece to target pointers
+    for (auto &&target_weak : target_weak_ptrs) {
+      EXPECT_TRUE(target_weak.expired());
+    }
+  }
+
+  void
+  VerifyCreateEpochGuard(const size_t thread_num)
+  {
+    // a lambda function to keep an epoch guard
+    auto create_guard = [&](std::promise<Target> p) {
+      const auto guard = gc_->CreateEpochGuard();
+      p.set_value(0);  // set promise to notice
+      const auto lock = std::unique_lock<std::mutex>{mtx_};
+    };
+
+    // create an epoch guard on anther thread
+    std::thread guarder;
+
+    {
+      // create a lock to keep an epoch guard
+      const auto thread_lock = std::unique_lock<std::mutex>{mtx_};
+
+      // create an epoch guard
+      std::promise<Target> p;
+      auto f = p.get_future();
+      guarder = std::thread{create_guard, std::move(p)};
+      f.get();
+
+      // register garbages to GC
+      auto target_weak_ptrs = TestGC(thread_num, kGarbageNumLarge);
+
+      // check target pointers remain
+      for (auto &&target_weak : target_weak_ptrs) {
+        EXPECT_FALSE(target_weak.expired());
+      }
+    }
+
+    guarder.join();
+  }
+
+  void
+  VerifyReusePageIfPossible()
+  {
+    // register garbages to GC
+    auto target_weak_ptrs = TestReuse(kGarbageNumLarge);
+    gc_->StopGC();
+
+    // check there is no referece to target pointers
+    for (auto &&target_weak : target_weak_ptrs) {
+      EXPECT_TRUE(target_weak.expired());
+    }
+  }
+
+  /*################################################################################################
    * Internal member variables
    *##############################################################################################*/
 
@@ -193,135 +275,38 @@ class EpochBasedGCFixture : public ::testing::Test
  *------------------------------------------------------------------------------------------------*/
 
 TEST_F(EpochBasedGCFixture, DestructorWithSingleThreadReleaseAllGarbages)
-{
-  // register garbages to GC
-  auto target_weak_ptrs = TestGC(1, kGarbageNumLarge);
-
-  // GC deletes all targets during its deconstruction
-  gc_.reset(nullptr);
-
-  // check there is no referece to target pointers
-  for (auto &&target_weak : target_weak_ptrs) {
-    EXPECT_TRUE(target_weak.expired());
-  }
+{  //
+  VerifyDestructor(1);
 }
 
 TEST_F(EpochBasedGCFixture, DestructorWithMultiThreadsReleaseAllGarbages)
-{
-  // register garbages to GC
-  auto target_weak_ptrs = TestGC(kThreadNum, kGarbageNumLarge);
-
-  // GC deletes all targets during its deconstruction
-  gc_.reset(nullptr);
-
-  // check there is no referece to target pointers
-  for (auto &&target_weak : target_weak_ptrs) {
-    EXPECT_TRUE(target_weak.expired());
-  }
+{  //
+  VerifyDestructor(kThreadNum);
 }
 
-TEST_F(EpochBasedGCFixture, StartGCWithSingleThreadWOEpochGuardReleaseAllGarbages)
-{
-  // register garbages to GC
-  auto target_weak_ptrs = TestGC(1, kGarbageNumLarge);
-  gc_->StopGC();
-
-  // check there is no referece to target pointers
-  for (auto &&target_weak : target_weak_ptrs) {
-    EXPECT_TRUE(target_weak.expired());
-  }
+TEST_F(EpochBasedGCFixture, StopGCWithSingleThreadReleaseAllGarbages)
+{  //
+  VerifyStopGC(1);
 }
 
-TEST_F(EpochBasedGCFixture, StartGCWithMultiThreadsWOEpochGuardReleaseAllGarbages)
-{
-  // register garbages to GC
-  auto target_weak_ptrs = TestGC(kThreadNum, kGarbageNumLarge);
-  gc_->StopGC();
-
-  // check there is no referece to target pointers
-  for (auto &&target_weak : target_weak_ptrs) {
-    EXPECT_TRUE(target_weak.expired());
-  }
+TEST_F(EpochBasedGCFixture, StopGCWithMultiThreadsReleaseAllGarbages)
+{  //
+  VerifyStopGC(kThreadNum);
 }
 
-TEST_F(EpochBasedGCFixture, StartGCWithSingleThreadWithEpochGuardPreventGarbagesFromDeleeting)
+TEST_F(EpochBasedGCFixture, CreateEpochGuardWithSingleThreadProtectGarbages)
 {
-  // a lambda function to keep an epoch guard
-  auto guard = [&](std::promise<Target> p) {
-    const auto guard = gc_->CreateEpochGuard();
-    p.set_value(0);  // set promise to notice
-    const auto lock = std::unique_lock<std::mutex>{mtx_};
-  };
-
-  // create an epoch guard on anther thread
-  std::thread guarder;
-
-  {
-    // create a lock to keep an epoch guard
-    const auto thread_lock = std::unique_lock<std::mutex>{mtx_};
-
-    // create an epoch guard
-    std::promise<Target> p;
-    auto f = p.get_future();
-    guarder = std::thread{guard, std::move(p)};
-    f.get();
-
-    // register garbages to GC
-    auto target_weak_ptrs = TestGC(1, kGarbageNumLarge);
-
-    // check target pointers remain
-    for (auto &&target_weak : target_weak_ptrs) {
-      EXPECT_FALSE(target_weak.expired());
-    }
-  }
-
-  guarder.join();
+  VerifyCreateEpochGuard(1);
 }
 
-TEST_F(EpochBasedGCFixture, StartGCWithMultiThreadsWithEpochGuardPreventGarbagesFromDeleeting)
+TEST_F(EpochBasedGCFixture, CreateEpochGuardWithMultiThreadsProtectGarbages)
 {
-  // a lambda function to keep an epoch guard
-  auto guard = [&](std::promise<Target> p) {
-    const auto guard = gc_->CreateEpochGuard();
-    p.set_value(0);  // set promise to notice
-    const auto lock = std::unique_lock<std::mutex>{mtx_};
-  };
-
-  // create an epoch guard on anther thread
-  std::thread guarder;
-
-  {
-    // create a lock to keep an epoch guard
-    const auto thread_lock = std::unique_lock<std::mutex>{mtx_};
-
-    // create an epoch guard
-    std::promise<Target> p;
-    auto f = p.get_future();
-    guarder = std::thread{guard, std::move(p)};
-    f.get();
-
-    // register garbages to GC
-    auto target_weak_ptrs = TestGC(kThreadNum, kGarbageNumLarge);
-
-    // check target pointers remain
-    for (auto &&target_weak : target_weak_ptrs) {
-      EXPECT_FALSE(target_weak.expired());
-    }
-  }
-
-  guarder.join();
+  VerifyCreateEpochGuard(kThreadNum);
 }
 
-TEST_F(EpochBasedGCFixture, ReusePagesWithEachOtherReleaseOnlyOnce)
-{
-  // register garbages to GC
-  auto target_weak_ptrs = TestReuse(kGarbageNumLarge);
-  gc_->StopGC();
-
-  // check there is no referece to target pointers
-  for (auto &&target_weak : target_weak_ptrs) {
-    EXPECT_TRUE(target_weak.expired());
-  }
+TEST_F(EpochBasedGCFixture, ReusePageIfPossibleWithMultiThreadsReleasePageOnlyOnce)
+{  //
+  VerifyReusePageIfPossible();
 }
 
 }  // namespace dbgroup::memory::test
