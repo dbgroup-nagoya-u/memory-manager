@@ -378,11 +378,12 @@ class EpochBasedGC
    * @brief Remove expired nodes from the internal list.
    *
    */
+  template <class Head, class... Tails>
   void
   RemoveExpiredNodes()
   {
     // if garbage-list nodes are variable, do nothing
-    auto cur_node = garbage_lists_.load(std::memory_order_acquire);
+    auto cur_node = GetGarbageNodeHead<Head, GCTargets...>().load(std::memory_order_acquire);
     if (cur_node == nullptr) return;
 
     // create lock to prevent cleaner threads from running
@@ -402,39 +403,61 @@ class EpochBasedGC
         }
       }
     }
-  }
 
-  /**
-   * @brief Release/destruct registered garbages if possible.
-   *
-   * @param protected_epoch a protected epoch value.
-   */
-  void
-  ClearGarbages()
-  {
-    const auto protected_epoch = protected_epoch_.load(std::memory_order_acquire);
-    const std::shared_lock guard{garbage_lists_lock_};
-
-    auto cur_node = garbage_lists_.load(std::memory_order_acquire);
-    while (cur_node != nullptr) {
-      cur_node->ClearGarbages(protected_epoch);
-      cur_node = cur_node->next;
+    if constexpr (sizeof...(Tails) > 0) {
+      RemoveExpiredNodes<Tails...>();
     }
   }
 
   /**
-   * @brief Delete all the garbages.
+   * @brief Remove expired nodes from the internal list.
    *
    */
+  template <class Head, class... Tails>
+  void
+  RemoveAllNodes()
+  {
+    auto &head_addr = GetGarbageNodeHead<Head, GCTargets...>();
+    auto cur_node = head_addr.load(std::memory_order_acquire);
+    while (cur_node != nullptr) {
+      auto *prev_node = cur_node;
+      cur_node = cur_node->next;
+      delete prev_node;
+    }
+    head_addr.store(nullptr, std::memory_order::memory_order_release);
+
+    if constexpr (sizeof...(Tails) > 0) {
+      RemoveAllNodes<Tails...>();
+    }
+  }
+
+  template <class Head, class... Tails>
+  void
+  ClearGarbages(const size_t protected_epoch)
+  {
+    auto cur_node = GetGarbageNodeHead<Head, GCTargets...>().load(std::memory_order_acquire);
+    while (cur_node != nullptr) {
+      cur_node->ClearGarbages(protected_epoch);
+      cur_node = cur_node->next;
+    }
+
+    if constexpr (sizeof...(Tails) > 0) {
+      ClearGarbages<Tails...>(protected_epoch);
+    }
+  }
+
+  template <class Head, class... Tails>
   void
   DestroyGarbages()
   {
-    const std::shared_lock guard{garbage_lists_lock_};
-
-    auto cur_node = garbage_lists_.load(std::memory_order_acquire);
+    auto cur_node = GetGarbageNodeHead<Head, GCTargets...>().load(std::memory_order_acquire);
     while (cur_node != nullptr) {
       cur_node->DestroyGarbages();
       cur_node = cur_node->next;
+    }
+
+    if constexpr (sizeof...(Tails) > 0) {
+      DestroyGarbages<Tails...>();
     }
   }
 
