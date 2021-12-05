@@ -401,6 +401,7 @@ class GarbageList
         delete buffer->garbages_[idx].GetGarbage();
       }
       buffer->begin_idx_.store(idx, std::memory_order_release);
+      buffer->destructed_idx_.store(idx, std::memory_order_release);
 
       if (idx < kGarbageBufferSize) {
         // the buffer has unreleased garbages
