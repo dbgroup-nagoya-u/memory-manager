@@ -38,7 +38,7 @@ namespace dbgroup::memory
  *
  * @tparam T a target class of garbage collection.
  */
-template <class T>
+template <class... GCTargets>
 class EpochBasedGC
 {
   /*################################################################################################
@@ -48,8 +48,10 @@ class EpochBasedGC
   using Epoch = component::Epoch;
   using EpochGuard = component::EpochGuard;
   using EpochManager = component::EpochManager;
-  using GarbageList_t = component::GarbageList<T>;
   using Clock_t = ::std::chrono::high_resolution_clock;
+
+  template <class T>
+  using GarbageList = component::GarbageList<T>;
 
  public:
   /*################################################################################################
@@ -93,35 +95,7 @@ class EpochBasedGC
     StopGC();
 
     // delete all the registered nodes
-    auto *cur_node = garbage_lists_.load(std::memory_order_acquire);
-    while (cur_node != nullptr) {
-      auto *prev_node = cur_node;
-      cur_node = cur_node->next;
-      delete prev_node;
-    }
-  }
-
-  /*################################################################################################
-   * Public getters/setters
-   *##############################################################################################*/
-
-  /**
-   * @return the total number of registered garbages.
-   */
-  [[nodiscard]] auto
-  GetRegisteredGarbageSize()  //
-      -> size_t
-  {
-    const std::shared_lock guard{garbage_lists_lock_};
-
-    auto garbage_node = garbage_lists_.load(std::memory_order_acquire);
-    size_t sum = 0;
-    while (garbage_node != nullptr) {
-      sum += garbage_node->Size();
-      garbage_node = garbage_node->next;
-    }
-
-    return sum;
+    RemoveAllNodes<GCTargets...>();
   }
 
   /*################################################################################################
@@ -145,22 +119,23 @@ class EpochBasedGC
    *
    * @param garbage_ptr a pointer to a target garbage.
    */
+  template <class T>
   void
   AddGarbage(const T *garbage_ptr)
   {
-    if (!garbage_list_) {
-      garbage_list_ = std::make_shared<GarbageList_t>(epoch_manager_.GetGlobalEpochReference());
+    auto &garbage_list = GetThreadLocalGarbageList<T, GCTargets...>();
 
+    if (garbage_list.use_count() <= 1) {
       // register this garbage list
-      auto garbage_node =
-          new GarbageNode{garbage_lists_.load(std::memory_order_acquire), garbage_list_};
-      while (!garbage_lists_.compare_exchange_weak(garbage_node->next, garbage_node,
-                                                   std::memory_order_acq_rel)) {
+      auto &head = GetGarbageNodeHead<T, GCTargets...>();
+      auto cur_head = head.load(std::memory_order_acquire);
+      auto new_node = new GarbageNode<T>{cur_head, garbage_list};
+      while (!head.compare_exchange_weak(new_node->next, new_node, std::memory_order_acq_rel)) {
         // continue until inserting succeeds
       }
     }
 
-    garbage_list_->AddGarbage(const_cast<T *>(garbage_ptr));  // NOLINT
+    garbage_list->AddGarbage(const_cast<T *>(garbage_ptr));  // NOLINT
   }
 
   /**
@@ -169,12 +144,15 @@ class EpochBasedGC
    * @retval nullptr if there are no reusable pages.
    * @retval a memory page.
    */
+  template <class T>
   auto
   GetPageIfPossible()  //
       -> void *
   {
-    if (!garbage_list_) return nullptr;
-    return garbage_list_->GetPageIfPossible();
+    auto &garbage_list = GetThreadLocalGarbageList<T, GCTargets...>();
+
+    if (garbage_list.use_count() <= 1) return nullptr;
+    return garbage_list->GetPageIfPossible();
   }
 
   /*################################################################################################
@@ -226,6 +204,7 @@ class EpochBasedGC
    * @brief A class of nodes for composing a linked list of gabage lists in each thread.
    *
    */
+  template <class T>
   class GarbageNode
   {
    public:
@@ -242,7 +221,7 @@ class EpochBasedGC
      */
     GarbageNode(  //
         GarbageNode *next,
-        std::shared_ptr<GarbageList_t> garbage_list)
+        std::shared_ptr<GarbageList<T>> garbage_list)
         : next{next}, garbage_list_{std::move(garbage_list)}
     {
     }
@@ -335,7 +314,7 @@ class EpochBasedGC
      *############################################################################################*/
 
     /// a pointer to a target garbage list.
-    std::shared_ptr<GarbageList_t> garbage_list_{};
+    std::shared_ptr<GarbageList<T>> garbage_list_{};
 
     /// a mutex for preventing multi-threads modify the same node concurrently
     std::mutex mtx_{};
@@ -469,6 +448,24 @@ class EpochBasedGC
   void
   RunGC()
   {
+    auto cleaner = [&]() {
+      while (gc_is_running_.load(std::memory_order_acquire)) {
+        {  // create a lock for preventing node expiration
+          const std::shared_lock guard{garbage_lists_lock_};
+          const auto protected_epoch = protected_epoch_.load(std::memory_order_acquire);
+          ClearGarbages<GCTargets...>(protected_epoch);
+        }
+
+        // wait until a next epoch
+        const auto sleep_time = LongToTimePoint(sleep_until_.load(std::memory_order_acquire));
+        std::this_thread::sleep_until(sleep_time);
+      }
+
+      // release all garbages before destruction
+      const std::shared_lock guard{garbage_lists_lock_};
+      DestroyGarbages<GCTargets...>();
+    };
+
     Clock_t::time_point sleep_time;
 
     {
@@ -477,14 +474,7 @@ class EpochBasedGC
 
       // create cleaner threads
       for (size_t i = 0; i < gc_thread_num_; ++i) {
-        cleaner_threads_.emplace_back([&] {
-          while (gc_is_running_.load(std::memory_order_acquire)) {
-            ClearGarbages();
-            std::this_thread::sleep_until(
-                LongToTimePoint(sleep_until_.load(std::memory_order_acquire)));
-          }
-          DestroyGarbages();
-        });
+        cleaner_threads_.emplace_back(cleaner);
       }
 
       // set sleep-interval
@@ -500,7 +490,7 @@ class EpochBasedGC
 
       epoch_manager_.ForwardGlobalEpoch();
       protected_epoch_.store(epoch_manager_.GetProtectedEpoch(), std::memory_order_release);
-      RemoveExpiredNodes();
+      RemoveExpiredNodes<GCTargets...>();
     }
 
     // wait all the cleaner threads return
@@ -543,9 +533,6 @@ class EpochBasedGC
   /// an epoch manager.
   EpochManager epoch_manager_{};
 
-  /// the head of a linked list of garbage buffers.
-  std::atomic<GarbageNode *> garbage_lists_{nullptr};
-
   /// a mutex to protect liked garbage lists
   std::shared_mutex garbage_lists_lock_{};
 
@@ -563,9 +550,6 @@ class EpochBasedGC
 
   /// a flag to check whether garbage collection is running.
   std::atomic_bool gc_is_running_{false};
-
-  /// a thread-local garbage list.
-  inline static thread_local std::shared_ptr<GarbageList_t> garbage_list_{};  // NOLINT
 };
 
 }  // namespace dbgroup::memory
