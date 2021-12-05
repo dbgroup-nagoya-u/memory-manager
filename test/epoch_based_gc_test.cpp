@@ -43,7 +43,7 @@ class EpochBasedGCFixture : public ::testing::Test
    *##############################################################################################*/
 
   static constexpr size_t kGCInterval = 100000;
-  static constexpr size_t kGarbageNumLarge = 1E5;
+  static constexpr size_t kGarbageNumLarge = 1E6;
   static constexpr size_t kGarbageNumSmall = 10;
 
   /*################################################################################################
@@ -73,7 +73,7 @@ class EpochBasedGCFixture : public ::testing::Test
     GarbageRef target_weak_ptrs;
     for (size_t loop = 0; loop < garbage_num; ++loop) {
       auto *target = new Target{loop};
-      auto *page = gc_->GetPageIfPossible();
+      auto *page = gc_->GetPageIfPossible<std::shared_ptr<Target>>();
       std::shared_ptr<Target> *target_shared =  //
           (page == nullptr) ? new std::shared_ptr<Target>{target}
                             : new (page) std::shared_ptr<Target>{target};
@@ -135,7 +135,7 @@ class EpochBasedGCFixture : public ::testing::Test
 
         // prepare a page for embedding
         auto *target = new Target{loop};
-        auto *page = gc_->GetPageIfPossible();
+        auto *page = gc_->GetPageIfPossible<std::shared_ptr<Target>>();
         auto *target_shared =  //
             (page == nullptr) ? new std::shared_ptr<Target>{target}
                               : new (page) std::shared_ptr<Target>{target};
