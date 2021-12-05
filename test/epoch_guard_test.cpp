@@ -38,7 +38,8 @@ class EpochGuardFixture : public ::testing::Test
   SetUp() override
   {
     current_epoch_ = 0;
-    epoch_ = std::make_unique<Epoch>(current_epoch_);
+    epoch_ = std::make_unique<Epoch>();
+    epoch_->SetGrobalEpoch(&current_epoch_);
   }
 
   void
@@ -52,7 +53,7 @@ class EpochGuardFixture : public ::testing::Test
 
   std::atomic_size_t current_epoch_{};
 
-  std::unique_ptr<Epoch> epoch_{};
+  std::unique_ptr<Epoch> epoch_{nullptr};
 };
 
 /*##################################################################################################

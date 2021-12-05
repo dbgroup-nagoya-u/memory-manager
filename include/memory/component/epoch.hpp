@@ -36,11 +36,10 @@ class Epoch
    *##############################################################################################*/
 
   /**
-   * @brief Construct a new instance with an initial epoch.
+   * @brief Construct a new instance.
    *
-   * @param current_epoch an initial epoch value.
    */
-  constexpr explicit Epoch(const std::atomic_size_t &current_epoch) : current_{current_epoch} {}
+  constexpr Epoch() = default;
 
   Epoch(const Epoch &) = delete;
   Epoch &operator=(const Epoch &) = delete;
@@ -68,7 +67,7 @@ class Epoch
   GetCurrentEpoch() const  //
       -> size_t
   {
-    return current_.load(std::memory_order_relaxed);
+    return current_->load(std::memory_order_relaxed);
   }
 
   /**
@@ -79,6 +78,15 @@ class Epoch
       -> size_t
   {
     return entered_.load(std::memory_order_relaxed);
+  }
+
+  /**
+   * @param global_epoch a pointer to the global epoch.
+   */
+  void
+  SetGrobalEpoch(std::atomic_size_t *global_epoch)
+  {
+    current_ = global_epoch;
   }
 
   /*################################################################################################
@@ -111,7 +119,7 @@ class Epoch
    *##############################################################################################*/
 
   /// a current epoch.
-  const std::atomic_size_t &current_;
+  std::atomic_size_t *current_{nullptr};
 
   /// a snapshot to denote a protected epoch.
   std::atomic_size_t entered_{std::numeric_limits<size_t>::max()};
