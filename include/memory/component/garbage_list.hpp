@@ -379,7 +379,6 @@ class GarbageList
      * @param protected_epoch a protected epoch.
      * @return GarbageBuffer* a head of garbage buffers.
      */
-
     static auto
     Clear(  //
         GarbageBuffer* buffer,
@@ -398,7 +397,6 @@ class GarbageList
       for (; idx < end_idx; ++idx) {
         if (buffer->garbages_[idx].GetEpoch() >= protected_epoch) break;
 
-        // only call destructor to reuse pages
         delete buffer->garbages_[idx].GetGarbage();
       }
       buffer->begin_idx_.store(idx, std::memory_order_release);
@@ -413,6 +411,7 @@ class GarbageList
       while (next == nullptr) {  // if the list does not have a next buffer, wait insertion
         next = buffer->GetNext();
       }
+      delete buffer;
 
       return GarbageBuffer::Clear(next, protected_epoch);
     }

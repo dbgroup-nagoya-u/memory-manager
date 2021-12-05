@@ -312,7 +312,7 @@ TEST_F(EpochBasedGCFixture, StartGCWithMultiThreadsWithEpochGuardPreventGarbages
   guarder.join();
 }
 
-TEST_F(EpochBasedGCFixture, ReusePagesOfOtherThreadsRunCorrectly)
+TEST_F(EpochBasedGCFixture, ReusePagesWithEachOtherReleaseOnlyOnce)
 {
   // register garbages to GC
   auto target_weak_ptrs = TestReuse(kGarbageNumLarge);
