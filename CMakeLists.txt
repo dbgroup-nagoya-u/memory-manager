@@ -26,13 +26,6 @@ add_library(memory_manager::memory_manager ALIAS memory_manager)
 target_compile_features(memory_manager INTERFACE
   "cxx_std_17"
 )
-target_compile_options(memory_manager INTERFACE
-  -Wall
-  -Wextra
-  $<$<STREQUAL:${CMAKE_BUILD_TYPE},"Release">:"-O2 -march=native">
-  $<$<STREQUAL:${CMAKE_BUILD_TYPE},"RelWithDebInfo">:"-g3 -Og -pg">
-  $<$<STREQUAL:${CMAKE_BUILD_TYPE},"Debug">:"-g3 -O0 -pg">
-)
 target_include_directories(memory_manager INTERFACE
   "${MEMORY_MANAGER_SOURCE_DIR}/include"
 )

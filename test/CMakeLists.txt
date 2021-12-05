@@ -45,9 +45,6 @@ function(ADD_MEMORY_MANAGER_TEST MEMORY_MANAGER_TEST_TARGET)
     $<$<STREQUAL:${CMAKE_BUILD_TYPE},"RelWithDebInfo">:"-g3 -Og -pg">
     $<$<STREQUAL:${CMAKE_BUILD_TYPE},"Debug">:"-g3 -O0 -pg">
   )
-  target_include_directories(${MEMORY_MANAGER_TEST_TARGET} PRIVATE
-    "${MEMORY_MANAGER_SOURCE_DIR}/include"
-  )
   target_link_libraries(${MEMORY_MANAGER_TEST_TARGET} PRIVATE
     memory_manager::memory_manager
     gtest_main

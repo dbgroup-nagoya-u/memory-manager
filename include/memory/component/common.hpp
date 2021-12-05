@@ -19,13 +19,6 @@
 
 #include <atomic>
 
-#include "../utility.hpp"
-
-namespace dbgroup::memory::component
-{
-/// abbreviation of std::memory_order_relaxed
-constexpr std::memory_order kMORelax = std::memory_order_relaxed;
-
-}  // namespace dbgroup::memory::component
+#include "memory/utility.hpp"
 
 #endif  // MEMORY_COMPONENT_COMMON_HPP

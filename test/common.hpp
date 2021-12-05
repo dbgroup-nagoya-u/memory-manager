@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-#ifndef TEST_COMMON_HPP  // NOLINT
+#ifndef TEST_COMMON_HPP
 #define TEST_COMMON_HPP
 
 #include <limits>

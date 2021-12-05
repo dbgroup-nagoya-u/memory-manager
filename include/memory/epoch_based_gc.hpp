@@ -91,23 +91,13 @@ class EpochBasedGC
   {
     // stop garbage collection
     StopGC();
-    epoch_manager_.ForwardGlobalEpoch();
 
-    // wait until all epoch guards are released
-    const auto current_epoch = epoch_manager_.GetCurrentEpoch();
-    while (epoch_manager_.GetProtectedEpoch() < current_epoch || !cleaner_threads_.empty()) {
-      // wait for garbages to be out of scope
-      std::this_thread::sleep_for(gc_interval_);
-    }
-
-    // delete all garbages
-    GarbageNode* cur_node{};
-    auto* next_node = garbage_lists_.load();
-    while (next_node != nullptr) {
-      cur_node = next_node;
-      next_node = cur_node->next;
-      cur_node->ClearGarbages(std::numeric_limits<size_t>::max());
-      delete cur_node;
+    // delete all the registered nodes
+    auto* cur_node = garbage_lists_.load(std::memory_order_acquire);
+    while (cur_node != nullptr) {
+      auto* prev_node = cur_node;
+      cur_node = cur_node->next;
+      delete prev_node;
     }
   }
 
@@ -118,10 +108,13 @@ class EpochBasedGC
   /**
    * @return the total number of registered garbages.
    */
-  [[nodiscard]] size_t
-  GetRegisteredGarbageSize() const
+  [[nodiscard]] auto
+  GetRegisteredGarbageSize()  //
+      -> size_t
   {
-    auto garbage_node = garbage_lists_.load(kMORelax);
+    const std::shared_lock guard{garbage_lists_lock_};
+
+    auto garbage_node = garbage_lists_.load(std::memory_order_acquire);
     size_t sum = 0;
     while (garbage_node != nullptr) {
       sum += garbage_node->Size();
@@ -140,8 +133,9 @@ class EpochBasedGC
    *
    * @return EpochGuard a created epoch guard.
    */
-  EpochGuard
-  CreateEpochGuard()
+  auto
+  CreateEpochGuard()  //
+      -> EpochGuard
   {
     return EpochGuard{epoch_manager_.GetEpoch()};
   }
@@ -158,13 +152,15 @@ class EpochBasedGC
       garbage_list_ = std::make_shared<GarbageList_t>(epoch_manager_.GetGlobalEpochReference());
 
       // register this garbage list
-      auto garbage_node = new GarbageNode{garbage_lists_.load(kMORelax), garbage_list_};
-      while (!garbage_lists_.compare_exchange_weak(garbage_node->next, garbage_node, kMORelax)) {
+      auto garbage_node =
+          new GarbageNode{garbage_lists_.load(std::memory_order_acquire), garbage_list_};
+      while (!garbage_lists_.compare_exchange_weak(garbage_node->next, garbage_node,
+                                                   std::memory_order_acq_rel)) {
         // continue until inserting succeeds
       }
     }
 
-    garbage_list_->AddGarbage(garbage_ptr);
+    garbage_list_->AddGarbage(const_cast<T*>(garbage_ptr));  // NOLINT
   }
 
   /**
@@ -173,8 +169,9 @@ class EpochBasedGC
    * @retval nullptr if there are no reusable pages.
    * @retval a memory page.
    */
-  void*
-  GetPageIfPossible()
+  auto
+  GetPageIfPossible()  //
+      -> void*
   {
     if (!garbage_list_) return nullptr;
     return garbage_list_->GetPageIfPossible();
@@ -190,13 +187,14 @@ class EpochBasedGC
    * @retval true if garbage collection has started.
    * @retval false if garbage collection is already running.
    */
-  bool
-  StartGC()
+  auto
+  StartGC()  //
+      -> bool
   {
-    if (gc_is_running_.load(kMORelax)) {
+    if (gc_is_running_.load(std::memory_order_acquire)) {
       return false;
     }
-    gc_is_running_.store(true, kMORelax);
+    gc_is_running_.store(true, std::memory_order_release);
     gc_thread_ = std::thread{&EpochBasedGC::RunGC, this};
     return true;
   }
@@ -207,27 +205,21 @@ class EpochBasedGC
    * @retval true if garbage collection has stopped.
    * @retval false if garbage collection is not running.
    */
-  bool
-  StopGC()
+  auto
+  StopGC()  //
+      -> bool
   {
-    if (!gc_is_running_.load(kMORelax)) {
+    if (!gc_is_running_.load(std::memory_order_acquire)) {
       return false;
     }
-    gc_is_running_.store(false, kMORelax);
+    gc_is_running_.store(false, std::memory_order_release);
     gc_thread_.join();
     return true;
   }
 
  private:
   /*################################################################################################
-   * Internal constants
-   *##############################################################################################*/
-
-  /// abbreviation of std::memory_order_relaxed
-  static constexpr auto kMORelax = component::kMORelax;
-
-  /*################################################################################################
-   * Internal structs
+   * Internal classes
    *##############################################################################################*/
 
   /**
@@ -251,7 +243,7 @@ class EpochBasedGC
     GarbageNode(  //
         GarbageNode* next,
         std::shared_ptr<GarbageList_t> garbage_list)
-        : next{next}, garbage_list_{std::move(garbage_list)}, in_progress_{false}
+        : next{next}, garbage_list_{std::move(garbage_list)}
     {
     }
 
@@ -275,11 +267,12 @@ class EpochBasedGC
      *############################################################################################*/
 
     /**
-     * @retval true if the corresponding thread is still running.
+     * @retval true if any thread may access this garbage list.
      * @retval false otherwise.
      */
-    [[nodiscard]] bool
-    IsAlive() const
+    [[nodiscard]] auto
+    IsAlive() const  //
+        -> bool
     {
       return garbage_list_.use_count() > 1 || !garbage_list_->Empty();
     }
@@ -287,8 +280,9 @@ class EpochBasedGC
     /**
      * @return the number of remaining garbages.
      */
-    [[nodiscard]] size_t
-    Size() const
+    [[nodiscard]] auto
+    Size() const  //
+        -> size_t
     {
       return garbage_list_->Size();
     }
@@ -305,10 +299,26 @@ class EpochBasedGC
     void
     ClearGarbages(const size_t protected_epoch)
     {
-      auto in_progress = in_progress_.load(kMORelax);
-      if (!in_progress && in_progress_.compare_exchange_strong(in_progress, true, kMORelax)) {
-        garbage_list_->ClearGarbages(protected_epoch);
-        in_progress_.store(false, kMORelax);
+      std::unique_lock guard{mtx_, std::defer_lock};
+      if (guard.try_lock()) {
+        if (garbage_list_.use_count() > 1) {
+          garbage_list_->DestructGarbages(protected_epoch);
+        } else {
+          garbage_list_->ClearGarbages(protected_epoch);
+        }
+      }
+    }
+
+    /**
+     * @brief Delete all the garbages.
+     *
+     */
+    void
+    DestroyGarbages()
+    {
+      std::unique_lock guard{mtx_, std::defer_lock};
+      if (guard.try_lock()) {
+        garbage_list_->ClearGarbages(std::numeric_limits<size_t>::max());
       }
     }
 
@@ -317,7 +327,7 @@ class EpochBasedGC
      *############################################################################################*/
 
     /// a pointer to a next node.
-    GarbageNode* next;  // NOLINT
+    GarbageNode* next{nullptr};  // NOLINT
 
    private:
     /*##############################################################################################
@@ -325,10 +335,10 @@ class EpochBasedGC
      *############################################################################################*/
 
     /// a pointer to a target garbage list.
-    std::shared_ptr<GarbageList_t> garbage_list_;
+    std::shared_ptr<GarbageList_t> garbage_list_{};
 
-    /// a flag to indicate that a certain thread modifies this node.
-    std::atomic_bool in_progress_;
+    /// a mutex for preventing multi-threads modify the same node concurrently
+    std::mutex mtx_{};
   };
 
   /*################################################################################################
@@ -343,7 +353,7 @@ class EpochBasedGC
   RemoveExpiredNodes()
   {
     // if garbage-list nodes are variable, do nothing
-    auto cur_node = garbage_lists_.load(kMORelax);
+    auto cur_node = garbage_lists_.load(std::memory_order_acquire);
     if (cur_node == nullptr) return;
 
     // create lock to prevent cleaner threads from running
@@ -366,19 +376,35 @@ class EpochBasedGC
   }
 
   /**
-   * @brief Delete registered garbages if possible.
+   * @brief Release/destruct registered garbages if possible.
    *
    * @param protected_epoch a protected epoch value.
    */
   void
-  DeleteGarbages()
+  ClearGarbages()
   {
-    const auto protected_epoch = protected_epoch_.load(kMORelax);
+    const auto protected_epoch = protected_epoch_.load(std::memory_order_acquire);
     const std::shared_lock guard{garbage_lists_lock_};
 
-    auto cur_node = garbage_lists_.load(kMORelax);
+    auto cur_node = garbage_lists_.load(std::memory_order_acquire);
     while (cur_node != nullptr) {
       cur_node->ClearGarbages(protected_epoch);
+      cur_node = cur_node->next;
+    }
+  }
+
+  /**
+   * @brief Delete all the garbages.
+   *
+   */
+  void
+  DestroyGarbages()
+  {
+    const std::shared_lock guard{garbage_lists_lock_};
+
+    auto cur_node = garbage_lists_.load(std::memory_order_acquire);
+    while (cur_node != nullptr) {
+      cur_node->DestroyGarbages();
       cur_node = cur_node->next;
     }
   }
@@ -400,26 +426,28 @@ class EpochBasedGC
       // create cleaner threads
       for (size_t i = 0; i < gc_thread_num_; ++i) {
         cleaner_threads_.emplace_back([&] {
-          while (gc_is_running_.load(kMORelax)) {
-            DeleteGarbages();
-            std::this_thread::sleep_until(LongToTimePoint(sleep_until_.load(kMORelax)));
+          while (gc_is_running_.load(std::memory_order_acquire)) {
+            ClearGarbages();
+            std::this_thread::sleep_until(
+                LongToTimePoint(sleep_until_.load(std::memory_order_acquire)));
           }
+          DestroyGarbages();
         });
       }
 
       // set sleep-interval
       sleep_time = Clock_t::now() + gc_interval_;
-      sleep_until_.store(TimePointToLong(sleep_time), kMORelax);
+      sleep_until_.store(TimePointToLong(sleep_time), std::memory_order_release);
     }
 
     // manage epochs and sleep-interval
-    while (gc_is_running_.load(kMORelax)) {
+    while (gc_is_running_.load(std::memory_order_acquire)) {
       std::this_thread::sleep_until(sleep_time);
       sleep_time += gc_interval_;
-      sleep_until_.store(TimePointToLong(sleep_time), kMORelax);
+      sleep_until_.store(TimePointToLong(sleep_time), std::memory_order_release);
 
       epoch_manager_.ForwardGlobalEpoch();
-      protected_epoch_.store(epoch_manager_.GetProtectedEpoch(), kMORelax);
+      protected_epoch_.store(epoch_manager_.GetProtectedEpoch(), std::memory_order_release);
       RemoveExpiredNodes();
     }
 
@@ -485,7 +513,7 @@ class EpochBasedGC
   std::atomic_bool gc_is_running_{false};
 
   /// a thread-local garbage list.
-  inline static thread_local std::shared_ptr<GarbageList_t> garbage_list_ = nullptr;  // NOLINT
+  inline static thread_local std::shared_ptr<GarbageList_t> garbage_list_{};  // NOLINT
 };
 
 }  // namespace dbgroup::memory

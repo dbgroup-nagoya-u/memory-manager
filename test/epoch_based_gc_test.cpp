@@ -19,6 +19,7 @@
 #include <future>
 #include <memory>
 #include <mutex>
+#include <random>
 #include <thread>
 #include <vector>
 
@@ -41,7 +42,7 @@ class EpochBasedGCFixture : public ::testing::Test
    * Internal constants
    *##############################################################################################*/
 
-  static constexpr size_t kGCInterval = 1000;
+  static constexpr size_t kGCInterval = 100000;
   static constexpr size_t kGarbageNumLarge = 1E5;
   static constexpr size_t kGarbageNumSmall = 10;
 
@@ -113,13 +114,78 @@ class EpochBasedGCFixture : public ::testing::Test
     return target_weak_ptrs;
   }
 
+  GarbageRef
+  TestReuse(const size_t garbage_num)
+  {
+    // an array for embedding reserved pages
+    std::array<std::atomic<std::shared_ptr<Target> *>, kThreadNum> arr{};
+    for (auto &&page : arr) {
+      page.store(nullptr, std::memory_order_release);
+    }
+
+    // a lambda function for embedding pages in each thread
+    auto f = [&](std::promise<GarbageRef> p) {
+      // prepare a random-value engine
+      std::mt19937_64 rand_engine(std::random_device{}());
+      std::uniform_int_distribution<size_t> id_dist{0, arr.size() - 1};
+
+      GarbageRef target_weak_ptrs;
+      for (size_t loop = 0; loop < garbage_num; ++loop) {
+        const auto guard = gc_->CreateEpochGuard();
+
+        // prepare a page for embedding
+        auto *target = new Target{loop};
+        auto *page = gc_->GetPageIfPossible();
+        auto *target_shared =  //
+            (page == nullptr) ? new std::shared_ptr<Target>{target}
+                              : new (page) std::shared_ptr<Target>{target};
+
+        // embed the page
+        const auto pos = id_dist(rand_engine);
+        auto *expected = arr.at(pos).load(std::memory_order_acquire);
+        while (!arr.at(pos).compare_exchange_weak(expected, target_shared,  //
+                                                  std::memory_order_acq_rel)) {
+          // continue until embedding succeeds
+        }
+
+        target_weak_ptrs.emplace_back(*target_shared);
+        if (expected != nullptr) gc_->AddGarbage(expected);
+      }
+
+      p.set_value(std::move(target_weak_ptrs));
+    };
+
+    // run a reuse test with multi-threads
+    std::vector<std::future<GarbageRef>> futures;
+    for (size_t i = 0; i < kThreadNum; ++i) {
+      std::promise<GarbageRef> p;
+      futures.emplace_back(p.get_future());
+      std::thread{f, std::move(p)}.detach();
+    }
+
+    // gather weak pointers of GC targets
+    GarbageRef target_weak_ptrs;
+    for (auto &&future : futures) {
+      auto weak_ptrs = future.get();
+      target_weak_ptrs.insert(target_weak_ptrs.end(), weak_ptrs.begin(), weak_ptrs.end());
+    }
+
+    // delete remaining instances
+    for (auto &&page : arr) {
+      auto *shared_p = page.load(std::memory_order_acquire);
+      delete shared_p;
+    }
+
+    return target_weak_ptrs;
+  }
+
   /*################################################################################################
    * Internal member variables
    *##############################################################################################*/
 
-  std::unique_ptr<EpochBasedGC_t> gc_{};  // NOLINT
+  std::unique_ptr<EpochBasedGC_t> gc_{};
 
-  std::mutex mtx_{};  // NOLINT
+  std::mutex mtx_{};
 };
 
 /*--------------------------------------------------------------------------------------------------
@@ -158,9 +224,7 @@ TEST_F(EpochBasedGCFixture, StartGCWithSingleThreadWOEpochGuardReleaseAllGarbage
 {
   // register garbages to GC
   auto target_weak_ptrs = TestGC(1, kGarbageNumLarge);
-  while (gc_->GetRegisteredGarbageSize() > 0) {
-    // wait all garbages are freed
-  }
+  gc_->StopGC();
 
   // check there is no referece to target pointers
   for (auto &&target_weak : target_weak_ptrs) {
@@ -172,9 +236,7 @@ TEST_F(EpochBasedGCFixture, StartGCWithMultiThreadsWOEpochGuardReleaseAllGarbage
 {
   // register garbages to GC
   auto target_weak_ptrs = TestGC(kThreadNum, kGarbageNumLarge);
-  while (gc_->GetRegisteredGarbageSize() > 0) {
-    // wait all garbages are freed
-  }
+  gc_->StopGC();
 
   // check there is no referece to target pointers
   for (auto &&target_weak : target_weak_ptrs) {
@@ -248,6 +310,18 @@ TEST_F(EpochBasedGCFixture, StartGCWithMultiThreadsWithEpochGuardPreventGarbages
   }
 
   guarder.join();
+}
+
+TEST_F(EpochBasedGCFixture, ReusePagesWithEachOtherReleaseOnlyOnce)
+{
+  // register garbages to GC
+  auto target_weak_ptrs = TestReuse(kGarbageNumLarge);
+  gc_->StopGC();
+
+  // check there is no referece to target pointers
+  for (auto &&target_weak : target_weak_ptrs) {
+    EXPECT_TRUE(target_weak.expired());
+  }
 }
 
 }  // namespace dbgroup::memory::test
