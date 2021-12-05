@@ -44,17 +44,17 @@ class GarbageList
    * @brief Create a new GarbageList object.
    *
    */
-  explicit GarbageList(const std::atomic_size_t& global_epoch)
+  explicit GarbageList(const std::atomic_size_t &global_epoch)
       : tail_{new GarbageBuffer{global_epoch}}
   {
     head_.store(tail_, std::memory_order_release);
     inter_.store(tail_, std::memory_order_release);
   }
 
-  GarbageList(const GarbageList&) = delete;
-  GarbageList& operator=(const GarbageList&) = delete;
-  GarbageList(GarbageList&&) = delete;
-  GarbageList& operator=(GarbageList&&) = delete;
+  GarbageList(const GarbageList &) = delete;
+  GarbageList &operator=(const GarbageList &) = delete;
+  GarbageList(GarbageList &&) = delete;
+  GarbageList &operator=(GarbageList &&) = delete;
 
   /*##############################################################################################
    * Public destructor
@@ -109,7 +109,7 @@ class GarbageList
    * @param garbage_ptr a pointer to a target garbage.
    */
   void
-  AddGarbage(T* garbage_ptr)
+  AddGarbage(T *garbage_ptr)
   {
     tail_ = GarbageBuffer::AddGarbage(tail_, garbage_ptr);
   }
@@ -122,7 +122,7 @@ class GarbageList
    */
   auto
   GetPageIfPossible()  //
-      -> void*
+      -> void *
   {
     auto [page, head] = GarbageBuffer::ReusePage(head_.load(std::memory_order_acquire));
     head_.store(head, std::memory_order_release);
@@ -175,15 +175,15 @@ class GarbageList
      *
      * @param global_epoch a reference to the global epoch.
      */
-    constexpr explicit GarbageBuffer(const std::atomic_size_t& global_epoch)
+    constexpr explicit GarbageBuffer(const std::atomic_size_t &global_epoch)
         : current_epoch_{global_epoch}
     {
     }
 
-    GarbageBuffer(const GarbageBuffer&) = delete;
-    GarbageBuffer& operator=(const GarbageBuffer&) = delete;
-    GarbageBuffer(GarbageBuffer&&) = delete;
-    GarbageBuffer& operator=(GarbageBuffer&&) = delete;
+    GarbageBuffer(const GarbageBuffer &) = delete;
+    GarbageBuffer &operator=(const GarbageBuffer &) = delete;
+    GarbageBuffer(GarbageBuffer &&) = delete;
+    GarbageBuffer &operator=(GarbageBuffer &&) = delete;
 
     /*##############################################################################################
      * Public destructors
@@ -248,7 +248,7 @@ class GarbageList
      */
     [[nodiscard]] auto
     GetNext() const  //
-        -> GarbageBuffer*
+        -> GarbageBuffer *
     {
       return next_.load(std::memory_order_acquire);
     }
@@ -268,9 +268,9 @@ class GarbageList
      */
     static auto
     AddGarbage(  //
-        GarbageBuffer* buffer,
-        T* garbage)  //
-        -> GarbageBuffer*
+        GarbageBuffer *buffer,
+        T *garbage)  //
+        -> GarbageBuffer *
     {
       const auto end_idx = buffer->GetEndIdx();
       const auto epoch = buffer->current_epoch_.load(std::memory_order_acquire);
@@ -299,8 +299,8 @@ class GarbageList
      * @return the pair of a memory page and the current head buffer.
      */
     static auto
-    ReusePage(GarbageBuffer* buffer)  //
-        -> std::pair<void*, GarbageBuffer*>
+    ReusePage(GarbageBuffer *buffer)  //
+        -> std::pair<void *, GarbageBuffer *>
     {
       const auto idx = buffer->GetBeginIdx();
       const auto destructed_idx = buffer->GetDestructedIdx();
@@ -310,7 +310,7 @@ class GarbageList
 
       // get a released page
       buffer->begin_idx_.fetch_add(1, std::memory_order_acq_rel);
-      auto* page = buffer->garbages_[idx].GetGarbage();
+      auto *page = buffer->garbages_[idx].GetGarbage();
 
       // check whether all the pages in the list are reused
       if (idx >= kGarbageBufferSize - 1) {
@@ -338,9 +338,9 @@ class GarbageList
      */
     static auto
     Destruct(  //
-        GarbageBuffer* buffer,
+        GarbageBuffer *buffer,
         const size_t protected_epoch)  //
-        -> GarbageBuffer*
+        -> GarbageBuffer *
     {
       // set a flag as single-counter based GC
       buffer->cleaner_ref_this_.store(true, std::memory_order_release);
@@ -363,7 +363,7 @@ class GarbageList
       }
 
       // release the next buffer recursively
-      auto* next = buffer->GetNext();
+      auto *next = buffer->GetNext();
       while (next == nullptr) {  // if the list does not have a next buffer, wait insertion
         next = buffer->GetNext();
       }
@@ -381,9 +381,9 @@ class GarbageList
      */
     static auto
     Clear(  //
-        GarbageBuffer* buffer,
+        GarbageBuffer *buffer,
         const size_t protected_epoch)  //
-        -> GarbageBuffer*
+        -> GarbageBuffer *
     {
       const auto destructed_idx = buffer->GetDestructedIdx();
       const auto end_idx = buffer->GetEndIdx();
@@ -407,7 +407,7 @@ class GarbageList
       }
 
       // release the next buffer recursively
-      auto* next = buffer->GetNext();
+      auto *next = buffer->GetNext();
       while (next == nullptr) {  // if the list does not have a next buffer, wait insertion
         next = buffer->GetNext();
       }
@@ -438,10 +438,10 @@ class GarbageList
        */
       constexpr Garbage() = default;
 
-      Garbage(const Garbage&) = delete;
-      Garbage& operator=(const Garbage&) = delete;
-      Garbage(Garbage&&) = delete;
-      Garbage& operator=(Garbage&&) = delete;
+      Garbage(const Garbage &) = delete;
+      Garbage &operator=(const Garbage &) = delete;
+      Garbage(Garbage &&) = delete;
+      Garbage &operator=(Garbage &&) = delete;
 
       /*############################################################################################
        * Public destructors
@@ -470,7 +470,7 @@ class GarbageList
        * @param ptr a pointer to a garbage to be registered.
        */
       void
-      SetGarbage(T* ptr)
+      SetGarbage(T *ptr)
       {
         ptr_.store(ptr, std::memory_order_release);
       }
@@ -490,7 +490,7 @@ class GarbageList
        */
       [[nodiscard]] auto
       GetGarbage() const  //
-          -> T*
+          -> T *
       {
         return ptr_.load(std::memory_order_acquire);
       }
@@ -504,7 +504,7 @@ class GarbageList
       std::atomic_size_t epoch_{};
 
       /// a pointer to the registered garbage.
-      std::atomic<T*> ptr_{};
+      std::atomic<T *> ptr_{};
     };
 
     /*##############################################################################################
@@ -564,13 +564,13 @@ class GarbageList
     std::atomic_size_t end_idx_{0};
 
     /// a current epoch. Note: this is maintained individually to improve performance.
-    const std::atomic_size_t& current_epoch_;
+    const std::atomic_size_t &current_epoch_;
 
     /// a flag to indicate a cleaner thread is modifying the list
     std::atomic_bool cleaner_ref_this_{false};
 
     /// a pointer to a next garbage buffer.
-    std::atomic<GarbageBuffer*> next_{nullptr};
+    std::atomic<GarbageBuffer *> next_{nullptr};
   };
 
   /*################################################################################################
@@ -578,13 +578,13 @@ class GarbageList
    *##############################################################################################*/
 
   /// a pointer to the head of a target garbage list.
-  std::atomic<GarbageBuffer*> head_{};
+  std::atomic<GarbageBuffer *> head_{};
 
   /// a pointer to the internal node of a target garbage list.
-  std::atomic<GarbageBuffer*> inter_{};
+  std::atomic<GarbageBuffer *> inter_{};
 
   /// a pointer to the tail a target garbage list.
-  GarbageBuffer* tail_{nullptr};
+  GarbageBuffer *tail_{nullptr};
 };
 
 }  // namespace dbgroup::memory::component

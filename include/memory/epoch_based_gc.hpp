@@ -73,10 +73,10 @@ class EpochBasedGC
     if (start_gc) StartGC();
   }
 
-  EpochBasedGC(const EpochBasedGC&) = delete;
-  EpochBasedGC& operator=(const EpochBasedGC&) = delete;
-  EpochBasedGC(EpochBasedGC&&) = delete;
-  EpochBasedGC& operator=(EpochBasedGC&&) = delete;
+  EpochBasedGC(const EpochBasedGC &) = delete;
+  EpochBasedGC &operator=(const EpochBasedGC &) = delete;
+  EpochBasedGC(EpochBasedGC &&) = delete;
+  EpochBasedGC &operator=(EpochBasedGC &&) = delete;
 
   /*################################################################################################
    * Public destructors
@@ -93,9 +93,9 @@ class EpochBasedGC
     StopGC();
 
     // delete all the registered nodes
-    auto* cur_node = garbage_lists_.load(std::memory_order_acquire);
+    auto *cur_node = garbage_lists_.load(std::memory_order_acquire);
     while (cur_node != nullptr) {
-      auto* prev_node = cur_node;
+      auto *prev_node = cur_node;
       cur_node = cur_node->next;
       delete prev_node;
     }
@@ -146,7 +146,7 @@ class EpochBasedGC
    * @param garbage_ptr a pointer to a target garbage.
    */
   void
-  AddGarbage(const T* garbage_ptr)
+  AddGarbage(const T *garbage_ptr)
   {
     if (!garbage_list_) {
       garbage_list_ = std::make_shared<GarbageList_t>(epoch_manager_.GetGlobalEpochReference());
@@ -160,7 +160,7 @@ class EpochBasedGC
       }
     }
 
-    garbage_list_->AddGarbage(const_cast<T*>(garbage_ptr));  // NOLINT
+    garbage_list_->AddGarbage(const_cast<T *>(garbage_ptr));  // NOLINT
   }
 
   /**
@@ -171,7 +171,7 @@ class EpochBasedGC
    */
   auto
   GetPageIfPossible()  //
-      -> void*
+      -> void *
   {
     if (!garbage_list_) return nullptr;
     return garbage_list_->GetPageIfPossible();
@@ -241,16 +241,16 @@ class EpochBasedGC
      * @param next a pointer to a next node.
      */
     GarbageNode(  //
-        GarbageNode* next,
+        GarbageNode *next,
         std::shared_ptr<GarbageList_t> garbage_list)
         : next{next}, garbage_list_{std::move(garbage_list)}
     {
     }
 
-    GarbageNode(const GarbageNode&) = delete;
-    GarbageNode& operator=(const GarbageNode&) = delete;
-    GarbageNode(GarbageNode&&) = delete;
-    GarbageNode& operator=(GarbageNode&&) = delete;
+    GarbageNode(const GarbageNode &) = delete;
+    GarbageNode &operator=(const GarbageNode &) = delete;
+    GarbageNode(GarbageNode &&) = delete;
+    GarbageNode &operator=(GarbageNode &&) = delete;
 
     /*##############################################################################################
      * Public destructor
@@ -327,7 +327,7 @@ class EpochBasedGC
      *############################################################################################*/
 
     /// a pointer to a next node.
-    GarbageNode* next{nullptr};  // NOLINT
+    GarbageNode *next{nullptr};  // NOLINT
 
    private:
     /*##############################################################################################
@@ -452,7 +452,7 @@ class EpochBasedGC
     }
 
     // wait all the cleaner threads return
-    for (auto&& t : cleaner_threads_) t.join();
+    for (auto &&t : cleaner_threads_) t.join();
     cleaner_threads_.clear();
   }
 
@@ -492,7 +492,7 @@ class EpochBasedGC
   EpochManager epoch_manager_{};
 
   /// the head of a linked list of garbage buffers.
-  std::atomic<GarbageNode*> garbage_lists_{nullptr};
+  std::atomic<GarbageNode *> garbage_lists_{nullptr};
 
   /// a mutex to protect liked garbage lists
   std::shared_mutex garbage_lists_lock_{};

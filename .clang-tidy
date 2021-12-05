@@ -4,7 +4,6 @@ Checks: '
 clang-diagnostic-*,
 bugprone-*,
 cert-*,
--cert-err58-cpp,
 cppcoreguidelines-*,
 -cppcoreguidelines-avoid-c-arrays,
 -cppcoreguidelines-owning-memory,
@@ -14,16 +13,14 @@ concurrency-*,
 google-*,
 hicpp-*,
 -hicpp-avoid-c-arrays,
--hicpp-braces-around-statements,
 llvm-*,
 misc-*,
 modernize-*,
 -modernize-avoid-c-arrays,
 -modernize-loop-convert,
--modernize-use-trailing-return-type,
 readability-*,
--readability-braces-around-statements,
-performance-*,'
+performance-*,
+'
 WarningsAsErrors: ''
 HeaderFilterRegex: '(include|src|test)/.*\.hpp$'
 AnalyzeTemporaryDtors: false
