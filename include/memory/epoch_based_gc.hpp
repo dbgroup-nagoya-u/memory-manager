@@ -345,6 +345,35 @@ class EpochBasedGC
    * Internal utility functions
    *##############################################################################################*/
 
+  template <class Target, class Head, class... Tails>
+  [[nodiscard]] auto
+  GetThreadLocalGarbageList() const  //
+      -> std::shared_ptr<GarbageList<Target>> &
+  {
+    if constexpr (std::is_same_v<Head, Target> || sizeof...(Tails) == 0) {
+      static_assert(std::is_same_v<Head, Target>);
+      thread_local auto garbage_list =
+          std::make_shared<GarbageList<Target>>(epoch_manager_.GetGlobalEpochReference());
+      return garbage_list;
+    } else {
+      return GetThreadLocalGarbageList<Target, Tails...>();
+    }
+  }
+
+  template <class Target, class Head, class... Tails>
+  [[nodiscard]] auto
+  GetGarbageNodeHead() const  //
+      -> std::atomic<GarbageNode<Target> *> &
+  {
+    if constexpr (std::is_same_v<Head, Target> || sizeof...(Tails) == 0) {
+      static_assert(std::is_same_v<Head, Target>);
+      static std::atomic<GarbageNode<Target> *> node_head{nullptr};
+      return node_head;
+    } else {
+      return GetGarbageNodeHead<Target, Tails...>();
+    }
+  }
+
   /**
    * @brief Remove expired nodes from the internal list.
    *
