@@ -89,6 +89,7 @@ class EpochManager
   {
     return global_epoch_;
   }
+
   /**
    * @return a current global epoch value.
    */
@@ -106,9 +107,11 @@ class EpochManager
   GetEpoch()  //
       -> Epoch *
   {
-    thread_local auto epoch = std::make_shared<Epoch>(global_epoch_);
+    thread_local auto epoch = std::make_shared<Epoch>();
 
     if (epoch.use_count() <= 1) {
+      epoch->SetGrobalEpoch(&global_epoch_);
+
       // insert a new epoch node into the epoch list
       auto *epoch_node = new EpochNode{epoch, epochs_.load(std::memory_order_acquire)};
       while (!epochs_.compare_exchange_weak(epoch_node->next, epoch_node,  //

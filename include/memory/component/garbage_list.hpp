@@ -152,6 +152,7 @@ class GarbageList
   {
     auto head = GarbageBuffer::Clear(head_.load(std::memory_order_acquire), protected_epoch);
     head_.store(head, std::memory_order_release);
+    inter_.store(head, std::memory_order_release);
   }
 
  private:
