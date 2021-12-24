@@ -129,9 +129,9 @@ class EpochBasedGC
     if (garbage_list.use_count() <= 1) {
       // register this garbage list
       auto &head = GetGarbageNodeHead<T, GCTargets...>();
-      auto cur_head = head.load(std::memory_order_acquire);
+      auto cur_head = head.load(std::memory_order_relaxed);
       auto new_node = new GarbageNode<T>{cur_head, garbage_list};
-      while (!head.compare_exchange_weak(new_node->next, new_node, std::memory_order_acq_rel)) {
+      while (!head.compare_exchange_weak(new_node->next, new_node, std::memory_order_release)) {
         // continue until inserting succeeds
       }
     }
@@ -170,10 +170,10 @@ class EpochBasedGC
   StartGC()  //
       -> bool
   {
-    if (gc_is_running_.load(std::memory_order_acquire)) {
+    if (gc_is_running_.load(std::memory_order_relaxed)) {
       return false;
     }
-    gc_is_running_.store(true, std::memory_order_release);
+    gc_is_running_.store(true, std::memory_order_relaxed);
     gc_thread_ = std::thread{&EpochBasedGC::RunGC, this};
     return true;
   }
@@ -188,10 +188,10 @@ class EpochBasedGC
   StopGC()  //
       -> bool
   {
-    if (!gc_is_running_.load(std::memory_order_acquire)) {
+    if (!gc_is_running_.load(std::memory_order_relaxed)) {
       return false;
     }
-    gc_is_running_.store(false, std::memory_order_release);
+    gc_is_running_.store(false, std::memory_order_relaxed);
     gc_thread_.join();
     return true;
   }
@@ -211,7 +211,7 @@ class EpochBasedGC
    public:
     /*##################################################################################
      * Public constructors and assignment operators
-     *############################################################################################*/
+     *################################################################################*/
 
     /**
      * @brief Construct a new instance.
@@ -234,7 +234,7 @@ class EpochBasedGC
 
     /*##################################################################################
      * Public destructor
-     *############################################################################################*/
+     *################################################################################*/
 
     /**
      * @brief Destroy the instance.
@@ -244,7 +244,7 @@ class EpochBasedGC
 
     /*##################################################################################
      * Public getters
-     *############################################################################################*/
+     *################################################################################*/
 
     /**
      * @retval true if any thread may access this garbage list.
@@ -269,7 +269,7 @@ class EpochBasedGC
 
     /*##################################################################################
      * Public utility functions
-     *############################################################################################*/
+     *################################################################################*/
 
     /**
      * @brief Release registered garbages if possible.
@@ -304,7 +304,7 @@ class EpochBasedGC
 
     /*##################################################################################
      * Public member variables
-     *############################################################################################*/
+     *################################################################################*/
 
     /// a pointer to a next node.
     GarbageNode *next{nullptr};  // NOLINT
@@ -312,7 +312,7 @@ class EpochBasedGC
    private:
     /*##################################################################################
      * Internal member variables
-     *############################################################################################*/
+     *################################################################################*/
 
     /// a pointer to a target garbage list.
     std::shared_ptr<GarbageList<T>> garbage_list_{};
@@ -404,7 +404,7 @@ class EpochBasedGC
       cur_node = cur_node->next;
       delete prev_node;
     }
-    head_addr.store(nullptr, std::memory_order::memory_order_release);
+    head_addr.store(nullptr, std::memory_order::memory_order_relaxed);
 
     if constexpr (sizeof...(Tails) > 0) {
       RemoveAllNodes<Tails...>();
@@ -450,15 +450,15 @@ class EpochBasedGC
   RunGC()
   {
     auto cleaner = [&]() {
-      while (gc_is_running_.load(std::memory_order_acquire)) {
+      while (gc_is_running_.load(std::memory_order_relaxed)) {
         {  // create a lock for preventing node expiration
           const std::shared_lock guard{garbage_lists_lock_};
-          const auto protected_epoch = protected_epoch_.load(std::memory_order_acquire);
+          const auto protected_epoch = protected_epoch_.load(std::memory_order_relaxed);
           ClearGarbages<GCTargets...>(protected_epoch);
         }
 
         // wait until a next epoch
-        const auto sleep_time = LongToTimePoint(sleep_until_.load(std::memory_order_acquire));
+        const auto sleep_time = LongToTimePoint(sleep_until_.load(std::memory_order_relaxed));
         std::this_thread::sleep_until(sleep_time);
       }
 
@@ -480,17 +480,17 @@ class EpochBasedGC
 
       // set sleep-interval
       sleep_time = Clock_t::now() + gc_interval_;
-      sleep_until_.store(TimePointToLong(sleep_time), std::memory_order_release);
+      sleep_until_.store(TimePointToLong(sleep_time), std::memory_order_relaxed);
     }
 
     // manage epochs and sleep-interval
-    while (gc_is_running_.load(std::memory_order_acquire)) {
+    while (gc_is_running_.load(std::memory_order_relaxed)) {
       std::this_thread::sleep_until(sleep_time);
       sleep_time += gc_interval_;
-      sleep_until_.store(TimePointToLong(sleep_time), std::memory_order_release);
+      sleep_until_.store(TimePointToLong(sleep_time), std::memory_order_relaxed);
 
       epoch_manager_.ForwardGlobalEpoch();
-      protected_epoch_.store(epoch_manager_.GetProtectedEpoch(), std::memory_order_release);
+      protected_epoch_.store(epoch_manager_.GetProtectedEpoch(), std::memory_order_relaxed);
       RemoveExpiredNodes<GCTargets...>();
     }
 
