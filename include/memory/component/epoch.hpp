@@ -100,7 +100,7 @@ class Epoch
   void
   EnterEpoch()
   {
-    entered_.store(GetCurrentEpoch(), std::memory_order_release);
+    entered_.store(GetCurrentEpoch(), std::memory_order_relaxed);
   }
 
   /**

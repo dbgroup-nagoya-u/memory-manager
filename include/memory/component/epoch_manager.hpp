@@ -77,7 +77,7 @@ class EpochManager
   void
   ForwardGlobalEpoch()
   {
-    global_epoch_.fetch_add(1, std::memory_order_acq_rel);
+    global_epoch_.fetch_add(1, std::memory_order_relaxed);
   }
 
   /**
@@ -97,7 +97,7 @@ class EpochManager
   GetCurrentEpoch() const  //
       -> size_t
   {
-    return global_epoch_.load(std::memory_order_acquire);
+    return global_epoch_.load(std::memory_order_relaxed);
   }
 
   /**
@@ -113,9 +113,8 @@ class EpochManager
       epoch->SetGrobalEpoch(&global_epoch_);
 
       // insert a new epoch node into the epoch list
-      auto *epoch_node = new EpochNode{epoch, epochs_.load(std::memory_order_acquire)};
-      while (!epochs_.compare_exchange_weak(epoch_node->next, epoch_node,  //
-                                            std::memory_order_acq_rel)) {
+      auto *node = new EpochNode{epoch, epochs_.load(std::memory_order_relaxed)};
+      while (!epochs_.compare_exchange_weak(node->next, node, std::memory_order_release)) {
         // continue until inserting succeeds
       }
     }
@@ -134,7 +133,7 @@ class EpochManager
   GetProtectedEpoch()  //
       -> size_t
   {
-    auto min_protected_epoch = global_epoch_.load(std::memory_order_acquire);
+    auto min_protected_epoch = global_epoch_.load(std::memory_order_relaxed);
 
     // check the head node of the epoch list
     auto *previous = epochs_.load(std::memory_order_acquire);
