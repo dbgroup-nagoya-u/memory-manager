@@ -32,9 +32,9 @@ namespace dbgroup::memory::component
 class EpochManager
 {
  public:
-  /*################################################################################################
+  /*####################################################################################
    * Public constructors and assignment operators
-   *##############################################################################################*/
+   *##################################################################################*/
 
   /**
    * @brief Construct a new instance.
@@ -47,9 +47,9 @@ class EpochManager
   EpochManager(EpochManager &&) = delete;
   EpochManager &operator=(EpochManager &&) = delete;
 
-  /*################################################################################################
+  /*####################################################################################
    * Public destructors
-   *##############################################################################################*/
+   *##################################################################################*/
 
   /**
    * @brief Destroy the instance.
@@ -65,9 +65,9 @@ class EpochManager
     }
   }
 
-  /*################################################################################################
+  /*####################################################################################
    * Public utility functions
-   *##############################################################################################*/
+   *##################################################################################*/
 
   /**
    * @brief Forward an original epoch counter.
@@ -77,7 +77,7 @@ class EpochManager
   void
   ForwardGlobalEpoch()
   {
-    global_epoch_.fetch_add(1, std::memory_order_acq_rel);
+    global_epoch_.fetch_add(1, std::memory_order_relaxed);
   }
 
   /**
@@ -97,7 +97,7 @@ class EpochManager
   GetCurrentEpoch() const  //
       -> size_t
   {
-    return global_epoch_.load(std::memory_order_acquire);
+    return global_epoch_.load(std::memory_order_relaxed);
   }
 
   /**
@@ -107,15 +107,14 @@ class EpochManager
   GetEpoch()  //
       -> Epoch *
   {
-    thread_local auto epoch = std::make_shared<Epoch>();
+    thread_local std::shared_ptr<Epoch> epoch = std::make_shared<Epoch>();
 
     if (epoch.use_count() <= 1) {
       epoch->SetGrobalEpoch(&global_epoch_);
 
       // insert a new epoch node into the epoch list
-      auto *epoch_node = new EpochNode{epoch, epochs_.load(std::memory_order_acquire)};
-      while (!epochs_.compare_exchange_weak(epoch_node->next, epoch_node,  //
-                                            std::memory_order_acq_rel)) {
+      auto *node = new EpochNode{epoch, epochs_.load(std::memory_order_relaxed)};
+      while (!epochs_.compare_exchange_weak(node->next, node, std::memory_order_release)) {
         // continue until inserting succeeds
       }
     }
@@ -134,7 +133,7 @@ class EpochManager
   GetProtectedEpoch()  //
       -> size_t
   {
-    auto min_protected_epoch = global_epoch_.load(std::memory_order_acquire);
+    auto min_protected_epoch = global_epoch_.load(std::memory_order_relaxed);
 
     // check the head node of the epoch list
     auto *previous = epochs_.load(std::memory_order_acquire);
@@ -170,9 +169,9 @@ class EpochManager
   }
 
  private:
-  /*################################################################################################
+  /*####################################################################################
    * Internal structs and assignment operators
-   *##############################################################################################*/
+   *##################################################################################*/
 
   /**
    * @brief A class of nodes for composing a linked list of epochs in each thread.
@@ -181,9 +180,9 @@ class EpochManager
   class EpochNode
   {
    public:
-    /*##############################################################################################
+    /*##################################################################################
      * Public constructors/destructors
-     *############################################################################################*/
+     *################################################################################*/
 
     /**
      * @brief Construct a new instance.
@@ -203,9 +202,9 @@ class EpochManager
     EpochNode(EpochNode &&) = delete;
     EpochNode &operator=(EpochNode &&) = delete;
 
-    /*##############################################################################################
+    /*##################################################################################
      * Public destructors
-     *############################################################################################*/
+     *################################################################################*/
 
     /**
      * @brief Destroy the instance.
@@ -213,9 +212,9 @@ class EpochManager
      */
     ~EpochNode() = default;
 
-    /*##############################################################################################
+    /*##################################################################################
      * Public utility functions
-     *############################################################################################*/
+     *################################################################################*/
 
     /**
      * @retval true if the registered thread is still active.
@@ -238,25 +237,25 @@ class EpochManager
       return epoch_->GetProtectedEpoch();
     }
 
-    /*##############################################################################################
+    /*##################################################################################
      * Public member variables
-     *############################################################################################*/
+     *################################################################################*/
 
     /// a pointer to the next node.
     EpochNode *next{nullptr};  // NOLINT
 
    private:
-    /*##############################################################################################
+    /*##################################################################################
      * Internal member variables
-     *############################################################################################*/
+     *################################################################################*/
 
     /// a shared pointer for monitoring the lifetime of a target epoch.
     const std::shared_ptr<Epoch> epoch_{};
   };
 
-  /*################################################################################################
+  /*####################################################################################
    * Internal member variables
-   *##############################################################################################*/
+   *##################################################################################*/
 
   /// an original epoch counter.
   std::atomic_size_t global_epoch_{0};
