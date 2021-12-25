@@ -203,10 +203,10 @@ class GarbageList
       auto idx = GetBeginIdx();
       for (; idx < destructed_idx; ++idx) {
         // the garbage has been already destructed
-        operator delete(garbages_[idx].GetGarbage());
+        operator delete(garbages_[idx].ptr);
       }
       for (; idx < end_idx; ++idx) {
-        delete garbages_[idx].GetGarbage();
+        delete garbages_[idx].ptr;
       }
     }
 
@@ -277,8 +277,8 @@ class GarbageList
       const auto epoch = buffer->current_epoch_.load(std::memory_order_acquire);
 
       // insert a new garbage
-      buffer->garbages_[end_idx].SetEpoch(epoch);
-      buffer->garbages_[end_idx].SetGarbage(garbage);
+      buffer->garbages_[end_idx].epoch = epoch;
+      buffer->garbages_[end_idx].ptr = garbage;
 
       // increment the end position
       buffer->end_idx_.fetch_add(1, std::memory_order_acq_rel);
@@ -311,7 +311,7 @@ class GarbageList
 
       // get a released page
       buffer->begin_idx_.fetch_add(1, std::memory_order_acq_rel);
-      auto *page = buffer->garbages_[idx].GetGarbage();
+      auto *page = buffer->garbages_[idx].ptr;
 
       // check whether all the pages in the list are reused
       if (idx >= kGarbageBufferSize - 1) {
@@ -350,10 +350,10 @@ class GarbageList
       const auto end_idx = buffer->GetEndIdx();
       auto idx = buffer->GetDestructedIdx();
       for (; idx < end_idx; ++idx) {
-        if (buffer->garbages_[idx].GetEpoch() >= protected_epoch) break;
+        if (buffer->garbages_[idx].epoch >= protected_epoch) break;
 
         // only call destructor to reuse pages
-        buffer->garbages_[idx].GetGarbage()->~T();
+        buffer->garbages_[idx].ptr->~T();
       }
       buffer->destructed_idx_.store(idx, std::memory_order_release);
 
@@ -393,12 +393,12 @@ class GarbageList
       auto idx = buffer->GetBeginIdx();
       for (; idx < destructed_idx; ++idx) {
         // the garbage has been already destructed
-        operator delete(buffer->garbages_[idx].GetGarbage());
+        operator delete(buffer->garbages_[idx].ptr);
       }
       for (; idx < end_idx; ++idx) {
-        if (buffer->garbages_[idx].GetEpoch() >= protected_epoch) break;
+        if (buffer->garbages_[idx].epoch >= protected_epoch) break;
 
-        delete buffer->garbages_[idx].GetGarbage();
+        delete buffer->garbages_[idx].ptr;
       }
       buffer->begin_idx_.store(idx, std::memory_order_release);
       buffer->destructed_idx_.store(idx, std::memory_order_release);
@@ -427,86 +427,12 @@ class GarbageList
      * @brief A class to represent the pair of an epoch value and a registered garbage.
      *
      */
-    class Garbage
-    {
-     public:
-      /*################################################################################
-       * Public constructors and assignment operators
-       *##############################################################################*/
-
-      /**
-       * @brief Create a new garbage object.
-       *
-       */
-      constexpr Garbage() = default;
-
-      Garbage(const Garbage &) = delete;
-      Garbage &operator=(const Garbage &) = delete;
-      Garbage(Garbage &&) = delete;
-      Garbage &operator=(Garbage &&) = delete;
-
-      /*################################################################################
-       * Public destructors
-       *##############################################################################*/
-
-      /**
-       * @brief Destroy the Garbage object.
-       *
-       */
-      ~Garbage() = default;
-
-      /*################################################################################
-       * Public getters/setters
-       *##############################################################################*/
-
-      /**
-       * @param epoch an epoch value to be set.
-       */
-      void
-      SetEpoch(const size_t epoch)
-      {
-        epoch_.store(epoch, std::memory_order_release);
-      }
-
-      /**
-       * @param ptr a pointer to a garbage to be registered.
-       */
-      void
-      SetGarbage(T *ptr)
-      {
-        ptr_.store(ptr, std::memory_order_release);
-      }
-
-      /**
-       * @return the epoch value when the garbage is registered.
-       */
-      [[nodiscard]] auto
-      GetEpoch() const  //
-          -> size_t
-      {
-        return epoch_.load(std::memory_order_acquire);
-      }
-
-      /**
-       * @return the pointer to the registered garbage.
-       */
-      [[nodiscard]] auto
-      GetGarbage() const  //
-          -> T *
-      {
-        return ptr_.load(std::memory_order_acquire);
-      }
-
-     private:
-      /*################################################################################
-       * Internal member variables
-       *##############################################################################*/
-
+    struct Garbage {
       /// an epoch value when the garbage is registered.
-      std::atomic_size_t epoch_{};
+      size_t epoch{};
 
       /// a pointer to the registered garbage.
-      std::atomic<T *> ptr_{};
+      T *ptr{};
     };
 
     /*##################################################################################
