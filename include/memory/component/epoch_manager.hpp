@@ -107,7 +107,7 @@ class EpochManager
   GetEpoch()  //
       -> Epoch *
   {
-    thread_local auto epoch = std::make_shared<Epoch>();
+    thread_local std::shared_ptr<Epoch> epoch = std::make_shared<Epoch>();
 
     if (epoch.use_count() <= 1) {
       epoch->SetGrobalEpoch(&global_epoch_);

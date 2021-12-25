@@ -64,7 +64,7 @@ class GarbageList
    */
   ~GarbageList()
   {
-    auto current = head_.load(std::memory_order_relaxed);
+    auto *current = head_.load(std::memory_order_relaxed);
     while (current != nullptr && !Empty()) {
       ClearGarbages(std::numeric_limits<size_t>::max());
     }
@@ -135,7 +135,7 @@ class GarbageList
   void
   DestructGarbages(const size_t protected_epoch)
   {
-    auto inter = GarbageBuffer::Destruct(inter_.load(std::memory_order_relaxed), protected_epoch);
+    auto *inter = GarbageBuffer::Destruct(inter_.load(std::memory_order_relaxed), protected_epoch);
     inter_.store(inter, std::memory_order_relaxed);
   }
 
@@ -147,7 +147,7 @@ class GarbageList
   void
   ClearGarbages(const size_t protected_epoch)
   {
-    auto head = GarbageBuffer::Clear(head_.load(std::memory_order_relaxed), protected_epoch);
+    auto *head = GarbageBuffer::Clear(head_.load(std::memory_order_relaxed), protected_epoch);
     head_.store(head, std::memory_order_relaxed);
     inter_.store(head, std::memory_order_relaxed);
   }
@@ -303,7 +303,7 @@ class GarbageList
       // check whether all the pages in the list are reused
       if (idx >= kGarbageBufferSize - 1) {
         // the list has become empty, so delete it
-        auto empty_buf = buffer;
+        auto *empty_buf = buffer;
         buffer = empty_buf->next_;
         delete empty_buf;
       }

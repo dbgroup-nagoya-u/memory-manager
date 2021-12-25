@@ -124,13 +124,13 @@ class EpochBasedGC
   void
   AddGarbage(const T *garbage_ptr)
   {
-    auto &garbage_list = GetThreadLocalGarbageList<T, GCTargets...>();
+    auto &&garbage_list = GetThreadLocalGarbageList<T, GCTargets...>();
 
     if (garbage_list.use_count() <= 1) {
       // register this garbage list
-      auto &head = GetGarbageNodeHead<T, GCTargets...>();
-      auto cur_head = head.load(std::memory_order_relaxed);
-      auto new_node = new GarbageNode<T>{cur_head, garbage_list};
+      auto &&head = GetGarbageNodeHead<T, GCTargets...>();
+      auto *cur_head = head.load(std::memory_order_relaxed);
+      auto *new_node = new GarbageNode<T>{cur_head, garbage_list};
       while (!head.compare_exchange_weak(new_node->next, new_node, std::memory_order_release)) {
         // continue until inserting succeeds
       }
@@ -150,7 +150,7 @@ class EpochBasedGC
   GetPageIfPossible()  //
       -> void *
   {
-    auto &garbage_list = GetThreadLocalGarbageList<T, GCTargets...>();
+    auto &&garbage_list = GetThreadLocalGarbageList<T, GCTargets...>();
 
     if (garbage_list.use_count() <= 1) return nullptr;
     return garbage_list->GetPageIfPossible();
@@ -332,7 +332,7 @@ class EpochBasedGC
   {
     if constexpr (std::is_same_v<Head, Target> || sizeof...(Tails) == 0) {
       static_assert(std::is_same_v<Head, Target>);
-      thread_local auto garbage_list =
+      thread_local std::shared_ptr<GarbageList<Target>> garbage_list =
           std::make_shared<GarbageList<Target>>(epoch_manager_.GetGlobalEpochReference());
       return garbage_list;
     } else {
@@ -363,14 +363,14 @@ class EpochBasedGC
   RemoveExpiredNodes()
   {
     // if garbage-list nodes are variable, do nothing
-    auto cur_node = GetGarbageNodeHead<Head, GCTargets...>().load(std::memory_order_acquire);
+    auto *cur_node = GetGarbageNodeHead<Head, GCTargets...>().load(std::memory_order_acquire);
     if (cur_node == nullptr) return;
 
     // create lock to prevent cleaner threads from running
     std::unique_lock guard{garbage_lists_lock_, std::defer_lock};
     if (guard.try_lock()) {
       // check whether there are expired nodes
-      auto prev_node = cur_node;
+      auto *prev_node = cur_node;
       while (true) {
         cur_node = prev_node->next;
         if (cur_node == nullptr) break;
@@ -397,8 +397,8 @@ class EpochBasedGC
   void
   RemoveAllNodes()
   {
-    auto &head_addr = GetGarbageNodeHead<Head, GCTargets...>();
-    auto cur_node = head_addr.load(std::memory_order_acquire);
+    auto &&head_addr = GetGarbageNodeHead<Head, GCTargets...>();
+    auto *cur_node = head_addr.load(std::memory_order_acquire);
     while (cur_node != nullptr) {
       auto *prev_node = cur_node;
       cur_node = cur_node->next;
@@ -415,7 +415,7 @@ class EpochBasedGC
   void
   ClearGarbages(const size_t protected_epoch)
   {
-    auto cur_node = GetGarbageNodeHead<Head, GCTargets...>().load(std::memory_order_acquire);
+    auto *cur_node = GetGarbageNodeHead<Head, GCTargets...>().load(std::memory_order_acquire);
     while (cur_node != nullptr) {
       cur_node->ClearGarbages(protected_epoch);
       cur_node = cur_node->next;
@@ -430,7 +430,7 @@ class EpochBasedGC
   void
   DestroyGarbages()
   {
-    auto cur_node = GetGarbageNodeHead<Head, GCTargets...>().load(std::memory_order_acquire);
+    auto *cur_node = GetGarbageNodeHead<Head, GCTargets...>().load(std::memory_order_acquire);
     while (cur_node != nullptr) {
       cur_node->DestroyGarbages();
       cur_node = cur_node->next;
