@@ -45,10 +45,8 @@ class GarbageList
    *
    */
   explicit GarbageList(const std::atomic_size_t &global_epoch)
-      : tail_{new GarbageBuffer{global_epoch}}
+      : tail_{new GarbageBuffer{global_epoch}}, head_{tail_}, inter_{tail_}
   {
-    head_.store(tail_, std::memory_order_release);
-    inter_.store(tail_, std::memory_order_release);
   }
 
   GarbageList(const GarbageList &) = delete;
@@ -66,7 +64,7 @@ class GarbageList
    */
   ~GarbageList()
   {
-    auto current = head_.load(std::memory_order_acquire);
+    auto current = head_.load(std::memory_order_relaxed);
     while (current != nullptr) {
       auto previous = current;
       current = current->GetNext();
@@ -86,7 +84,7 @@ class GarbageList
   Empty() const  //
       -> bool
   {
-    return head_.load(std::memory_order_acquire)->Empty();
+    return head_.load(std::memory_order_relaxed)->Empty();
   }
 
   /**
@@ -96,7 +94,7 @@ class GarbageList
   Size() const  //
       -> size_t
   {
-    return inter_.load(std::memory_order_acquire)->Size();
+    return inter_.load(std::memory_order_relaxed)->Size();
   }
 
   /*####################################################################################
@@ -124,8 +122,8 @@ class GarbageList
   GetPageIfPossible()  //
       -> void *
   {
-    auto [page, head] = GarbageBuffer::ReusePage(head_.load(std::memory_order_acquire));
-    head_.store(head, std::memory_order_release);
+    auto [page, head] = GarbageBuffer::ReusePage(head_.load(std::memory_order_relaxed));
+    head_.store(head, std::memory_order_relaxed);
 
     return page;
   }
@@ -138,8 +136,8 @@ class GarbageList
   void
   DestructGarbages(const size_t protected_epoch)
   {
-    auto inter = GarbageBuffer::Destruct(inter_.load(std::memory_order_acquire), protected_epoch);
-    inter_.store(inter, std::memory_order_release);
+    auto inter = GarbageBuffer::Destruct(inter_.load(std::memory_order_relaxed), protected_epoch);
+    inter_.store(inter, std::memory_order_relaxed);
   }
 
   /**
@@ -150,9 +148,9 @@ class GarbageList
   void
   ClearGarbages(const size_t protected_epoch)
   {
-    auto head = GarbageBuffer::Clear(head_.load(std::memory_order_acquire), protected_epoch);
-    head_.store(head, std::memory_order_release);
-    inter_.store(head, std::memory_order_release);
+    auto head = GarbageBuffer::Clear(head_.load(std::memory_order_relaxed), protected_epoch);
+    head_.store(head, std::memory_order_relaxed);
+    inter_.store(head, std::memory_order_relaxed);
   }
 
  private:
@@ -177,7 +175,7 @@ class GarbageList
      * @param global_epoch a reference to the global epoch.
      */
     constexpr explicit GarbageBuffer(const std::atomic_size_t &global_epoch)
-        : current_epoch_{global_epoch}
+        : global_epoch_{global_epoch}
     {
     }
 
@@ -196,11 +194,11 @@ class GarbageList
      */
     ~GarbageBuffer()
     {
-      const auto destructed_idx = GetDestructedIdx();
-      const auto end_idx = GetEndIdx();
+      const auto destructed_idx = destructed_idx_.load(std::memory_order_relaxed);
+      const auto end_idx = end_idx_.load(std::memory_order_acquire);
 
       // release unprotected garbages
-      auto idx = GetBeginIdx();
+      auto idx = begin_idx_.load(std::memory_order_relaxed);
       for (; idx < destructed_idx; ++idx) {
         // the garbage has been already destructed
         operator delete(garbages_[idx].ptr);
@@ -221,8 +219,9 @@ class GarbageList
     Size() const  //
         -> size_t
     {
-      const auto size = GetEndIdx() - GetDestructedIdx();
-      const auto next = GetNext();
+      const auto size = end_idx_.load(std::memory_order_relaxed)
+                        - destructed_idx_.load(std::memory_order_relaxed);
+      const auto next = next_.load(std::memory_order_relaxed);
       if (next == nullptr) {
         return size;
       }
@@ -237,9 +236,11 @@ class GarbageList
     Empty() const  //
         -> bool
     {
-      if (GetEndIdx() - GetBeginIdx() > 0) return false;
+      const auto size = end_idx_.load(std::memory_order_relaxed)
+                        - destructed_idx_.load(std::memory_order_relaxed);
+      if (size > 0) return false;
 
-      const auto next = GetNext();
+      const auto next = next_.load(std::memory_order_relaxed);
       if (next == nullptr) return true;
       return next->Empty();
     }
@@ -251,7 +252,7 @@ class GarbageList
     GetNext() const  //
         -> GarbageBuffer *
     {
-      return next_.load(std::memory_order_acquire);
+      return next_.load(std::memory_order_relaxed);
     }
 
     /*##################################################################################
@@ -273,21 +274,21 @@ class GarbageList
         T *garbage)  //
         -> GarbageBuffer *
     {
-      const auto end_idx = buffer->GetEndIdx();
-      const auto epoch = buffer->current_epoch_.load(std::memory_order_acquire);
+      const auto end_idx = buffer->end_idx_.load(std::memory_order_relaxed);
+      const auto epoch = buffer->global_epoch_.load(std::memory_order_relaxed);
 
       // insert a new garbage
       buffer->garbages_[end_idx].epoch = epoch;
       buffer->garbages_[end_idx].ptr = garbage;
 
       // increment the end position
-      buffer->end_idx_.fetch_add(1, std::memory_order_acq_rel);
+      buffer->end_idx_.fetch_add(1, std::memory_order_release);
 
       // check whether the list is full
       if (end_idx >= kGarbageBufferSize - 1) {
         auto full_list = buffer;
-        buffer = new GarbageBuffer{buffer->current_epoch_};
-        full_list->next_.store(buffer, std::memory_order_release);
+        buffer = new GarbageBuffer{buffer->global_epoch_};
+        full_list->next_.store(buffer, std::memory_order_relaxed);
       }
 
       return buffer;
@@ -303,14 +304,14 @@ class GarbageList
     ReusePage(GarbageBuffer *buffer)  //
         -> std::pair<void *, GarbageBuffer *>
     {
-      const auto idx = buffer->GetBeginIdx();
-      const auto destructed_idx = buffer->GetDestructedIdx();
+      const auto idx = buffer->begin_idx_.load(std::memory_order_relaxed);
+      const auto destructed_idx = buffer->destructed_idx_.load(std::memory_order_acquire);
 
       // check whether there are released garbages
       if (idx >= destructed_idx) return {nullptr, buffer};
 
       // get a released page
-      buffer->begin_idx_.fetch_add(1, std::memory_order_acq_rel);
+      buffer->begin_idx_.fetch_add(1, std::memory_order_relaxed);
       auto *page = buffer->garbages_[idx].ptr;
 
       // check whether all the pages in the list are reused
@@ -321,7 +322,7 @@ class GarbageList
           buffer = empty_buf->GetNext();
         } while (buffer == nullptr);
 
-        while (empty_buf->cleaner_ref_this_.load(std::memory_order_acquire)) {
+        while (empty_buf->cleaner_ref_this_.load(std::memory_order_relaxed)) {
           // wait for a cleaner thread to leave this list
         }
         delete empty_buf;
@@ -344,11 +345,11 @@ class GarbageList
         -> GarbageBuffer *
     {
       // set a flag as single-counter based GC
-      buffer->cleaner_ref_this_.store(true, std::memory_order_release);
+      buffer->cleaner_ref_this_.store(true, std::memory_order_relaxed);
 
       // release unprotected garbages
-      const auto end_idx = buffer->GetEndIdx();
-      auto idx = buffer->GetDestructedIdx();
+      const auto end_idx = buffer->end_idx_.load(std::memory_order_acquire);
+      auto idx = buffer->destructed_idx_.load(std::memory_order_relaxed);
       for (; idx < end_idx; ++idx) {
         if (buffer->garbages_[idx].epoch >= protected_epoch) break;
 
@@ -359,7 +360,7 @@ class GarbageList
 
       if (idx < kGarbageBufferSize) {
         // the buffer has unreleased garbages
-        buffer->cleaner_ref_this_.store(false, std::memory_order_release);
+        buffer->cleaner_ref_this_.store(false, std::memory_order_relaxed);
         return buffer;
       }
 
@@ -369,7 +370,7 @@ class GarbageList
         next = buffer->GetNext();
       }
 
-      buffer->cleaner_ref_this_.store(false, std::memory_order_release);
+      buffer->cleaner_ref_this_.store(false, std::memory_order_relaxed);
       return GarbageBuffer::Destruct(next, protected_epoch);
     }
 
@@ -386,11 +387,11 @@ class GarbageList
         const size_t protected_epoch)  //
         -> GarbageBuffer *
     {
-      const auto destructed_idx = buffer->GetDestructedIdx();
-      const auto end_idx = buffer->GetEndIdx();
+      const auto destructed_idx = buffer->destructed_idx_.load(std::memory_order_relaxed);
+      const auto end_idx = buffer->end_idx_.load(std::memory_order_acquire);
 
       // release unprotected garbages
-      auto idx = buffer->GetBeginIdx();
+      auto idx = buffer->begin_idx_.load(std::memory_order_relaxed);
       for (; idx < destructed_idx; ++idx) {
         // the garbage has been already destructed
         operator delete(buffer->garbages_[idx].ptr);
@@ -400,8 +401,8 @@ class GarbageList
 
         delete buffer->garbages_[idx].ptr;
       }
-      buffer->begin_idx_.store(idx, std::memory_order_release);
-      buffer->destructed_idx_.store(idx, std::memory_order_release);
+      buffer->begin_idx_.store(idx, std::memory_order_relaxed);
+      buffer->destructed_idx_.store(idx, std::memory_order_relaxed);
 
       if (idx < kGarbageBufferSize) {
         // the buffer has unreleased garbages
@@ -436,46 +437,6 @@ class GarbageList
     };
 
     /*##################################################################################
-     * Internal setters/getters
-     *################################################################################*/
-
-    /**
-     * @return the begin index of this buffer.
-     *
-     * Note that the value is read with std::memory_order_acquire.
-     */
-    [[nodiscard]] auto
-    GetBeginIdx() const  //
-        -> size_t
-    {
-      return begin_idx_.load(std::memory_order_acquire);
-    }
-
-    /**
-     * @return an index that has an available page.
-     *
-     * Note that the value is read with std::memory_order_acquire.
-     */
-    [[nodiscard]] auto
-    GetDestructedIdx() const  //
-        -> size_t
-    {
-      return destructed_idx_.load(std::memory_order_acquire);
-    }
-
-    /**
-     * @return the end index of this buffer.
-     *
-     * Note that the value is read with std::memory_order_acquire.
-     */
-    [[nodiscard]] auto
-    GetEndIdx() const  //
-        -> size_t
-    {
-      return end_idx_.load(std::memory_order_acquire);
-    }
-
-    /*##################################################################################
      * Internal member variables
      *################################################################################*/
 
@@ -492,7 +453,7 @@ class GarbageList
     std::atomic_size_t end_idx_{0};
 
     /// a current epoch. Note: this is maintained individually to improve performance.
-    const std::atomic_size_t &current_epoch_;
+    const std::atomic_size_t &global_epoch_;
 
     /// a flag to indicate a cleaner thread is modifying the list
     std::atomic_bool cleaner_ref_this_{false};
@@ -505,14 +466,14 @@ class GarbageList
    * Internal member variables
    *##################################################################################*/
 
+  /// a pointer to the tail a target garbage list.
+  GarbageBuffer *tail_{nullptr};
+
   /// a pointer to the head of a target garbage list.
   std::atomic<GarbageBuffer *> head_{};
 
   /// a pointer to the internal node of a target garbage list.
   std::atomic<GarbageBuffer *> inter_{};
-
-  /// a pointer to the tail a target garbage list.
-  GarbageBuffer *tail_{nullptr};
 };
 
 }  // namespace dbgroup::memory::component
