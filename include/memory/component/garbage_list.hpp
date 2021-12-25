@@ -65,11 +65,10 @@ class GarbageList
   ~GarbageList()
   {
     auto current = head_.load(std::memory_order_relaxed);
-    while (current != nullptr) {
-      auto previous = current;
-      current = current->GetNext();
-      delete previous;
+    while (current != nullptr && !Empty()) {
+      ClearGarbages(std::numeric_limits<size_t>::max());
     }
+    delete tail_;
   }
 
   /*####################################################################################
@@ -219,13 +218,11 @@ class GarbageList
     Size() const  //
         -> size_t
     {
-      const auto size = end_idx_.load(std::memory_order_relaxed)
-                        - destructed_idx_.load(std::memory_order_relaxed);
-      const auto next = next_.load(std::memory_order_relaxed);
-      if (next == nullptr) {
-        return size;
-      }
-      return next->Size() + size;
+      const auto end_idx = end_idx_.load(std::memory_order_acquire);
+      const auto size = end_idx - destructed_idx_.load(std::memory_order_relaxed);
+
+      if (end_idx < kGarbageBufferSize) return size;
+      return next_->Size() + size;
     }
 
     /**
@@ -236,23 +233,12 @@ class GarbageList
     Empty() const  //
         -> bool
     {
-      const auto size = end_idx_.load(std::memory_order_relaxed)
-                        - destructed_idx_.load(std::memory_order_relaxed);
+      const auto end_idx = end_idx_.load(std::memory_order_acquire);
+      const auto size = end_idx - destructed_idx_.load(std::memory_order_relaxed);
+
       if (size > 0) return false;
-
-      const auto next = next_.load(std::memory_order_relaxed);
-      if (next == nullptr) return true;
-      return next->Empty();
-    }
-
-    /**
-     * @return a pointer to the next garbage buffer.
-     */
-    [[nodiscard]] auto
-    GetNext() const  //
-        -> GarbageBuffer *
-    {
-      return next_.load(std::memory_order_relaxed);
+      if (end_idx < kGarbageBufferSize) return true;
+      return next_->Empty();
     }
 
     /*##################################################################################
@@ -281,17 +267,17 @@ class GarbageList
       buffer->garbages_[end_idx].epoch = epoch;
       buffer->garbages_[end_idx].ptr = garbage;
 
+      // check whether the list is full
+      GarbageBuffer *return_buf = buffer;
+      if (end_idx >= kGarbageBufferSize - 1) {
+        return_buf = new GarbageBuffer{buffer->global_epoch_};
+        buffer->next_ = return_buf;
+      }
+
       // increment the end position
       buffer->end_idx_.fetch_add(1, std::memory_order_release);
 
-      // check whether the list is full
-      if (end_idx >= kGarbageBufferSize - 1) {
-        auto full_list = buffer;
-        buffer = new GarbageBuffer{buffer->global_epoch_};
-        full_list->next_.store(buffer, std::memory_order_relaxed);
-      }
-
-      return buffer;
+      return return_buf;
     }
 
     /**
@@ -318,9 +304,7 @@ class GarbageList
       if (idx >= kGarbageBufferSize - 1) {
         // the list has become empty, so delete it
         auto empty_buf = buffer;
-        do {  // if the garbage buffer is empty but does not have a next buffer, wait insertion
-          buffer = empty_buf->GetNext();
-        } while (buffer == nullptr);
+        buffer = empty_buf->next_;
 
         while (empty_buf->cleaner_ref_this_.load(std::memory_order_relaxed)) {
           // wait for a cleaner thread to leave this list
@@ -365,13 +349,8 @@ class GarbageList
       }
 
       // release the next buffer recursively
-      auto *next = buffer->GetNext();
-      while (next == nullptr) {  // if the list does not have a next buffer, wait insertion
-        next = buffer->GetNext();
-      }
-
       buffer->cleaner_ref_this_.store(false, std::memory_order_relaxed);
-      return GarbageBuffer::Destruct(next, protected_epoch);
+      return GarbageBuffer::Destruct(buffer->next_, protected_epoch);
     }
 
     /**
@@ -410,12 +389,8 @@ class GarbageList
       }
 
       // release the next buffer recursively
-      auto *next = buffer->GetNext();
-      while (next == nullptr) {  // if the list does not have a next buffer, wait insertion
-        next = buffer->GetNext();
-      }
+      auto *next = buffer->next_;
       delete buffer;
-
       return GarbageBuffer::Clear(next, protected_epoch);
     }
 
@@ -459,7 +434,7 @@ class GarbageList
     std::atomic_bool cleaner_ref_this_{false};
 
     /// a pointer to a next garbage buffer.
-    std::atomic<GarbageBuffer *> next_{nullptr};
+    GarbageBuffer *next_{nullptr};
   };
 
   /*####################################################################################
