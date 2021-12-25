@@ -305,10 +305,6 @@ class GarbageList
         // the list has become empty, so delete it
         auto empty_buf = buffer;
         buffer = empty_buf->next_;
-
-        while (empty_buf->cleaner_ref_this_.load(std::memory_order_relaxed)) {
-          // wait for a cleaner thread to leave this list
-        }
         delete empty_buf;
       }
 
@@ -328,9 +324,6 @@ class GarbageList
         const size_t protected_epoch)  //
         -> GarbageBuffer *
     {
-      // set a flag as single-counter based GC
-      buffer->cleaner_ref_this_.store(true, std::memory_order_relaxed);
-
       // release unprotected garbages
       const auto end_idx = buffer->end_idx_.load(std::memory_order_acquire);
       auto idx = buffer->destructed_idx_.load(std::memory_order_relaxed);
@@ -340,17 +333,17 @@ class GarbageList
         // only call destructor to reuse pages
         buffer->garbages_[idx].ptr->~T();
       }
+
+      // update the position to make visible destructed garbages
+      auto *next_buf = (idx < kGarbageBufferSize) ? buffer : buffer->next_;
       buffer->destructed_idx_.store(idx, std::memory_order_release);
 
-      if (idx < kGarbageBufferSize) {
-        // the buffer has unreleased garbages
-        buffer->cleaner_ref_this_.store(false, std::memory_order_relaxed);
-        return buffer;
+      if (next_buf != buffer) {
+        // release the next buffer recursively
+        next_buf = GarbageBuffer::Destruct(next_buf, protected_epoch);
       }
 
-      // release the next buffer recursively
-      buffer->cleaner_ref_this_.store(false, std::memory_order_relaxed);
-      return GarbageBuffer::Destruct(buffer->next_, protected_epoch);
+      return next_buf;
     }
 
     /**
@@ -429,9 +422,6 @@ class GarbageList
 
     /// a current epoch. Note: this is maintained individually to improve performance.
     const std::atomic_size_t &global_epoch_;
-
-    /// a flag to indicate a cleaner thread is modifying the list
-    std::atomic_bool cleaner_ref_this_{false};
 
     /// a pointer to a next garbage buffer.
     GarbageBuffer *next_{nullptr};
