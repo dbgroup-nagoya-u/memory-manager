@@ -43,9 +43,9 @@ class EpochManager
   constexpr EpochManager() = default;
 
   EpochManager(const EpochManager &) = delete;
-  EpochManager &operator=(const EpochManager &) = delete;
+  auto operator=(const EpochManager &) -> EpochManager & = delete;
   EpochManager(EpochManager &&) = delete;
-  EpochManager &operator=(EpochManager &&) = delete;
+  auto operator=(EpochManager &&) -> EpochManager & = delete;
 
   /*####################################################################################
    * Public destructors
@@ -198,9 +198,9 @@ class EpochManager
     }
 
     EpochNode(const EpochNode &) = delete;
-    EpochNode &operator=(const EpochNode &) = delete;
+    auto operator=(const EpochNode &) -> EpochNode & = delete;
     EpochNode(EpochNode &&) = delete;
-    EpochNode &operator=(EpochNode &&) = delete;
+    auto operator=(EpochNode &&) -> EpochNode & = delete;
 
     /*##################################################################################
      * Public destructors

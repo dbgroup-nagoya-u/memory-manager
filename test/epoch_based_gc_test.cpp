@@ -93,10 +93,11 @@ class EpochBasedGCFixture : public ::testing::Test
     const auto lock = std::unique_lock<std::mutex>{mtx_};
   }
 
-  GarbageRef
+  auto
   TestGC(  //
       const size_t thread_num,
-      const size_t garbage_num)
+      const size_t garbage_num)  //
+      -> GarbageRef
   {
     std::vector<std::future<GarbageRef>> futures;
     for (size_t i = 0; i < thread_num; ++i) {
@@ -114,8 +115,9 @@ class EpochBasedGCFixture : public ::testing::Test
     return target_weak_ptrs;
   }
 
-  GarbageRef
-  TestReuse(const size_t garbage_num)
+  auto
+  TestReuse(const size_t garbage_num)  //
+      -> GarbageRef
   {
     // an array for embedding reserved pages
     std::array<std::atomic<std::shared_ptr<Target> *>, kThreadNum> arr{};

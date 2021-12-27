@@ -50,9 +50,9 @@ class GarbageList
   }
 
   GarbageList(const GarbageList &) = delete;
-  GarbageList &operator=(const GarbageList &) = delete;
+  auto operator=(const GarbageList &) -> GarbageList & = delete;
   GarbageList(GarbageList &&) = delete;
-  GarbageList &operator=(GarbageList &&) = delete;
+  auto operator=(GarbageList &&) -> GarbageList & = delete;
 
   /*####################################################################################
    * Public destructor
@@ -179,9 +179,9 @@ class GarbageList
     }
 
     GarbageBuffer(const GarbageBuffer &) = delete;
-    GarbageBuffer &operator=(const GarbageBuffer &) = delete;
+    auto operator=(const GarbageBuffer &) -> GarbageBuffer & = delete;
     GarbageBuffer(GarbageBuffer &&) = delete;
-    GarbageBuffer &operator=(GarbageBuffer &&) = delete;
+    auto operator=(GarbageBuffer &&) -> GarbageBuffer & = delete;
 
     /*##################################################################################
      * Public destructors
@@ -200,10 +200,10 @@ class GarbageList
       auto idx = begin_idx_.load(std::memory_order_relaxed);
       for (; idx < destructed_idx; ++idx) {
         // the garbage has been already destructed
-        operator delete(garbages_[idx].ptr);
+        operator delete(garbages_.at(idx).ptr);
       }
       for (; idx < end_idx; ++idx) {
-        delete garbages_[idx].ptr;
+        delete garbages_.at(idx).ptr;
       }
     }
 
@@ -264,8 +264,8 @@ class GarbageList
       const auto epoch = buffer->global_epoch_.load(std::memory_order_relaxed);
 
       // insert a new garbage
-      buffer->garbages_[end_idx].epoch = epoch;
-      buffer->garbages_[end_idx].ptr = garbage;
+      buffer->garbages_.at(end_idx).epoch = epoch;
+      buffer->garbages_.at(end_idx).ptr = garbage;
 
       // check whether the list is full
       GarbageBuffer *return_buf = buffer;
@@ -298,7 +298,7 @@ class GarbageList
 
       // get a released page
       buffer->begin_idx_.fetch_add(1, std::memory_order_relaxed);
-      auto *page = buffer->garbages_[idx].ptr;
+      auto *page = buffer->garbages_.at(idx).ptr;
 
       // check whether all the pages in the list are reused
       if (idx >= kGarbageBufferSize - 1) {
@@ -328,10 +328,10 @@ class GarbageList
       const auto end_idx = buffer->end_idx_.load(std::memory_order_acquire);
       auto idx = buffer->destructed_idx_.load(std::memory_order_relaxed);
       for (; idx < end_idx; ++idx) {
-        if (buffer->garbages_[idx].epoch >= protected_epoch) break;
+        if (buffer->garbages_.at(idx).epoch >= protected_epoch) break;
 
         // only call destructor to reuse pages
-        buffer->garbages_[idx].ptr->~T();
+        buffer->garbages_.at(idx).ptr->~T();
       }
 
       // update the position to make visible destructed garbages
@@ -366,12 +366,12 @@ class GarbageList
       auto idx = buffer->begin_idx_.load(std::memory_order_relaxed);
       for (; idx < destructed_idx; ++idx) {
         // the garbage has been already destructed
-        operator delete(buffer->garbages_[idx].ptr);
+        operator delete(buffer->garbages_.at(idx).ptr);
       }
       for (; idx < end_idx; ++idx) {
-        if (buffer->garbages_[idx].epoch >= protected_epoch) break;
+        if (buffer->garbages_.at(idx).epoch >= protected_epoch) break;
 
-        delete buffer->garbages_[idx].ptr;
+        delete buffer->garbages_.at(idx).ptr;
       }
       buffer->begin_idx_.store(idx, std::memory_order_relaxed);
       buffer->destructed_idx_.store(idx, std::memory_order_relaxed);
@@ -409,7 +409,7 @@ class GarbageList
      *################################################################################*/
 
     /// a buffer of garbage instances with added epochs.
-    Garbage garbages_[kGarbageBufferSize];
+    std::array<Garbage, kGarbageBufferSize> garbages_{};
 
     /// the index to represent a head position.
     std::atomic_size_t begin_idx_{0};

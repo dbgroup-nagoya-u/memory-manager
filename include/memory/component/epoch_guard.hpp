@@ -40,9 +40,9 @@ class EpochGuard
   explicit EpochGuard(Epoch *epoch) : epoch_{epoch} { epoch_->EnterEpoch(); }
 
   EpochGuard(const EpochGuard &) = delete;
-  EpochGuard &operator=(const EpochGuard &) = delete;
+  auto operator=(const EpochGuard &) -> EpochGuard & = delete;
   constexpr EpochGuard(EpochGuard &&) = default;
-  EpochGuard &operator=(EpochGuard &&) = default;
+  auto operator=(EpochGuard &&) -> EpochGuard & = default;
 
   /*####################################################################################
    * Public destructors

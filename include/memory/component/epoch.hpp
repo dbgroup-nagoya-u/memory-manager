@@ -42,9 +42,9 @@ class Epoch
   constexpr Epoch() = default;
 
   Epoch(const Epoch &) = delete;
-  Epoch &operator=(const Epoch &) = delete;
+  auto operator=(const Epoch &) -> Epoch & = delete;
   Epoch(Epoch &&orig) = delete;
-  Epoch &operator=(Epoch &&orig) = delete;
+  auto operator=(Epoch &&orig) -> Epoch & = delete;
 
   /*####################################################################################
    * Public destructors

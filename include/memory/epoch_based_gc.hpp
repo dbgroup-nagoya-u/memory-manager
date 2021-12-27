@@ -76,9 +76,9 @@ class EpochBasedGC
   }
 
   EpochBasedGC(const EpochBasedGC &) = delete;
-  EpochBasedGC &operator=(const EpochBasedGC &) = delete;
+  auto operator=(const EpochBasedGC &) -> EpochBasedGC & = delete;
   EpochBasedGC(EpochBasedGC &&) = delete;
-  EpochBasedGC &operator=(EpochBasedGC &&) = delete;
+  auto operator=(EpochBasedGC &&) -> EpochBasedGC & = delete;
 
   /*####################################################################################
    * Public destructors
@@ -228,9 +228,9 @@ class EpochBasedGC
     }
 
     GarbageNode(const GarbageNode &) = delete;
-    GarbageNode &operator=(const GarbageNode &) = delete;
+    auto operator=(const GarbageNode &) -> GarbageNode & = delete;
     GarbageNode(GarbageNode &&) = delete;
-    GarbageNode &operator=(GarbageNode &&) = delete;
+    auto operator=(GarbageNode &&) -> GarbageNode & = delete;
 
     /*##################################################################################
      * Public destructor
@@ -503,8 +503,9 @@ class EpochBasedGC
    * @param t a time point.
    * @return a converted unsigned integer value.
    */
-  size_t
-  TimePointToLong(const Clock_t::time_point t)
+  auto
+  TimePointToLong(const Clock_t::time_point t)  //
+      -> size_t
   {
     auto t_us = std::chrono::time_point_cast<std::chrono::microseconds>(t);
     return t_us.time_since_epoch().count();
@@ -514,8 +515,9 @@ class EpochBasedGC
    * @param t an unsigned interger value.
    * @return a converted time point.
    */
-  Clock_t::time_point
-  LongToTimePoint(const size_t t)
+  auto
+  LongToTimePoint(const size_t t)  //
+      -> Clock_t::time_point
   {
     std::chrono::microseconds t_us{t};
     return Clock_t::time_point{t_us};
