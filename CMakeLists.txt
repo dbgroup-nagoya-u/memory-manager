@@ -20,27 +20,29 @@ set(MEMORY_MANAGER_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
 # Build targets
 #--------------------------------------------------------------------------------------#
 
-# build as a header-only library
-add_library(memory_manager INTERFACE)
-add_library(memory_manager::memory_manager ALIAS memory_manager)
-target_compile_features(memory_manager INTERFACE
-  "cxx_std_17"
-)
-target_include_directories(memory_manager INTERFACE
-  "${MEMORY_MANAGER_SOURCE_DIR}/include"
-)
-target_link_libraries(memory_manager INTERFACE
-  pthread
-)
-
-#--------------------------------------------------------------------------------------#
-# Build options
-#--------------------------------------------------------------------------------------#
-
-if(DEFINED MEMORY_MANAGER_GARBAGE_BUFFER_SIZE)
-  target_compile_definitions(memory_manager INTERFACE
-    MEMORY_MANAGER_GARBAGE_BUFFER_SIZE=${MEMORY_MANAGER_GARBAGE_BUFFER_SIZE}
+if(NOT TARGET memory_manager::memory_manager)
+  # build as a header-only library
+  add_library(memory_manager INTERFACE)
+  add_library(memory_manager::memory_manager ALIAS memory_manager)
+  target_compile_features(memory_manager INTERFACE
+    "cxx_std_17"
   )
+  target_include_directories(memory_manager INTERFACE
+    "${MEMORY_MANAGER_SOURCE_DIR}/include"
+  )
+  target_link_libraries(memory_manager INTERFACE
+    pthread
+  )
+
+  #------------------------------------------------------------------------------------#
+  # Build options
+  #------------------------------------------------------------------------------------#
+
+  if(DEFINED MEMORY_MANAGER_GARBAGE_BUFFER_SIZE)
+    target_compile_definitions(memory_manager INTERFACE
+      MEMORY_MANAGER_GARBAGE_BUFFER_SIZE=${MEMORY_MANAGER_GARBAGE_BUFFER_SIZE}
+    )
+  endif()
 endif()
 
 #--------------------------------------------------------------------------------------#
