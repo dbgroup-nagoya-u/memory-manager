@@ -27,8 +27,8 @@
 #include <vector>
 
 #include "component/epoch_guard.hpp"
-#include "component/epoch_manager.hpp"
 #include "component/garbage_list.hpp"
+#include "epoch_manager.hpp"
 #include "utility.hpp"
 
 namespace dbgroup::memory
@@ -47,7 +47,6 @@ class EpochBasedGC
 
   using Epoch = component::Epoch;
   using EpochGuard = component::EpochGuard;
-  using EpochManager = component::EpochManager;
   using Clock_t = ::std::chrono::high_resolution_clock;
 
   template <class T>
@@ -136,7 +135,7 @@ class EpochBasedGC
       }
     }
 
-    garbage_list->AddGarbage(const_cast<T *>(garbage_ptr));  // NOLINT
+    garbage_list->AddGarbage(epoch_manager_.GetCurrentEpoch(), const_cast<T *>(garbage_ptr));
   }
 
   /**
@@ -332,8 +331,7 @@ class EpochBasedGC
   {
     if constexpr (std::is_same_v<Head, Target> || sizeof...(Tails) == 0) {
       static_assert(std::is_same_v<Head, Target>);
-      thread_local std::shared_ptr<GarbageList<Target>> garbage_list =
-          std::make_shared<GarbageList<Target>>(epoch_manager_.GetGlobalEpochReference());
+      thread_local auto garbage_list = std::make_shared<GarbageList<Target>>();
       return garbage_list;
     } else {
       return GetThreadLocalGarbageList<Target, Tails...>();

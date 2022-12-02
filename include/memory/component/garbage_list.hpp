@@ -44,10 +44,7 @@ class GarbageList
    * @brief Create a new GarbageList object.
    *
    */
-  explicit GarbageList(const std::atomic_size_t &global_epoch)
-      : tail_{new GarbageBuffer{global_epoch}}, head_{tail_}, inter_{tail_}
-  {
-  }
+  GarbageList() : tail_{new GarbageBuffer{}}, head_{tail_}, inter_{tail_} {}
 
   GarbageList(const GarbageList &) = delete;
   auto operator=(const GarbageList &) -> GarbageList & = delete;
@@ -103,12 +100,15 @@ class GarbageList
   /**
    * @brief Add a new garbage instance.
    *
+   * @param epoch an epoch value when a garbage is added.
    * @param garbage_ptr a pointer to a target garbage.
    */
   void
-  AddGarbage(T *garbage_ptr)
+  AddGarbage(  //
+      const size_t epoch,
+      T *garbage_ptr)
   {
-    tail_ = GarbageBuffer::AddGarbage(tail_, garbage_ptr);
+    tail_ = GarbageBuffer::AddGarbage(tail_, epoch, garbage_ptr);
   }
 
   /**
@@ -171,12 +171,8 @@ class GarbageList
     /**
      * @brief Construct a new instance.
      *
-     * @param global_epoch a reference to the global epoch.
      */
-    constexpr explicit GarbageBuffer(const std::atomic_size_t &global_epoch)
-        : global_epoch_{global_epoch}
-    {
-    }
+    constexpr GarbageBuffer() = default;
 
     GarbageBuffer(const GarbageBuffer &) = delete;
     auto operator=(const GarbageBuffer &) -> GarbageBuffer & = delete;
@@ -251,17 +247,18 @@ class GarbageList
      * If the buffer becomes full, create a new garbage buffer and link them.
      *
      * @param buffer a garbage buffer to be added.
+     * @param epoch an epoch value when a garbage is added.
      * @param garbage a new garbage instance.
      * @return a pointer to a current tail garbage buffer.
      */
     static auto
     AddGarbage(  //
         GarbageBuffer *buffer,
+        const size_t epoch,
         T *garbage)  //
         -> GarbageBuffer *
     {
       const auto end_idx = buffer->end_idx_.load(std::memory_order_relaxed);
-      const auto epoch = buffer->global_epoch_.load(std::memory_order_relaxed);
 
       // insert a new garbage
       buffer->garbages_.at(end_idx).epoch = epoch;
@@ -270,7 +267,7 @@ class GarbageList
       // check whether the list is full
       GarbageBuffer *return_buf = buffer;
       if (end_idx >= kGarbageBufferSize - 1) {
-        return_buf = new GarbageBuffer{buffer->global_epoch_};
+        return_buf = new GarbageBuffer{};
         buffer->next_ = return_buf;
       }
 
@@ -419,9 +416,6 @@ class GarbageList
 
     /// the index to represent a tail position.
     std::atomic_size_t end_idx_{0};
-
-    /// a current epoch. Note: this is maintained individually to improve performance.
-    const std::atomic_size_t &global_epoch_;
 
     /// a pointer to a next garbage buffer.
     GarbageBuffer *next_{nullptr};

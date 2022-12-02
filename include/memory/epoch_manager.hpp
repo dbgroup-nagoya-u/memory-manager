@@ -21,9 +21,9 @@
 #include <memory>
 #include <utility>
 
-#include "epoch_guard.hpp"
+#include "component/epoch_guard.hpp"
 
-namespace dbgroup::memory::component
+namespace dbgroup::memory
 {
 /**
  * @brief A class to manage epochs for epoch-based garbage collection.
@@ -32,6 +32,12 @@ namespace dbgroup::memory::component
 class EpochManager
 {
  public:
+  /*####################################################################################
+   * Type aliases
+   *##################################################################################*/
+
+  using Epoch = component::Epoch;
+
   /*####################################################################################
    * Public constructors and assignment operators
    *##################################################################################*/
@@ -78,16 +84,6 @@ class EpochManager
   ForwardGlobalEpoch()
   {
     global_epoch_.fetch_add(1, std::memory_order_relaxed);
-  }
-
-  /**
-   * @return a reference to the global epoch.
-   */
-  [[nodiscard]] auto
-  GetGlobalEpochReference() const  //
-      -> const std::atomic_size_t &
-  {
-    return global_epoch_;
   }
 
   /**
@@ -264,6 +260,6 @@ class EpochManager
   std::atomic<EpochNode *> epochs_{nullptr};
 };
 
-}  // namespace dbgroup::memory::component
+}  // namespace dbgroup::memory
 
 #endif  // MEMORY_COMPONENT_EPOCH_MANAGER_HPP

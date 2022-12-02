@@ -44,7 +44,7 @@ class GarbageListFixture : public ::testing::Test
   SetUp() override
   {
     current_epoch_ = 1;
-    garbage_list_ = std::make_shared<GarbageList_t>(current_epoch_);
+    garbage_list_ = std::make_shared<GarbageList_t>();
   }
 
   void
@@ -70,7 +70,7 @@ class GarbageListFixture : public ::testing::Test
         garbage = new (page) std::shared_ptr<Target>{target};
       }
 
-      garbage_list_->AddGarbage(garbage);
+      garbage_list_->AddGarbage(current_epoch_.load(), garbage);
       references_.emplace_back(*garbage);
     }
   }

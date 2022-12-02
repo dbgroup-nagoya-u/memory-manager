@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-#include "memory/component/epoch_manager.hpp"
+#include "memory/epoch_manager.hpp"
 
 #include <future>
 #include <memory>
@@ -25,7 +25,7 @@
 #include "common.hpp"
 #include "gtest/gtest.h"
 
-namespace dbgroup::memory::component::test
+namespace dbgroup::memory::test
 {
 class EpochManagerFixture : public ::testing::Test
 {
@@ -64,11 +64,6 @@ class EpochManagerFixture : public ::testing::Test
 /*######################################################################################
  * Unit test definitions
  *####################################################################################*/
-
-TEST_F(EpochManagerFixture, GetGlobalEpochReferenceAfterConstructGetZeroValue)
-{
-  EXPECT_EQ(0, epoch_manager_->GetGlobalEpochReference().load());
-}
 
 TEST_F(EpochManagerFixture, ForwardGlobalEpochAfterConstructGetIncrementedEpoch)
 {
@@ -127,4 +122,4 @@ TEST_F(EpochManagerFixture, GetProtectedEpochWithEnteredEpochGetEnteredEpoch)
   for (auto &&t : threads) t.join();
 }
 
-}  // namespace dbgroup::memory::component::test
+}  // namespace dbgroup::memory::test
