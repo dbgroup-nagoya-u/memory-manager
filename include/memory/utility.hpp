@@ -31,6 +31,10 @@ constexpr size_t kGarbageBufferSize = MEMORY_MANAGER_GARBAGE_BUFFER_SIZE;
 /// an initial buffer size for retaining garbages
 constexpr size_t kGarbageBufferSize = 1024;
 #endif
+
+/// the expected number of worker threads.
+constexpr size_t kExpectedThreadNum = 128;
+
 }  // namespace dbgroup::memory
 
 #endif  // MEMORY_UTILITY_HPP

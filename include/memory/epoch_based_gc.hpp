@@ -111,7 +111,7 @@ class EpochBasedGC
   CreateEpochGuard()  //
       -> EpochGuard
   {
-    return EpochGuard{epoch_manager_.GetEpoch()};
+    return epoch_manager_.CreateEpochGuard();
   }
 
   /**
@@ -402,7 +402,7 @@ class EpochBasedGC
       cur_node = cur_node->next;
       delete prev_node;
     }
-    head_addr.store(nullptr, std::memory_order::memory_order_relaxed);
+    head_addr.store(nullptr, std::memory_order_relaxed);
 
     if constexpr (sizeof...(Tails) > 0) {
       RemoveAllNodes<Tails...>();
@@ -451,8 +451,7 @@ class EpochBasedGC
       while (gc_is_running_.load(std::memory_order_relaxed)) {
         {  // create a lock for preventing node expiration
           const std::shared_lock guard{garbage_lists_lock_};
-          const auto protected_epoch = protected_epoch_.load(std::memory_order_relaxed);
-          ClearGarbages<GCTargets...>(protected_epoch);
+          ClearGarbages<GCTargets...>(epoch_manager_.GetMinEpoch());
         }
 
         // wait until a next epoch
@@ -488,7 +487,6 @@ class EpochBasedGC
       sleep_until_.store(TimePointToLong(sleep_time), std::memory_order_relaxed);
 
       epoch_manager_.ForwardGlobalEpoch();
-      protected_epoch_.store(epoch_manager_.GetProtectedEpoch(), std::memory_order_relaxed);
       RemoveExpiredNodes<GCTargets...>();
     }
 
@@ -542,9 +540,6 @@ class EpochBasedGC
 
   /// worker threads to release garbages
   std::vector<std::thread> cleaner_threads_{};
-
-  /// an epoch value to protect garbages
-  std::atomic_size_t protected_epoch_{0};
 
   /// a converted time point for GC interval
   std::atomic_size_t sleep_until_{0};
