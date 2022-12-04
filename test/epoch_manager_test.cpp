@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-#include "memory/component/epoch_manager.hpp"
+#include "memory/epoch_manager.hpp"
 
 #include <future>
 #include <memory>
@@ -25,7 +25,7 @@
 #include "common.hpp"
 #include "gtest/gtest.h"
 
-namespace dbgroup::memory::component::test
+namespace dbgroup::memory::test
 {
 class EpochManagerFixture : public ::testing::Test
 {
@@ -34,7 +34,6 @@ class EpochManagerFixture : public ::testing::Test
    * Internal constants
    *##################################################################################*/
 
-  static constexpr size_t kLoopNum = 100;
   static constexpr auto kULMax = ::dbgroup::memory::test::kULMax;
 
   /*####################################################################################
@@ -65,11 +64,6 @@ class EpochManagerFixture : public ::testing::Test
  * Unit test definitions
  *####################################################################################*/
 
-TEST_F(EpochManagerFixture, GetGlobalEpochReferenceAfterConstructGetZeroValue)
-{
-  EXPECT_EQ(0, epoch_manager_->GetGlobalEpochReference().load());
-}
-
 TEST_F(EpochManagerFixture, ForwardGlobalEpochAfterConstructGetIncrementedEpoch)
 {
   epoch_manager_->ForwardGlobalEpoch();
@@ -77,35 +71,27 @@ TEST_F(EpochManagerFixture, ForwardGlobalEpochAfterConstructGetIncrementedEpoch)
   EXPECT_EQ(1, epoch_manager_->GetCurrentEpoch());
 }
 
-TEST_F(EpochManagerFixture, GetEpochAfterConstructCreateLocalEpoch)
+TEST_F(EpochManagerFixture, GetEpochWithForwardEpochKeepReferenceToGlobalEpoch)
 {
-  const auto *epoch = epoch_manager_->GetEpoch();
-
-  EXPECT_EQ(0, epoch->GetCurrentEpoch());
-  EXPECT_EQ(kULMax, epoch->GetProtectedEpoch());
-}
-
-TEST_F(EpochManagerFixture, GetEpochWithForwardEpochKeepRefferenceToGlobalEpoch)
-{
-  const auto *epoch = epoch_manager_->GetEpoch();
   epoch_manager_->ForwardGlobalEpoch();
 
-  EXPECT_EQ(1, epoch->GetCurrentEpoch());
+  EXPECT_EQ(1, epoch_manager_->GetCurrentEpoch());
 }
 
 TEST_F(EpochManagerFixture, GetProtectedEpochWithoutEpochsGetCurrentEpoch)
 {
-  EXPECT_EQ(0, epoch_manager_->GetProtectedEpoch());
+  EXPECT_EQ(0, epoch_manager_->GetMinEpoch());
 }
 
 TEST_F(EpochManagerFixture, GetProtectedEpochWithEnteredEpochGetEnteredEpoch)
 {
+  constexpr size_t kLoopNum = 1000;
   constexpr size_t kRepeatNum = 10;
 
   // forward global epoch
   std::thread forwarder{[&]() {
     for (size_t i = 0; i < kLoopNum; ++i) {
-      std::this_thread::sleep_for(std::chrono::milliseconds{1});
+      std::this_thread::sleep_for(std::chrono::microseconds{1});
       epoch_manager_->ForwardGlobalEpoch();
     }
   }};
@@ -116,15 +102,21 @@ TEST_F(EpochManagerFixture, GetProtectedEpochWithEnteredEpochGetEnteredEpoch)
     const std::unique_lock<std::mutex> guard{mtx_};
     for (size_t i = 0; i < kRepeatNum; ++i) {
       threads.emplace_back([&]() {
-        epoch_manager_->GetEpoch()->EnterEpoch();
+        [[maybe_unused]] const auto &guard = epoch_manager_->CreateEpochGuard();
         const std::unique_lock<std::mutex> lock{mtx_};
       });
     }
 
     forwarder.join();
-    EXPECT_LT(epoch_manager_->GetProtectedEpoch(), kLoopNum);
+
+    const auto &protected_epochs = epoch_manager_->GetProtectedEpochs();
+    for (size_t i = 0; i < protected_epochs->size() - 1; ++i) {
+      EXPECT_GT(protected_epochs->at(i), protected_epochs->at(i + 1));
+    }
+    EXPECT_EQ(protected_epochs->front(), epoch_manager_->GetCurrentEpoch());
+    EXPECT_EQ(protected_epochs->back(), epoch_manager_->GetMinEpoch());
   }
   for (auto &&t : threads) t.join();
 }
 
-}  // namespace dbgroup::memory::component::test
+}  // namespace dbgroup::memory::test
