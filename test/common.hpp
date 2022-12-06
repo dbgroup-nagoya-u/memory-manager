@@ -25,11 +25,7 @@ namespace dbgroup::memory::test
 {
 constexpr size_t kULMax = std::numeric_limits<size_t>::max();
 
-#ifdef MEMORY_MANAGER_TEST_THREAD_NUM
-constexpr size_t kThreadNum = MEMORY_MANAGER_TEST_THREAD_NUM;
-#else
-constexpr size_t kThreadNum = 8;
-#endif
+constexpr size_t kThreadNum = DBGROUP_TEST_THREAD_NUM;
 
 }  // namespace dbgroup::memory::test
 

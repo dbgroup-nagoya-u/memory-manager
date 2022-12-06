@@ -24,16 +24,15 @@
 
 namespace dbgroup::memory
 {
-#ifdef MEMORY_MANAGER_GARBAGE_BUFFER_SIZE
-/// an initial buffer size for retaining garbages
+/*######################################################################################
+ * Turning parameters
+ *####################################################################################*/
+
+/// the size of buffers for retaining garbages.
 constexpr size_t kGarbageBufferSize = MEMORY_MANAGER_GARBAGE_BUFFER_SIZE;
-#else
-/// an initial buffer size for retaining garbages
-constexpr size_t kGarbageBufferSize = 1024;
-#endif
 
 /// the expected number of worker threads.
-constexpr size_t kExpectedThreadNum = 128;
+constexpr size_t kExpectedThreadNum = MEMORY_MANAGER_EXPECTED_THREAD_NUM;
 
 }  // namespace dbgroup::memory
 
