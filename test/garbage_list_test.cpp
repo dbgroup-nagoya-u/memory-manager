@@ -26,15 +26,34 @@
 
 namespace dbgroup::memory::component::test
 {
+/*######################################################################################
+ * Global type aliases
+ *####################################################################################*/
+
+using Target = uint64_t;
+
 class GarbageListFixture : public ::testing::Test
 {
  protected:
   /*####################################################################################
+   * Internal classes
+   *##################################################################################*/
+
+  struct SharedPtrTarget {
+    using T = std::shared_ptr<Target>;
+
+    static constexpr bool kReusePages = true;
+
+    static const inline std::function<void(void *)> deleter = [](void *ptr) {
+      ::operator delete(ptr);
+    };
+  };
+
+  /*####################################################################################
    * Type aliases
    *##################################################################################*/
 
-  using Target = uint64_t;
-  using GarbageList_t = GarbageList<std::shared_ptr<Target>>;
+  using GarbageList_t = GarbageList<SharedPtrTarget>;
 
   /*####################################################################################
    * Test setup/teardown

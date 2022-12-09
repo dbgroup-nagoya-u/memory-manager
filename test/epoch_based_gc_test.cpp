@@ -28,14 +28,34 @@
 
 namespace dbgroup::memory::test
 {
+/*######################################################################################
+ * Global type aliases
+ *####################################################################################*/
+
+using Target = uint64_t;
+
+/*######################################################################################
+ * Global classes
+ *####################################################################################*/
+
+struct SharedPtrTarget {
+  using T = std::shared_ptr<Target>;
+
+  static constexpr bool kReusePages = true;
+
+  static const inline std::function<void(void *)> deleter = [](void *ptr) {
+    ::operator delete(ptr);
+  };
+};
+
 class EpochBasedGCFixture : public ::testing::Test
 {
  protected:
   /*####################################################################################
    * Type aliases
    *##################################################################################*/
-  using Target = uint64_t;
-  using EpochBasedGC_t = EpochBasedGC<std::shared_ptr<Target>>;
+
+  using EpochBasedGC_t = EpochBasedGC<SharedPtrTarget>;
   using GarbageRef = std::vector<std::weak_ptr<Target>>;
 
   /*####################################################################################
@@ -53,7 +73,9 @@ class EpochBasedGCFixture : public ::testing::Test
   void
   SetUp() override
   {
-    gc_ = std::make_unique<EpochBasedGC_t>(kGCInterval, kThreadNum, true);
+    auto &&targets = std::make_tuple(SharedPtrTarget{});
+    gc_ = std::make_unique<EpochBasedGC_t>(kGCInterval, kThreadNum, std::move(targets));
+    gc_->StartGC();
   }
 
   void
@@ -73,13 +95,13 @@ class EpochBasedGCFixture : public ::testing::Test
     GarbageRef target_weak_ptrs;
     for (size_t loop = 0; loop < garbage_num; ++loop) {
       auto *target = new Target{loop};
-      auto *page = gc_->GetPageIfPossible<std::shared_ptr<Target>>();
+      auto *page = gc_->GetPageIfPossible<SharedPtrTarget>();
       std::shared_ptr<Target> *target_shared =  //
           (page == nullptr) ? new std::shared_ptr<Target>{target}
                             : new (page) std::shared_ptr<Target>{target};
 
       target_weak_ptrs.emplace_back(*target_shared);
-      gc_->AddGarbage(target_shared);
+      gc_->AddGarbage<SharedPtrTarget>(target_shared);
     }
 
     p.set_value(std::move(target_weak_ptrs));
@@ -137,7 +159,7 @@ class EpochBasedGCFixture : public ::testing::Test
 
         // prepare a page for embedding
         auto *target = new Target{loop};
-        auto *page = gc_->GetPageIfPossible<std::shared_ptr<Target>>();
+        auto *page = gc_->GetPageIfPossible<SharedPtrTarget>();
         auto *target_shared =  //
             (page == nullptr) ? new std::shared_ptr<Target>{target}
                               : new (page) std::shared_ptr<Target>{target};
@@ -151,7 +173,7 @@ class EpochBasedGCFixture : public ::testing::Test
         }
 
         target_weak_ptrs.emplace_back(*target_shared);
-        if (expected != nullptr) gc_->AddGarbage(expected);
+        if (expected != nullptr) gc_->AddGarbage<SharedPtrTarget>(expected);
       }
 
       p.set_value(std::move(target_weak_ptrs));
@@ -263,6 +285,18 @@ class EpochBasedGCFixture : public ::testing::Test
     }
   }
 
+  static void
+  VerifyDefaultTarget()
+  {
+    EpochBasedGC gc{kGCInterval, kThreadNum};
+    gc.StartGC();
+
+    for (size_t loop = 0; loop < kGarbageNumLarge; ++loop) {
+      auto *target = new Target{loop};
+      gc.AddGarbage(target);
+    }
+  }
+
   /*####################################################################################
    * Internal member variables
    *##################################################################################*/
@@ -309,6 +343,11 @@ TEST_F(EpochBasedGCFixture, CreateEpochGuardWithMultiThreadsProtectGarbages)
 TEST_F(EpochBasedGCFixture, ReusePageIfPossibleWithMultiThreadsReleasePageOnlyOnce)
 {  //
   VerifyReusePageIfPossible();
+}
+
+TEST_F(EpochBasedGCFixture, EmptyDeclarationActAsGCOnlyMode)
+{  //
+  VerifyDefaultTarget();
 }
 
 }  // namespace dbgroup::memory::test

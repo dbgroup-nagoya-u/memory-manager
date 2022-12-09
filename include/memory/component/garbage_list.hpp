@@ -30,12 +30,18 @@ namespace dbgroup::memory::component
 /**
  * @brief A class to represent a buffer of garbage instances.
  *
- * @tparam T a target class of garbage collection.
+ * @tparam Target a target class of garbage collection.
  */
-template <class T>
+template <class Target>
 class GarbageList
 {
  public:
+  /*####################################################################################
+   * Type aliases
+   *##################################################################################*/
+
+  using T = typename Target::T;
+
   /*####################################################################################
    * Public constructors and assignment operators
    *##################################################################################*/
@@ -196,10 +202,14 @@ class GarbageList
       auto idx = begin_idx_.load(std::memory_order_relaxed);
       for (; idx < destructed_idx; ++idx) {
         // the garbage has been already destructed
-        operator delete(garbages_.at(idx).ptr);
+        Target::deleter(garbages_.at(idx).ptr);
       }
       for (; idx < end_idx; ++idx) {
-        delete garbages_.at(idx).ptr;
+        auto *ptr = garbages_.at(idx).ptr;
+        if constexpr (!std::is_same_v<T, void>) {
+          ptr->~T();
+        }
+        Target::deleter(ptr);
       }
     }
 
@@ -328,7 +338,9 @@ class GarbageList
         if (buffer->garbages_.at(idx).epoch >= protected_epoch) break;
 
         // only call destructor to reuse pages
-        buffer->garbages_.at(idx).ptr->~T();
+        if constexpr (!std::is_same_v<T, void>) {
+          buffer->garbages_.at(idx).ptr->~T();
+        }
       }
 
       // update the position to make visible destructed garbages
@@ -363,12 +375,16 @@ class GarbageList
       auto idx = buffer->begin_idx_.load(std::memory_order_relaxed);
       for (; idx < destructed_idx; ++idx) {
         // the garbage has been already destructed
-        operator delete(buffer->garbages_.at(idx).ptr);
+        Target::deleter(buffer->garbages_.at(idx).ptr);
       }
       for (; idx < end_idx; ++idx) {
         if (buffer->garbages_.at(idx).epoch >= protected_epoch) break;
 
-        delete buffer->garbages_.at(idx).ptr;
+        auto *ptr = buffer->garbages_.at(idx).ptr;
+        if constexpr (!std::is_same_v<T, void>) {
+          ptr->~T();
+        }
+        Target::deleter(ptr);
       }
       buffer->begin_idx_.store(idx, std::memory_order_relaxed);
       buffer->destructed_idx_.store(idx, std::memory_order_relaxed);
