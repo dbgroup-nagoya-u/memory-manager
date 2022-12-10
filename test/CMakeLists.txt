@@ -56,3 +56,7 @@ DBGROUP_ADD_TEST("epoch_guard_test")
 DBGROUP_ADD_TEST("epoch_manager_test")
 DBGROUP_ADD_TEST("garbage_list_test")
 DBGROUP_ADD_TEST("epoch_based_gc_test")
+
+if(${MEMORY_MANAGER_USE_PERSISTENT_MEMORY})
+  DBGROUP_ADD_TEST("garbage_list_on_pmem_test")
+endif()
