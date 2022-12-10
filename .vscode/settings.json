@@ -28,17 +28,21 @@
   // extra words for spell checking
   "cSpell.words": [
     "alignas",
+    "cout",
     "ctest",
     "DCMAKE",
     "DMEMORY",
     "DSIMPLE",
+    "endl",
     "gtest",
+    "iostream",
     "JEMALLOC",
     "libjemalloc",
     "MIMALLOC",
     "NOLINT",
     "pthread",
     "STREQ",
+    "struct",
     "Wextra"
   ],
   "files.associations": {

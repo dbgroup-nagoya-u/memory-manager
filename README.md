@@ -13,7 +13,7 @@ This repository is an open source implementation of epoch-based garbage collecti
 - [Usage](#usage)
     - [Linking by CMake](#linking-by-cmake)
     - [Collect and Release Garbage Pages](#collect-and-release-garbage-pages)
-    - [Destruct and Release](#destruct-and-release)
+    - [Destruct Garbage before Releasing](#destruct-garbage-before-releasing)
     - [Reuse Garbage Collected Pages](#reuse-garbage-collected-pages)
 
 
@@ -31,7 +31,7 @@ sudo apt update && sudo apt install -y build-essential cmake
 
 #### Tuning Parameters
 
-- `MEMORY_MANAGER_GARBAGE_BUFFER_SIZE`: the size of buffers for retaining garbages (default `1024`).
+- `MEMORY_MANAGER_GARBAGE_BUFFER_SIZE`: the size of buffers for retaining garbage (default `1024`).
 - `MEMORY_MANAGER_EXPECTED_THREAD_NUM`: the expected number of worker threads (default: `128`).
 
 #### Parameters for Unit Testing
@@ -70,13 +70,13 @@ ctest -C Release
       [<source> ...]
     )
     target_link_libraries(<target_bin_name> PRIVATE
-      dbgroup::memory-manager
+      dbgroup::memory_manager
     )
     ```
 
 ### Collect and Release Garbage Pages
 
-If you wish to only release garbages, you can use our garbage collector as follows.
+If you wish to only release garbage, you can use our garbage collector as follows.
 
 ```cpp
 // C++ standard libraries
@@ -93,8 +93,8 @@ main(  //
     const char *argv[])  //
     -> int
 {
-  constexpr size_t kGCInterval = 1E3;  // increment a epoch value every 1ms
-  constexpr size_t kThreadNum = 1;     // use one thread to release garbages
+  constexpr size_t kGCInterval = 1E3;  // increment an epoch value every 1ms
+  constexpr size_t kThreadNum = 1;     // use one thread to release garbage
 
   // create and run a garbage collector
   ::dbgroup::memory::EpochBasedGC gc{kGCInterval, kThreadNum};
@@ -105,7 +105,7 @@ main(  //
     for (size_t loop = 0; loop < 100; ++loop) {
       // this thread has not enter a current epoch yet
       {
-        // we use the scoped pattern to prevent garbages from releasing.
+        // we use the scoped pattern to prevent garbage from releasing.
         const auto &guard = gc.CreateEpochGuard();
 
         // you can access this page safely until all the threads leave the current epoch
@@ -118,7 +118,7 @@ main(  //
     }
   };
 
-  // create threads to add garbages
+  // create threads to add garbage
   std::vector<std::thread> threads{};
   for (size_t i = 0; i < 8; ++i) {
     threads.emplace_back(worker);
@@ -134,6 +134,102 @@ main(  //
 }
 ```
 
-### Destruct and Release
+### Destruct Garbage before Releasing
+
+You can call a specific destructor before releasing garbage.
+
+```cpp
+// C++ standard libraries
+#include <chrono>
+#include <iostream>
+#include <memory>
+#include <thread>
+#include <tuple>
+#include <vector>
+
+// our libraries
+#include "memory/epoch_based_gc.hpp"
+
+// prepare the information of target garbage
+struct SharedPtrTarget {
+  // set the type of garbage to perform destructor
+  using T = std::shared_ptr<size_t>;
+
+  // do not reuse pages in this example
+  static constexpr bool kReusePages = false;
+
+  // use the standard delete function to release garbage
+  static const inline std::function<void(void *)> deleter = [](void *ptr) {
+    ::operator delete(ptr);
+  };
+};
+
+auto
+main(  //
+    const int argc,
+    const char *argv[])  //
+    -> int
+{
+  constexpr size_t kGCInterval = 1E3;
+  constexpr size_t kThreadNum = 1;
+
+  // prepare weak_ptr for checking garbage' life-time
+  std::vector<std::weak_ptr<size_t>> weak_pointers{};
+  std::mutex lock{};
+
+  {
+    // create the set of GC targets and pass it to GC
+    auto &&gc_targets = std::make_tuple(SharedPtrTarget{});
+    ::dbgroup::memory::EpochBasedGC gc{kGCInterval, kThreadNum, std::move(gc_targets)};
+    gc.StartGC();
+
+    // prepare a sample worker procedure
+    auto worker = [&]() {
+      for (size_t loop = 0; loop < 100; ++loop) {
+        {
+          const auto &guard = gc.CreateEpochGuard();
+
+          // create a shared pointer as gabage pages
+          auto *page = new std::shared_ptr<size_t>{new size_t{loop}};
+          {
+            // track the life-time of this garbage
+            const auto &lock_guard = std::lock_guard{lock};
+            weak_pointers.emplace_back(*page);
+          }
+
+          // specify the type of target garbage
+          gc.AddGarbage<SharedPtrTarget>(page);
+        }
+
+        std::this_thread::sleep_for(std::chrono::microseconds{100});
+      }
+    };
+
+    // create threads to add garbage
+    std::vector<std::thread> threads{};
+    for (size_t i = 0; i < 8; ++i) {
+      threads.emplace_back(worker);
+    }
+
+    // wait for the threads
+    for (auto &&t : threads) {
+      t.join();
+    }
+
+    // our GC has released all the garbage pages before its destruction
+  }
+
+  // check all the garbage have been destructed and released
+  for (const auto &weak_p : weak_pointers) {
+    if (!weak_p.expired()) {
+      std::cout << "Failed: there is the unreleased garbage." << std::endl;
+      exit(EXIT_FAILURE);
+    }
+  }
+  std::cout << "Succeeded: all the garbage have been released." << std::endl;
+
+  return 0;
+}
+```
 
 ### Reuse Garbage Collected Pages

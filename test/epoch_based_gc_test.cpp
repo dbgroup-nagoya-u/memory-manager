@@ -88,7 +88,7 @@ class EpochBasedGCFixture : public ::testing::Test
    *##################################################################################*/
 
   void
-  AddGarbages(  //
+  AddGarbage(  //
       std::promise<GarbageRef> p,
       const size_t garbage_num)
   {
@@ -125,7 +125,7 @@ class EpochBasedGCFixture : public ::testing::Test
     for (size_t i = 0; i < thread_num; ++i) {
       std::promise<GarbageRef> p;
       futures.emplace_back(p.get_future());
-      std::thread{&EpochBasedGCFixture::AddGarbages, this, std::move(p), garbage_num}.detach();
+      std::thread{&EpochBasedGCFixture::AddGarbage, this, std::move(p), garbage_num}.detach();
     }
 
     GarbageRef target_weak_ptrs;
@@ -210,7 +210,7 @@ class EpochBasedGCFixture : public ::testing::Test
   void
   VerifyDestructor(const size_t thread_num)
   {
-    // register garbages to GC
+    // register garbage to GC
     auto target_weak_ptrs = TestGC(thread_num, kGarbageNumLarge);
 
     // GC deletes all targets during its deconstruction
@@ -225,7 +225,7 @@ class EpochBasedGCFixture : public ::testing::Test
   void
   VerifyStopGC(const size_t thread_num)
   {
-    // register garbages to GC
+    // register garbage to GC
     auto target_weak_ptrs = TestGC(thread_num, kGarbageNumLarge);
 
     // GC deletes all targets
@@ -260,7 +260,7 @@ class EpochBasedGCFixture : public ::testing::Test
       guarder = std::thread{create_guard, std::move(p)};
       f.get();
 
-      // register garbages to GC
+      // register garbage to GC
       auto target_weak_ptrs = TestGC(thread_num, kGarbageNumLarge);
 
       // check target pointers remain
@@ -275,7 +275,7 @@ class EpochBasedGCFixture : public ::testing::Test
   void
   VerifyReusePageIfPossible()
   {
-    // register garbages to GC
+    // register garbage to GC
     auto target_weak_ptrs = TestReuse(kGarbageNumLarge);
     gc_->StopGC();
 
@@ -310,32 +310,32 @@ class EpochBasedGCFixture : public ::testing::Test
  * Unit test definitions
  *####################################################################################*/
 
-TEST_F(EpochBasedGCFixture, DestructorWithSingleThreadReleaseAllGarbages)
+TEST_F(EpochBasedGCFixture, DestructorWithSingleThreadReleaseAllGarbage)
 {  //
   VerifyDestructor(1);
 }
 
-TEST_F(EpochBasedGCFixture, DestructorWithMultiThreadsReleaseAllGarbages)
+TEST_F(EpochBasedGCFixture, DestructorWithMultiThreadsReleaseAllGarbage)
 {  //
   VerifyDestructor(kThreadNum);
 }
 
-TEST_F(EpochBasedGCFixture, StopGCWithSingleThreadReleaseAllGarbages)
+TEST_F(EpochBasedGCFixture, StopGCWithSingleThreadReleaseAllGarbage)
 {  //
   VerifyStopGC(1);
 }
 
-TEST_F(EpochBasedGCFixture, StopGCWithMultiThreadsReleaseAllGarbages)
+TEST_F(EpochBasedGCFixture, StopGCWithMultiThreadsReleaseAllGarbage)
 {  //
   VerifyStopGC(kThreadNum);
 }
 
-TEST_F(EpochBasedGCFixture, CreateEpochGuardWithSingleThreadProtectGarbages)
+TEST_F(EpochBasedGCFixture, CreateEpochGuardWithSingleThreadProtectGarbage)
 {
   VerifyCreateEpochGuard(1);
 }
 
-TEST_F(EpochBasedGCFixture, CreateEpochGuardWithMultiThreadsProtectGarbages)
+TEST_F(EpochBasedGCFixture, CreateEpochGuardWithMultiThreadsProtectGarbage)
 {
   VerifyCreateEpochGuard(kThreadNum);
 }

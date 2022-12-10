@@ -92,7 +92,7 @@ class EpochBasedGC
   /**
    * @brief Destroy the instance.
    *
-   * If protected garbages remains, this destructor waits for them to be free.
+   * If protected garbage remains, this destructor waits for them to be free.
    */
   ~EpochBasedGC()
   {
@@ -108,7 +108,7 @@ class EpochBasedGC
    *##################################################################################*/
 
   /**
-   * @brief Create a guard instance to protect garbages based on the scoped locking
+   * @brief Create a guard instance to protect garbage based on the scoped locking
    * pattern.
    *
    * @return EpochGuard a created epoch guard.
@@ -286,7 +286,7 @@ class EpochBasedGC
     }
 
     /**
-     * @return the number of remaining garbages.
+     * @return the number of remaining garbage.
      */
     [[nodiscard]] auto
     Size() const  //
@@ -300,33 +300,33 @@ class EpochBasedGC
      *################################################################################*/
 
     /**
-     * @brief Release registered garbages if possible.
+     * @brief Release registered garbage if possible.
      *
-     * @param protected_epoch an epoch value to check whether garbages can be freed.
+     * @param protected_epoch an epoch value to check whether garbage can be freed.
      */
     void
-    ClearGarbages(const size_t protected_epoch)
+    ClearGarbage(const size_t protected_epoch)
     {
       std::unique_lock guard{mtx_, std::defer_lock};
       if (guard.try_lock()) {
         if (T::kReusePages && garbage_list_.use_count() > 1) {
-          garbage_list_->DestructGarbages(protected_epoch);
+          garbage_list_->DestructGarbage(protected_epoch);
         } else {
-          garbage_list_->ClearGarbages(protected_epoch);
+          garbage_list_->ClearGarbage(protected_epoch);
         }
       }
     }
 
     /**
-     * @brief Delete all the garbages.
+     * @brief Delete all the garbage.
      *
      */
     void
-    DestroyGarbages()
+    DestroyGarbage()
     {
       std::unique_lock guard{mtx_, std::defer_lock};
       if (guard.try_lock()) {
-        garbage_list_->ClearGarbages(std::numeric_limits<size_t>::max());
+        garbage_list_->ClearGarbage(std::numeric_limits<size_t>::max());
       }
     }
 
@@ -500,42 +500,42 @@ class EpochBasedGC
 
   template <class Head, class... Tails>
   void
-  ClearGarbagesForEachTarget(const size_t protected_epoch)
+  ClearGarbageForEachTarget(const size_t protected_epoch)
   {
-    ClearGarbages<Head>(protected_epoch);
+    ClearGarbage<Head>(protected_epoch);
     if constexpr (sizeof...(Tails) > 0) {
-      ClearGarbagesForEachTarget<Tails...>(protected_epoch);
+      ClearGarbageForEachTarget<Tails...>(protected_epoch);
     }
   }
 
   template <class Target>
   void
-  ClearGarbages(const size_t protected_epoch)
+  ClearGarbage(const size_t protected_epoch)
   {
     auto *cur_node = GetGarbageNodeHead<Target, GCTargets...>().load(std::memory_order_acquire);
     while (cur_node != nullptr) {
-      cur_node->ClearGarbages(protected_epoch);
+      cur_node->ClearGarbage(protected_epoch);
       cur_node = cur_node->next;
     }
   }
 
   template <class Head, class... Tails>
   void
-  DestroyGarbagesForEachTarget()
+  DestroyGarbageForEachTarget()
   {
-    DestroyGarbages<Head>();
+    DestroyGarbage<Head>();
     if constexpr (sizeof...(Tails) > 0) {
-      DestroyGarbagesForEachTarget<Tails...>();
+      DestroyGarbageForEachTarget<Tails...>();
     }
   }
 
   template <class Target>
   void
-  DestroyGarbages()
+  DestroyGarbage()
   {
     auto *cur_node = GetGarbageNodeHead<Target, GCTargets...>().load(std::memory_order_acquire);
     while (cur_node != nullptr) {
-      cur_node->DestroyGarbages();
+      cur_node->DestroyGarbage();
       cur_node = cur_node->next;
     }
   }
@@ -552,7 +552,7 @@ class EpochBasedGC
       while (gc_is_running_.load(std::memory_order_relaxed)) {
         {  // create a lock for preventing node expiration
           const std::shared_lock guard{garbage_lists_lock_};
-          ClearGarbagesForEachTarget<DefaultTarget, GCTargets...>(epoch_manager_.GetMinEpoch());
+          ClearGarbageForEachTarget<DefaultTarget, GCTargets...>(epoch_manager_.GetMinEpoch());
         }
 
         // wait until a next epoch
@@ -560,9 +560,9 @@ class EpochBasedGC
         std::this_thread::sleep_until(sleep_time);
       }
 
-      // release all garbages before destruction
+      // release all garbage before destruction
       const std::shared_lock guard{garbage_lists_lock_};
-      DestroyGarbagesForEachTarget<DefaultTarget, GCTargets...>();
+      DestroyGarbageForEachTarget<DefaultTarget, GCTargets...>();
     };
 
     Clock_t::time_point sleep_time;
@@ -642,7 +642,7 @@ class EpochBasedGC
   /// a thread to run garbage collection.
   std::thread gc_thread_{};
 
-  /// worker threads to release garbages
+  /// worker threads to release garbage
   std::vector<std::thread> cleaner_threads_{};
 
   /// a converted time point for GC interval
