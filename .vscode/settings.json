@@ -23,20 +23,27 @@
   "testMate.cpp.test.executables": "build/**/test/*_test",
   // using Ninja for buiding
   "cmake.generator": "Ninja",
+  // ignore the top level heading from TOC
+  "markdown.extension.toc.levels": "2..6",
   // extra words for spell checking
   "cSpell.words": [
     "alignas",
+    "cout",
     "ctest",
     "DCMAKE",
     "DMEMORY",
     "DSIMPLE",
+    "endl",
     "gtest",
+    "iostream",
     "JEMALLOC",
     "libjemalloc",
     "MIMALLOC",
     "NOLINT",
+    "nullptr",
     "pthread",
     "STREQ",
+    "struct",
     "Wextra"
   ],
   "files.associations": {
@@ -119,6 +126,7 @@
     "complex": "cpp",
     "cfenv": "cpp",
     "typeindex": "cpp",
-    "valarray": "cpp"
+    "valarray": "cpp",
+    "*.ipp": "cpp"
   },
 }

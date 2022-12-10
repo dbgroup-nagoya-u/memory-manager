@@ -19,10 +19,12 @@
 
 #include <atomic>
 #include <chrono>
+#include <functional>
 #include <limits>
 #include <memory>
 #include <shared_mutex>
 #include <thread>
+#include <tuple>
 #include <utility>
 #include <vector>
 
@@ -45,6 +47,9 @@ class EpochBasedGC
    * Type aliases
    *##################################################################################*/
 
+  // forward declaration for default parameters.
+  struct DefaultTarget;
+
   using Epoch = component::Epoch;
   using EpochGuard = component::EpochGuard;
   using Clock_t = ::std::chrono::high_resolution_clock;
@@ -62,16 +67,17 @@ class EpochBasedGC
    *
    * @param gc_interval_micro_sec the duration of interval for GC.
    * @param gc_thread_num the maximum number of threads to perform GC.
-   * @param start_gc a flag to start GC after construction
+   * @param gc_targets the set of targets' GC information.
    */
   explicit constexpr EpochBasedGC(  //
       const size_t gc_interval_micro_sec,
-      const size_t gc_thread_num = 1,
-      const bool start_gc = false)
-      : gc_interval_{gc_interval_micro_sec}, gc_thread_num_{gc_thread_num}
+      const size_t gc_thread_num,
+      std::tuple<GCTargets...> gc_targets = std::tuple<>{})
+      : gc_interval_{gc_interval_micro_sec},
+        gc_thread_num_{gc_thread_num},
+        gc_targets_{std::move(gc_targets)}
   {
     cleaner_threads_.reserve(gc_thread_num_);
-    if (start_gc) StartGC();
   }
 
   EpochBasedGC(const EpochBasedGC &) = delete;
@@ -86,7 +92,7 @@ class EpochBasedGC
   /**
    * @brief Destroy the instance.
    *
-   * If protected garbages remains, this destructor waits for them to be free.
+   * If protected garbage remains, this destructor waits for them to be free.
    */
   ~EpochBasedGC()
   {
@@ -94,7 +100,7 @@ class EpochBasedGC
     StopGC();
 
     // delete all the registered nodes
-    RemoveAllNodes<GCTargets...>();
+    RemoveAllNodesForEachTarget<DefaultTarget, GCTargets...>();
   }
 
   /*####################################################################################
@@ -102,7 +108,7 @@ class EpochBasedGC
    *##################################################################################*/
 
   /**
-   * @brief Create a guard instance to protect garbages based on the scoped locking
+   * @brief Create a guard instance to protect garbage based on the scoped locking
    * pattern.
    *
    * @return EpochGuard a created epoch guard.
@@ -119,23 +125,27 @@ class EpochBasedGC
    *
    * @param garbage_ptr a pointer to a target garbage.
    */
-  template <class T>
+  template <class Target = DefaultTarget>
   void
-  AddGarbage(const T *garbage_ptr)
+  AddGarbage(const void *garbage_ptr)
   {
-    auto &&garbage_list = GetThreadLocalGarbageList<T, GCTargets...>();
+    using T = typename Target::T;
+
+    auto &&garbage_list = GetThreadLocalGarbageList<Target, GCTargets...>();
 
     if (garbage_list.use_count() <= 1) {
       // register this garbage list
-      auto &&head = GetGarbageNodeHead<T, GCTargets...>();
+      const auto &target_info = GetGCTargetInfo<Target, GCTargets...>();
+      auto &head = GetGarbageNodeHead<Target, GCTargets...>();
       auto *cur_head = head.load(std::memory_order_relaxed);
-      auto *new_node = new GarbageNode<T>{cur_head, garbage_list};
+      auto *new_node = new GarbageNode<Target>{cur_head, garbage_list, target_info};
       while (!head.compare_exchange_weak(new_node->next, new_node, std::memory_order_release)) {
         // continue until inserting succeeds
       }
     }
 
-    garbage_list->AddGarbage(epoch_manager_.GetCurrentEpoch(), const_cast<T *>(garbage_ptr));
+    auto *ptr = static_cast<T *>(const_cast<void *>(garbage_ptr));
+    garbage_list->AddGarbage(epoch_manager_.GetCurrentEpoch(), ptr);
   }
 
   /**
@@ -144,7 +154,7 @@ class EpochBasedGC
    * @retval nullptr if there are no reusable pages.
    * @retval a memory page.
    */
-  template <class T>
+  template <class T = DefaultTarget>
   auto
   GetPageIfPossible()  //
       -> void *
@@ -201,6 +211,23 @@ class EpochBasedGC
    *##################################################################################*/
 
   /**
+   * @brief A default GC information.
+   *
+   */
+  struct DefaultTarget {
+    /// use the void type and do not perform destructors.
+    using T = void;
+
+    /// do not reuse pages after GC (release immediately).
+    static constexpr bool kReusePages = false;
+
+    /// use the standard delete function to release pages.
+    static const inline std::function<void(void *)> deleter = [](void *ptr) {
+      ::operator delete(ptr);
+    };
+  };
+
+  /**
    * @brief A class of nodes for composing a linked list of gabage lists in each thread.
    *
    */
@@ -218,11 +245,13 @@ class EpochBasedGC
      * @param garbage_list a pointer to a target list.
      * @param node_keeper an original pointer for monitoring the lifetime of a target.
      * @param next a pointer to a next node.
+     * @param target_info an instance including GC target information.
      */
     GarbageNode(  //
         GarbageNode *next,
-        std::shared_ptr<GarbageList<T>> garbage_list)
-        : next{next}, garbage_list_{std::move(garbage_list)}
+        std::shared_ptr<GarbageList<T>> garbage_list,
+        const T &target_info)
+        : next{next}, garbage_list_{std::move(garbage_list)}, target_info_{target_info}
     {
     }
 
@@ -257,7 +286,7 @@ class EpochBasedGC
     }
 
     /**
-     * @return the number of remaining garbages.
+     * @return the number of remaining garbage.
      */
     [[nodiscard]] auto
     Size() const  //
@@ -271,33 +300,33 @@ class EpochBasedGC
      *################################################################################*/
 
     /**
-     * @brief Release registered garbages if possible.
+     * @brief Release registered garbage if possible.
      *
-     * @param protected_epoch an epoch value to check whether garbages can be freed.
+     * @param protected_epoch an epoch value to check whether garbage can be freed.
      */
     void
-    ClearGarbages(const size_t protected_epoch)
+    ClearGarbage(const size_t protected_epoch)
     {
       std::unique_lock guard{mtx_, std::defer_lock};
       if (guard.try_lock()) {
-        if (garbage_list_.use_count() > 1) {
-          garbage_list_->DestructGarbages(protected_epoch);
+        if (T::kReusePages && garbage_list_.use_count() > 1) {
+          garbage_list_->DestructGarbage(protected_epoch);
         } else {
-          garbage_list_->ClearGarbages(protected_epoch);
+          garbage_list_->ClearGarbage(protected_epoch);
         }
       }
     }
 
     /**
-     * @brief Delete all the garbages.
+     * @brief Delete all the garbage.
      *
      */
     void
-    DestroyGarbages()
+    DestroyGarbage()
     {
       std::unique_lock guard{mtx_, std::defer_lock};
       if (guard.try_lock()) {
-        garbage_list_->ClearGarbages(std::numeric_limits<size_t>::max());
+        garbage_list_->ClearGarbage(std::numeric_limits<size_t>::max());
       }
     }
 
@@ -318,6 +347,9 @@ class EpochBasedGC
 
     /// a mutex for preventing multi-threads modify the same node concurrently
     std::mutex mtx_{};
+
+    /// the reference to target's GC information.
+    const T &target_info_;
   };
 
   /*####################################################################################
@@ -326,16 +358,45 @@ class EpochBasedGC
 
   template <class Target, class Head, class... Tails>
   [[nodiscard]] auto
+  GetGCTargetInfo() const  //
+      -> const Target &
+  {
+    if constexpr (std::is_same_v<Head, Target>) {
+      return std::get<sizeof...(GCTargets) - (sizeof...(Tails) + 1)>(gc_targets_);
+    } else {
+      return GetGCTargetInfo<Target, Tails...>();
+    }
+  }
+
+  template <class Target>
+  [[nodiscard]] auto
+  GetGCTargetInfo() const  //
+      -> const DefaultTarget &
+  {
+    static DefaultTarget default_target{};
+    return default_target;
+  }
+
+  template <class Target, class Head, class... Tails>
+  [[nodiscard]] auto
   GetThreadLocalGarbageList() const  //
       -> std::shared_ptr<GarbageList<Target>> &
   {
-    if constexpr (std::is_same_v<Head, Target> || sizeof...(Tails) == 0) {
-      static_assert(std::is_same_v<Head, Target>);
-      thread_local auto garbage_list = std::make_shared<GarbageList<Target>>();
+    if constexpr (std::is_same_v<Head, Target>) {
+      thread_local auto &&garbage_list = std::make_shared<GarbageList<Target>>();
       return garbage_list;
     } else {
       return GetThreadLocalGarbageList<Target, Tails...>();
     }
+  }
+
+  template <class Target>
+  [[nodiscard]] auto
+  GetThreadLocalGarbageList() const  //
+      -> std::shared_ptr<GarbageList<DefaultTarget>> &
+  {
+    thread_local auto &&garbage_list = std::make_shared<GarbageList<DefaultTarget>>();
+    return garbage_list;
   }
 
   template <class Target, class Head, class... Tails>
@@ -343,13 +404,21 @@ class EpochBasedGC
   GetGarbageNodeHead() const  //
       -> std::atomic<GarbageNode<Target> *> &
   {
-    if constexpr (std::is_same_v<Head, Target> || sizeof...(Tails) == 0) {
-      static_assert(std::is_same_v<Head, Target>);
+    if constexpr (std::is_same_v<Head, Target>) {
       static std::atomic<GarbageNode<Target> *> node_head{nullptr};
       return node_head;
     } else {
       return GetGarbageNodeHead<Target, Tails...>();
     }
+  }
+
+  template <class Target>
+  [[nodiscard]] auto
+  GetGarbageNodeHead() const  //
+      -> std::atomic<GarbageNode<DefaultTarget> *> &
+  {
+    static std::atomic<GarbageNode<DefaultTarget> *> node_head{nullptr};
+    return node_head;
   }
 
   /**
@@ -358,10 +427,24 @@ class EpochBasedGC
    */
   template <class Head, class... Tails>
   void
+  RemoveExpiredNodesForEachTarget()
+  {
+    RemoveExpiredNodes<Head>();
+    if constexpr (sizeof...(Tails) > 0) {
+      RemoveExpiredNodesForEachTarget<Tails...>();
+    }
+  }
+
+  /**
+   * @brief Remove expired nodes from the internal list.
+   *
+   */
+  template <class Target>
+  void
   RemoveExpiredNodes()
   {
     // if garbage-list nodes are variable, do nothing
-    auto *cur_node = GetGarbageNodeHead<Head, GCTargets...>().load(std::memory_order_acquire);
+    auto *cur_node = GetGarbageNodeHead<Target, GCTargets...>().load(std::memory_order_acquire);
     if (cur_node == nullptr) return;
 
     // create lock to prevent cleaner threads from running
@@ -381,10 +464,6 @@ class EpochBasedGC
         }
       }
     }
-
-    if constexpr (sizeof...(Tails) > 0) {
-      RemoveExpiredNodes<Tails...>();
-    }
   }
 
   /**
@@ -393,9 +472,23 @@ class EpochBasedGC
    */
   template <class Head, class... Tails>
   void
+  RemoveAllNodesForEachTarget()
+  {
+    RemoveAllNodes<Head>();
+    if constexpr (sizeof...(Tails) > 0) {
+      RemoveAllNodesForEachTarget<Tails...>();
+    }
+  }
+
+  /**
+   * @brief Remove expired nodes from the internal list.
+   *
+   */
+  template <class Target>
+  void
   RemoveAllNodes()
   {
-    auto &&head_addr = GetGarbageNodeHead<Head, GCTargets...>();
+    auto &head_addr = GetGarbageNodeHead<Target, GCTargets...>();
     auto *cur_node = head_addr.load(std::memory_order_acquire);
     while (cur_node != nullptr) {
       auto *prev_node = cur_node;
@@ -403,39 +496,47 @@ class EpochBasedGC
       delete prev_node;
     }
     head_addr.store(nullptr, std::memory_order_relaxed);
+  }
 
+  template <class Head, class... Tails>
+  void
+  ClearGarbageForEachTarget(const size_t protected_epoch)
+  {
+    ClearGarbage<Head>(protected_epoch);
     if constexpr (sizeof...(Tails) > 0) {
-      RemoveAllNodes<Tails...>();
+      ClearGarbageForEachTarget<Tails...>(protected_epoch);
+    }
+  }
+
+  template <class Target>
+  void
+  ClearGarbage(const size_t protected_epoch)
+  {
+    auto *cur_node = GetGarbageNodeHead<Target, GCTargets...>().load(std::memory_order_acquire);
+    while (cur_node != nullptr) {
+      cur_node->ClearGarbage(protected_epoch);
+      cur_node = cur_node->next;
     }
   }
 
   template <class Head, class... Tails>
   void
-  ClearGarbages(const size_t protected_epoch)
+  DestroyGarbageForEachTarget()
   {
-    auto *cur_node = GetGarbageNodeHead<Head, GCTargets...>().load(std::memory_order_acquire);
-    while (cur_node != nullptr) {
-      cur_node->ClearGarbages(protected_epoch);
-      cur_node = cur_node->next;
-    }
-
+    DestroyGarbage<Head>();
     if constexpr (sizeof...(Tails) > 0) {
-      ClearGarbages<Tails...>(protected_epoch);
+      DestroyGarbageForEachTarget<Tails...>();
     }
   }
 
-  template <class Head, class... Tails>
+  template <class Target>
   void
-  DestroyGarbages()
+  DestroyGarbage()
   {
-    auto *cur_node = GetGarbageNodeHead<Head, GCTargets...>().load(std::memory_order_acquire);
+    auto *cur_node = GetGarbageNodeHead<Target, GCTargets...>().load(std::memory_order_acquire);
     while (cur_node != nullptr) {
-      cur_node->DestroyGarbages();
+      cur_node->DestroyGarbage();
       cur_node = cur_node->next;
-    }
-
-    if constexpr (sizeof...(Tails) > 0) {
-      DestroyGarbages<Tails...>();
     }
   }
 
@@ -451,7 +552,7 @@ class EpochBasedGC
       while (gc_is_running_.load(std::memory_order_relaxed)) {
         {  // create a lock for preventing node expiration
           const std::shared_lock guard{garbage_lists_lock_};
-          ClearGarbages<GCTargets...>(epoch_manager_.GetMinEpoch());
+          ClearGarbageForEachTarget<DefaultTarget, GCTargets...>(epoch_manager_.GetMinEpoch());
         }
 
         // wait until a next epoch
@@ -459,9 +560,9 @@ class EpochBasedGC
         std::this_thread::sleep_until(sleep_time);
       }
 
-      // release all garbages before destruction
+      // release all garbage before destruction
       const std::shared_lock guard{garbage_lists_lock_};
-      DestroyGarbages<GCTargets...>();
+      DestroyGarbageForEachTarget<DefaultTarget, GCTargets...>();
     };
 
     Clock_t::time_point sleep_time;
@@ -487,7 +588,7 @@ class EpochBasedGC
       sleep_until_.store(TimePointToLong(sleep_time), std::memory_order_relaxed);
 
       epoch_manager_.ForwardGlobalEpoch();
-      RemoveExpiredNodes<GCTargets...>();
+      RemoveExpiredNodesForEachTarget<DefaultTarget, GCTargets...>();
     }
 
     // wait all the cleaner threads return
@@ -529,6 +630,9 @@ class EpochBasedGC
   /// the maximum number of cleaner threads
   const size_t gc_thread_num_{1};
 
+  /// the set of targets' GC information.
+  const std::tuple<GCTargets...> gc_targets_{};
+
   /// an epoch manager.
   EpochManager epoch_manager_{};
 
@@ -538,7 +642,7 @@ class EpochBasedGC
   /// a thread to run garbage collection.
   std::thread gc_thread_{};
 
-  /// worker threads to release garbages
+  /// worker threads to release garbage
   std::vector<std::thread> cleaner_threads_{};
 
   /// a converted time point for GC interval

@@ -2,72 +2,57 @@
 # Configure GoogleTest
 #--------------------------------------------------------------------------------------#
 
-configure_file(CMakeLists-googletest.txt.in googletest-download/CMakeLists.txt)
-execute_process(COMMAND ${CMAKE_COMMAND} -G "${CMAKE_GENERATOR}" .
-  RESULT_VARIABLE result
-  WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/googletest-download )
-if(result)
-  message(FATAL_ERROR "CMake step for googletest failed: ${result}")
-endif()
-execute_process(COMMAND ${CMAKE_COMMAND} --build .
-  RESULT_VARIABLE result
-  WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/googletest-download )
-if(result)
-  message(FATAL_ERROR "Build step for googletest failed: ${result}")
-endif()
+include(FetchContent)
+FetchContent_Declare(
+  googletest
+  GIT_REPOSITORY "https://github.com/google/googletest.git"
+  GIT_TAG "58d77fa8070e8cec2dc1ed015d66b454c8d78850" # v1.12.1
+)
+FetchContent_MakeAvailable(googletest)
 
-# Prevent overriding the parent project's compiler/linker
-# settings on Windows
-set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+#--------------------------------------------------------------------------------------#
+# Configurations for unit tests
+#--------------------------------------------------------------------------------------#
 
-# Add googletest directly to our build. This defines
-# the gtest and gtest_main targets.
-add_subdirectory(${CMAKE_CURRENT_BINARY_DIR}/googletest-src
-                 ${CMAKE_CURRENT_BINARY_DIR}/googletest-build
-                 EXCLUDE_FROM_ALL)
+set(
+  DBGROUP_TEST_THREAD_NUM
+  "8" CACHE STRING
+  "The number of worker threads for testing."
+)
 
 #--------------------------------------------------------------------------------------#
 # Build Unit Tests
 #--------------------------------------------------------------------------------------#
 
 # define function to add unit tests in the same format
-function(ADD_MEMORY_MANAGER_TEST MEMORY_MANAGER_TEST_TARGET)
-  add_executable(${MEMORY_MANAGER_TEST_TARGET}
-    "${CMAKE_CURRENT_SOURCE_DIR}/${MEMORY_MANAGER_TEST_TARGET}.cpp"
+function(DBGROUP_ADD_TEST DBGROUP_TEST_TARGET)
+  add_executable(${DBGROUP_TEST_TARGET}
+    "${CMAKE_CURRENT_SOURCE_DIR}/${DBGROUP_TEST_TARGET}.cpp"
   )
-  target_compile_features(${MEMORY_MANAGER_TEST_TARGET} PRIVATE
+  target_compile_features(${DBGROUP_TEST_TARGET} PRIVATE
     "cxx_std_17"
   )
-  target_compile_options(${MEMORY_MANAGER_TEST_TARGET} PRIVATE
+  target_compile_options(${DBGROUP_TEST_TARGET} PRIVATE
     -Wall
     -Wextra
     $<$<STREQUAL:${CMAKE_BUILD_TYPE},"Release">:"-O2 -march=native">
     $<$<STREQUAL:${CMAKE_BUILD_TYPE},"RelWithDebInfo">:"-g3 -Og -pg">
     $<$<STREQUAL:${CMAKE_BUILD_TYPE},"Debug">:"-g3 -O0 -pg">
   )
-  target_link_libraries(${MEMORY_MANAGER_TEST_TARGET} PRIVATE
-    memory_manager::memory_manager
-    gtest_main
+  target_compile_definitions(${DBGROUP_TEST_TARGET} PRIVATE
+    DBGROUP_TEST_THREAD_NUM=${DBGROUP_TEST_THREAD_NUM}
+  )
+  target_link_libraries(${DBGROUP_TEST_TARGET} PRIVATE
+    dbgroup::${PROJECT_NAME}
+    GTest::gtest_main
   )
 
-  if(DEFINED MEMORY_MANAGER_GARBAGE_BUFFER_SIZE)
-    target_compile_definitions(${MEMORY_MANAGER_TEST_TARGET} PRIVATE
-      MEMORY_MANAGER_GARBAGE_BUFFER_SIZE=${MEMORY_MANAGER_GARBAGE_BUFFER_SIZE}
-    )
-  endif()
-
-  if(DEFINED MEMORY_MANAGER_TEST_THREAD_NUM)
-    target_compile_definitions(${MEMORY_MANAGER_TEST_TARGET} PRIVATE
-      MEMORY_MANAGER_TEST_THREAD_NUM=${MEMORY_MANAGER_TEST_THREAD_NUM}
-    )
-  endif()
-
-  add_test(NAME ${MEMORY_MANAGER_TEST_TARGET} COMMAND $<TARGET_FILE:${MEMORY_MANAGER_TEST_TARGET}>)
+  add_test(NAME ${DBGROUP_TEST_TARGET} COMMAND $<TARGET_FILE:${DBGROUP_TEST_TARGET}>)
 endfunction()
 
 # add unit tests to build targets
-ADD_MEMORY_MANAGER_TEST("epoch_test")
-ADD_MEMORY_MANAGER_TEST("epoch_guard_test")
-ADD_MEMORY_MANAGER_TEST("epoch_manager_test")
-ADD_MEMORY_MANAGER_TEST("garbage_list_test")
-ADD_MEMORY_MANAGER_TEST("epoch_based_gc_test")
+DBGROUP_ADD_TEST("epoch_test")
+DBGROUP_ADD_TEST("epoch_guard_test")
+DBGROUP_ADD_TEST("epoch_manager_test")
+DBGROUP_ADD_TEST("garbage_list_test")
+DBGROUP_ADD_TEST("epoch_based_gc_test")

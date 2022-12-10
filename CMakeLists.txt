@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION "3.8")
+cmake_minimum_required(VERSION "3.11")
 
 # decline in-source build
 if("${CMAKE_SOURCE_DIR}" STREQUAL "${CMAKE_BINARY_DIR}")
@@ -13,36 +13,49 @@ project(
   LANGUAGES "CXX"
 )
 
-# define source directories
-set(MEMORY_MANAGER_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
+if(NOT TARGET dbgroup::${PROJECT_NAME})
+  #------------------------------------------------------------------------------------#
+  # Turning parameters
+  #------------------------------------------------------------------------------------#
 
-#--------------------------------------------------------------------------------------#
-# Build targets
-#--------------------------------------------------------------------------------------#
+  set(
+    MEMORY_MANAGER_GARBAGE_BUFFER_SIZE
+    "1024" CACHE STRING
+    "the size of buffers for retaining garbages."
+  )
 
-if(NOT TARGET memory_manager::memory_manager)
-  # build as a header-only library
-  add_library(memory_manager INTERFACE)
-  add_library(memory_manager::memory_manager ALIAS memory_manager)
-  target_compile_features(memory_manager INTERFACE
+  set(
+    MEMORY_MANAGER_EXPECTED_THREAD_NUM
+    "128" CACHE STRING
+    "the expected number of worker threads."
+  )
+
+  #------------------------------------------------------------------------------------#
+  # Configure external libraries
+  #------------------------------------------------------------------------------------#
+
+  # this library uses multi-threads
+  find_package(Threads)
+
+  #------------------------------------------------------------------------------------#
+  # Build targets
+  #------------------------------------------------------------------------------------#
+
+  add_library(${PROJECT_NAME} INTERFACE)
+  add_library(dbgroup::${PROJECT_NAME} ALIAS ${PROJECT_NAME})
+  target_compile_features(${PROJECT_NAME} INTERFACE
     "cxx_std_17"
   )
-  target_include_directories(memory_manager INTERFACE
-    "${MEMORY_MANAGER_SOURCE_DIR}/include"
+  target_compile_definitions(memory_manager INTERFACE
+    MEMORY_MANAGER_GARBAGE_BUFFER_SIZE=${MEMORY_MANAGER_GARBAGE_BUFFER_SIZE}
+    MEMORY_MANAGER_EXPECTED_THREAD_NUM=${MEMORY_MANAGER_EXPECTED_THREAD_NUM}
   )
-  target_link_libraries(memory_manager INTERFACE
-    pthread
+  target_include_directories(${PROJECT_NAME} INTERFACE
+    "${CMAKE_CURRENT_SOURCE_DIR}/include"
   )
-
-  #------------------------------------------------------------------------------------#
-  # Build options
-  #------------------------------------------------------------------------------------#
-
-  if(DEFINED MEMORY_MANAGER_GARBAGE_BUFFER_SIZE)
-    target_compile_definitions(memory_manager INTERFACE
-      MEMORY_MANAGER_GARBAGE_BUFFER_SIZE=${MEMORY_MANAGER_GARBAGE_BUFFER_SIZE}
-    )
-  endif()
+  target_link_libraries(${PROJECT_NAME} INTERFACE
+    Threads::Threads
+  )
 endif()
 
 #--------------------------------------------------------------------------------------#

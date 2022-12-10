@@ -28,14 +28,34 @@
 
 namespace dbgroup::memory::test
 {
+/*######################################################################################
+ * Global type aliases
+ *####################################################################################*/
+
+using Target = uint64_t;
+
+/*######################################################################################
+ * Global classes
+ *####################################################################################*/
+
+struct SharedPtrTarget {
+  using T = std::shared_ptr<Target>;
+
+  static constexpr bool kReusePages = true;
+
+  static const inline std::function<void(void *)> deleter = [](void *ptr) {
+    ::operator delete(ptr);
+  };
+};
+
 class EpochBasedGCFixture : public ::testing::Test
 {
  protected:
   /*####################################################################################
    * Type aliases
    *##################################################################################*/
-  using Target = uint64_t;
-  using EpochBasedGC_t = EpochBasedGC<std::shared_ptr<Target>>;
+
+  using EpochBasedGC_t = EpochBasedGC<SharedPtrTarget>;
   using GarbageRef = std::vector<std::weak_ptr<Target>>;
 
   /*####################################################################################
@@ -53,7 +73,9 @@ class EpochBasedGCFixture : public ::testing::Test
   void
   SetUp() override
   {
-    gc_ = std::make_unique<EpochBasedGC_t>(kGCInterval, kThreadNum, true);
+    auto &&targets = std::make_tuple(SharedPtrTarget{});
+    gc_ = std::make_unique<EpochBasedGC_t>(kGCInterval, kThreadNum, std::move(targets));
+    gc_->StartGC();
   }
 
   void
@@ -66,20 +88,20 @@ class EpochBasedGCFixture : public ::testing::Test
    *##################################################################################*/
 
   void
-  AddGarbages(  //
+  AddGarbage(  //
       std::promise<GarbageRef> p,
       const size_t garbage_num)
   {
     GarbageRef target_weak_ptrs;
     for (size_t loop = 0; loop < garbage_num; ++loop) {
       auto *target = new Target{loop};
-      auto *page = gc_->GetPageIfPossible<std::shared_ptr<Target>>();
+      auto *page = gc_->GetPageIfPossible<SharedPtrTarget>();
       std::shared_ptr<Target> *target_shared =  //
           (page == nullptr) ? new std::shared_ptr<Target>{target}
                             : new (page) std::shared_ptr<Target>{target};
 
       target_weak_ptrs.emplace_back(*target_shared);
-      gc_->AddGarbage(target_shared);
+      gc_->AddGarbage<SharedPtrTarget>(target_shared);
     }
 
     p.set_value(std::move(target_weak_ptrs));
@@ -103,7 +125,7 @@ class EpochBasedGCFixture : public ::testing::Test
     for (size_t i = 0; i < thread_num; ++i) {
       std::promise<GarbageRef> p;
       futures.emplace_back(p.get_future());
-      std::thread{&EpochBasedGCFixture::AddGarbages, this, std::move(p), garbage_num}.detach();
+      std::thread{&EpochBasedGCFixture::AddGarbage, this, std::move(p), garbage_num}.detach();
     }
 
     GarbageRef target_weak_ptrs;
@@ -137,7 +159,7 @@ class EpochBasedGCFixture : public ::testing::Test
 
         // prepare a page for embedding
         auto *target = new Target{loop};
-        auto *page = gc_->GetPageIfPossible<std::shared_ptr<Target>>();
+        auto *page = gc_->GetPageIfPossible<SharedPtrTarget>();
         auto *target_shared =  //
             (page == nullptr) ? new std::shared_ptr<Target>{target}
                               : new (page) std::shared_ptr<Target>{target};
@@ -151,7 +173,7 @@ class EpochBasedGCFixture : public ::testing::Test
         }
 
         target_weak_ptrs.emplace_back(*target_shared);
-        if (expected != nullptr) gc_->AddGarbage(expected);
+        if (expected != nullptr) gc_->AddGarbage<SharedPtrTarget>(expected);
       }
 
       p.set_value(std::move(target_weak_ptrs));
@@ -188,7 +210,7 @@ class EpochBasedGCFixture : public ::testing::Test
   void
   VerifyDestructor(const size_t thread_num)
   {
-    // register garbages to GC
+    // register garbage to GC
     auto target_weak_ptrs = TestGC(thread_num, kGarbageNumLarge);
 
     // GC deletes all targets during its deconstruction
@@ -203,7 +225,7 @@ class EpochBasedGCFixture : public ::testing::Test
   void
   VerifyStopGC(const size_t thread_num)
   {
-    // register garbages to GC
+    // register garbage to GC
     auto target_weak_ptrs = TestGC(thread_num, kGarbageNumLarge);
 
     // GC deletes all targets
@@ -238,7 +260,7 @@ class EpochBasedGCFixture : public ::testing::Test
       guarder = std::thread{create_guard, std::move(p)};
       f.get();
 
-      // register garbages to GC
+      // register garbage to GC
       auto target_weak_ptrs = TestGC(thread_num, kGarbageNumLarge);
 
       // check target pointers remain
@@ -253,13 +275,25 @@ class EpochBasedGCFixture : public ::testing::Test
   void
   VerifyReusePageIfPossible()
   {
-    // register garbages to GC
+    // register garbage to GC
     auto target_weak_ptrs = TestReuse(kGarbageNumLarge);
     gc_->StopGC();
 
     // check there is no referece to target pointers
     for (auto &&target_weak : target_weak_ptrs) {
       EXPECT_TRUE(target_weak.expired());
+    }
+  }
+
+  static void
+  VerifyDefaultTarget()
+  {
+    EpochBasedGC gc{kGCInterval, kThreadNum};
+    gc.StartGC();
+
+    for (size_t loop = 0; loop < kGarbageNumLarge; ++loop) {
+      auto *target = new Target{loop};
+      gc.AddGarbage(target);
     }
   }
 
@@ -276,32 +310,32 @@ class EpochBasedGCFixture : public ::testing::Test
  * Unit test definitions
  *####################################################################################*/
 
-TEST_F(EpochBasedGCFixture, DestructorWithSingleThreadReleaseAllGarbages)
+TEST_F(EpochBasedGCFixture, DestructorWithSingleThreadReleaseAllGarbage)
 {  //
   VerifyDestructor(1);
 }
 
-TEST_F(EpochBasedGCFixture, DestructorWithMultiThreadsReleaseAllGarbages)
+TEST_F(EpochBasedGCFixture, DestructorWithMultiThreadsReleaseAllGarbage)
 {  //
   VerifyDestructor(kThreadNum);
 }
 
-TEST_F(EpochBasedGCFixture, StopGCWithSingleThreadReleaseAllGarbages)
+TEST_F(EpochBasedGCFixture, StopGCWithSingleThreadReleaseAllGarbage)
 {  //
   VerifyStopGC(1);
 }
 
-TEST_F(EpochBasedGCFixture, StopGCWithMultiThreadsReleaseAllGarbages)
+TEST_F(EpochBasedGCFixture, StopGCWithMultiThreadsReleaseAllGarbage)
 {  //
   VerifyStopGC(kThreadNum);
 }
 
-TEST_F(EpochBasedGCFixture, CreateEpochGuardWithSingleThreadProtectGarbages)
+TEST_F(EpochBasedGCFixture, CreateEpochGuardWithSingleThreadProtectGarbage)
 {
   VerifyCreateEpochGuard(1);
 }
 
-TEST_F(EpochBasedGCFixture, CreateEpochGuardWithMultiThreadsProtectGarbages)
+TEST_F(EpochBasedGCFixture, CreateEpochGuardWithMultiThreadsProtectGarbage)
 {
   VerifyCreateEpochGuard(kThreadNum);
 }
@@ -309,6 +343,11 @@ TEST_F(EpochBasedGCFixture, CreateEpochGuardWithMultiThreadsProtectGarbages)
 TEST_F(EpochBasedGCFixture, ReusePageIfPossibleWithMultiThreadsReleasePageOnlyOnce)
 {  //
   VerifyReusePageIfPossible();
+}
+
+TEST_F(EpochBasedGCFixture, EmptyDeclarationActAsGCOnlyMode)
+{  //
+  VerifyDefaultTarget();
 }
 
 }  // namespace dbgroup::memory::test
