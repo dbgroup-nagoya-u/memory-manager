@@ -14,7 +14,7 @@ This repository is an open source implementation of epoch-based garbage collecti
     - [Linking by CMake](#linking-by-cmake)
     - [Collect and Release Garbage Pages](#collect-and-release-garbage-pages)
     - [Destruct Garbage before Releasing](#destruct-garbage-before-releasing)
-    - [Reuse Garbage Collected Pages](#reuse-garbage-collected-pages)
+    - [Reuse Garbage-Collected Pages](#reuse-garbage-collected-pages)
 
 
 ## Build
@@ -205,13 +205,10 @@ main(  //
       }
     };
 
-    // create threads to add garbage
     std::vector<std::thread> threads{};
     for (size_t i = 0; i < 8; ++i) {
       threads.emplace_back(worker);
     }
-
-    // wait for the threads
     for (auto &&t : threads) {
       t.join();
     }
@@ -219,17 +216,95 @@ main(  //
     // our GC has released all the garbage pages before its destruction
   }
 
-  // check all the garbage have been destructed and released
+  // check all the garbage has been destructed and released
   for (const auto &weak_p : weak_pointers) {
     if (!weak_p.expired()) {
       std::cout << "Failed: there is the unreleased garbage." << std::endl;
       exit(EXIT_FAILURE);
     }
   }
-  std::cout << "Succeeded: all the garbage have been released." << std::endl;
+  std::cout << "Succeeded: all the garbage has been released." << std::endl;
 
   return 0;
 }
 ```
 
-### Reuse Garbage Collected Pages
+### Reuse Garbage-Collected Pages
+
+You can reuse garbage-collected pages. Our GC maintains garbage lists in thread local storage of each thread, so reusing pages can avoid the contention due to memory allocation.
+
+```cpp
+// C++ standard libraries
+#include <chrono>
+#include <iostream>
+#include <mutex>
+#include <thread>
+#include <tuple>
+#include <vector>
+
+// our libraries
+#include "memory/epoch_based_gc.hpp"
+
+// prepare the information of target garbage
+struct ReusableTarget {
+  // do not call destructor
+  using T = void;
+
+  // reuse garbage-collected pages
+  static constexpr bool kReusePages = true;
+
+  // use the standard delete function to release garbage
+  static const inline std::function<void(void *)> deleter = [](void *ptr) {
+    ::operator delete(ptr);
+  };
+};
+
+auto
+main(  //
+    const int argc,
+    const char *argv[])  //
+    -> int
+{
+  constexpr size_t kGCInterval = 1E3;
+  constexpr size_t kThreadNum = 1;
+  std::mutex lock{};
+
+  // create the set of GC targets and pass it to GC
+  auto &&gc_targets = std::make_tuple(ReusableTarget{});
+  ::dbgroup::memory::EpochBasedGC gc{kGCInterval, kThreadNum, std::move(gc_targets)};
+  gc.StartGC();
+
+  // prepare a sample worker procedure
+  auto worker = [&]() {
+    for (size_t loop = 0; loop < 100; ++loop) {
+      {
+        const auto &guard = gc.CreateEpochGuard();
+
+        // get a page if exist
+        auto *page = gc.GetPageIfPossible<ReusableTarget>();
+        if (page != nullptr) {
+          const auto &lock_guard = std::lock_guard{lock};
+          std::cout << "Page Reused." << std::endl;
+        } else {
+          page = new size_t{};
+        }
+
+        auto *garbage = new (page) size_t{loop};
+        gc.AddGarbage<ReusableTarget>(page);
+      }
+
+      std::this_thread::sleep_for(std::chrono::microseconds{100});  // dummy sleep
+    }
+  };
+
+  std::vector<std::thread> threads{};
+  for (size_t i = 0; i < 8; ++i) {
+    threads.emplace_back(worker);
+  }
+  for (auto &&t : threads) {
+    t.join();
+  }
+
+  return 0;
+}
+```

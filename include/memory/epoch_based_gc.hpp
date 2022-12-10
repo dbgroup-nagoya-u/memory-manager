@@ -154,7 +154,7 @@ class EpochBasedGC
    * @retval nullptr if there are no reusable pages.
    * @retval a memory page.
    */
-  template <class T>
+  template <class T = DefaultTarget>
   auto
   GetPageIfPossible()  //
       -> void *
