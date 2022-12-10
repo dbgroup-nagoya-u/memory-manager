@@ -38,6 +38,7 @@
     "iostream",
     "JEMALLOC",
     "libjemalloc",
+    "LIBPMEMOBJ",
     "MIMALLOC",
     "NOLINT",
     "nullptr",

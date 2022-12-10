@@ -8,6 +8,7 @@ buildType:
       buildType: Debug
       settings:
         CMAKE_CXX_CLANG_TIDY: "clang-tidy"
+        MEMORY_MANAGER_USE_PERSISTENT_MEMORY: OFF
         MEMORY_MANAGER_BUILD_TESTS: ON
     relWithDebInfo:
       short: RelWithDebInfo
@@ -15,6 +16,7 @@ buildType:
       buildType: RelWithDebInfo
       settings:
         CMAKE_CXX_CLANG_TIDY: "clang-tidy"
+        MEMORY_MANAGER_USE_PERSISTENT_MEMORY: OFF
         MEMORY_MANAGER_BUILD_TESTS: ON
     release:
       short: Release
@@ -22,4 +24,5 @@ buildType:
       buildType: Release
       settings:
         CMAKE_CXX_CLANG_TIDY: "clang-tidy"
+        MEMORY_MANAGER_USE_PERSISTENT_MEMORY: OFF
         MEMORY_MANAGER_BUILD_TESTS: ON

@@ -33,6 +33,7 @@ sudo apt update && sudo apt install -y build-essential cmake
 
 - `MEMORY_MANAGER_GARBAGE_BUFFER_SIZE`: the size of buffers for retaining garbage (default `1024`).
 - `MEMORY_MANAGER_EXPECTED_THREAD_NUM`: the expected number of worker threads (default: `128`).
+- `MEMORY_MANAGER_USE_PERSISTENT_MEMORY`: perform garbage collection for pages on persistent memory (default: `OFF`).
 
 #### Parameters for Unit Testing
 
