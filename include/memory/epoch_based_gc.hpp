@@ -57,6 +57,9 @@ class EpochBasedGC
   template <class T>
   using GarbageList = component::GarbageList<T>;
 
+  template <class Target>
+  using GarbageNode = component::GarbageNode<Target>;
+
  public:
   /*####################################################################################
    * Public constructors and assignment operators
@@ -67,15 +70,11 @@ class EpochBasedGC
    *
    * @param gc_interval_micro_sec the duration of interval for GC.
    * @param gc_thread_num the maximum number of threads to perform GC.
-   * @param gc_targets the set of targets' GC information.
    */
-  explicit constexpr EpochBasedGC(  //
+  constexpr EpochBasedGC(  //
       const size_t gc_interval_micro_sec,
-      const size_t gc_thread_num,
-      std::tuple<GCTargets...> gc_targets = std::tuple<>{})
-      : gc_interval_{gc_interval_micro_sec},
-        gc_thread_num_{gc_thread_num},
-        gc_targets_{std::move(gc_targets)}
+      const size_t gc_thread_num)
+      : gc_interval_{gc_interval_micro_sec}, gc_thread_num_{gc_thread_num}
   {
     cleaner_threads_.reserve(gc_thread_num_);
   }
@@ -98,9 +97,6 @@ class EpochBasedGC
   {
     // stop garbage collection
     StopGC();
-
-    // delete all the registered nodes
-    RemoveAllNodesForEachTarget<DefaultTarget, GCTargets...>();
   }
 
   /*####################################################################################
@@ -130,22 +126,29 @@ class EpochBasedGC
   AddGarbage(const void *garbage_ptr)
   {
     using T = typename Target::T;
+    using GarbageNode_t = GarbageNode<Target>;
+    using TLSList_t = TLSList<GarbageNode_t>;
+    using TLSNode_t = TLSNode<GarbageNode_t>;
 
-    auto &&garbage_list = GetThreadLocalGarbageList<Target, GCTargets...>();
+    auto *tls_list = GetTLSGarbageList<Target, GCTargets...>();
+    if (tls_list->use_count() <= 1) {
+      // register the garbage list with GC
+      auto *garbage_list = new GarbageList<Target>{};
+      auto [garbage_head, mtx_p] = GetGarbageNodeHead<Target, GCTargets...>();
+      mtx_p->lock();
+      auto *garbage_node = new GarbageNode_t{garbage_list, *garbage_head};
+      *garbage_head = garbage_node;
+      mtx_p->unlock();
 
-    if (garbage_list.use_count() <= 1) {
-      // register this garbage list
-      const auto &target_info = GetGCTargetInfo<Target, GCTargets...>();
-      auto &head = GetGarbageNodeHead<Target, GCTargets...>();
-      auto *cur_head = head.load(std::memory_order_relaxed);
-      auto *new_node = new GarbageNode<Target>{cur_head, garbage_list, target_info};
-      while (!head.compare_exchange_weak(new_node->next, new_node, std::memory_order_release)) {
-        // continue until inserting succeeds
-      }
+      // register the TLS information with GC
+      *tls_list = std::make_shared<TLSList_t>(garbage_list, garbage_node);
+      auto *tls_head = GetTLSNodeHead<Target, GCTargets...>();
+      TLSNode_t::AddNewNode(tls_list, tls_head);
     }
 
+    // the current thread has already joined GC
     auto *ptr = static_cast<T *>(const_cast<void *>(garbage_ptr));
-    garbage_list->AddGarbage(epoch_manager_.GetCurrentEpoch(), ptr);
+    (*tls_list)->AddGarbage(epoch_manager_.GetCurrentEpoch(), ptr);
   }
 
   /**
@@ -159,10 +162,10 @@ class EpochBasedGC
   GetPageIfPossible()  //
       -> void *
   {
-    auto &&garbage_list = GetThreadLocalGarbageList<T, GCTargets...>();
+    auto *tls_list = GetTLSGarbageList<T, GCTargets...>();
 
-    if (garbage_list.use_count() <= 1) return nullptr;
-    return garbage_list->GetPageIfPossible();
+    if (tls_list->use_count() <= 1) return nullptr;
+    return (*tls_list)->GetPageIfPossible();
   }
 
   /*####################################################################################
@@ -179,9 +182,8 @@ class EpochBasedGC
   StartGC()  //
       -> bool
   {
-    if (gc_is_running_.load(std::memory_order_relaxed)) {
-      return false;
-    }
+    if (gc_is_running_.load(std::memory_order_relaxed)) return false;
+
     gc_is_running_.store(true, std::memory_order_relaxed);
     gc_thread_ = std::thread{&EpochBasedGC::RunGC, this};
     return true;
@@ -197,9 +199,8 @@ class EpochBasedGC
   StopGC()  //
       -> bool
   {
-    if (!gc_is_running_.load(std::memory_order_relaxed)) {
-      return false;
-    }
+    if (!gc_is_running_.load(std::memory_order_relaxed)) return false;
+
     gc_is_running_.store(false, std::memory_order_relaxed);
     gc_thread_.join();
     return true;
@@ -228,396 +229,431 @@ class EpochBasedGC
   };
 
   /**
-   * @brief A class of nodes for composing a linked list of gabage lists in each thread.
+   * @brief A class for retaining thread-local garbage lists.
    *
+   * @tparam DataNode a class for representing garbage nodes to be contained.
    */
-  template <class T>
-  class GarbageNode
+  template <class DataNode>
+  class TLSList
   {
    public:
+    /*##################################################################################
+     * Type aliases
+     *################################################################################*/
+
+    using GarbageList_t = typename DataNode::GarbageList_t;
+    using GarbageList_p = typename DataNode::GarbageList_p;
+    using GarbageNode_p = typename DataNode::GarbageNode_p;
+    using T = typename DataNode::GarbageList_t::T;
+
     /*##################################################################################
      * Public constructors and assignment operators
      *################################################################################*/
 
     /**
-     * @brief Construct a new instance.
+     * @brief Construct a new TLSList object.
      *
-     * @param garbage_list a pointer to a target list.
-     * @param node_keeper an original pointer for monitoring the lifetime of a target.
-     * @param next a pointer to a next node.
-     * @param target_info an instance including GC target information.
+     * @param list an initial garbage list.
+     * @param node the corresponding garbage node.
      */
-    GarbageNode(  //
-        GarbageNode *next,
-        std::shared_ptr<GarbageList<T>> garbage_list,
-        const T &target_info)
-        : next{next}, garbage_list_{std::move(garbage_list)}, target_info_{target_info}
+    TLSList(  //
+        GarbageList_p list,
+        GarbageNode_p node)
+        : tail_{list}
     {
+      data_node_.store(node, std::memory_order_release);
     }
 
-    GarbageNode(const GarbageNode &) = delete;
-    auto operator=(const GarbageNode &) -> GarbageNode & = delete;
-    GarbageNode(GarbageNode &&) = delete;
-    auto operator=(GarbageNode &&) -> GarbageNode & = delete;
+    TLSList(const TLSList &) = delete;
+    TLSList(TLSList &&) = delete;
+
+    auto operator=(const TLSList &) -> TLSList & = delete;
+    auto operator=(TLSList &&) -> TLSList & = delete;
 
     /*##################################################################################
-     * Public destructor
+     * Public destructors
+     *################################################################################*/
+
+    ~TLSList() = default;
+
+    /*##################################################################################
+     * Public utilities for a worker thread
      *################################################################################*/
 
     /**
-     * @brief Destroy the instance.
+     * @brief Add a new garbage instance.
      *
-     */
-    ~GarbageNode() = default;
-
-    /*##################################################################################
-     * Public getters
-     *################################################################################*/
-
-    /**
-     * @retval true if any thread may access this garbage list.
-     * @retval false otherwise.
-     */
-    [[nodiscard]] auto
-    IsAlive() const  //
-        -> bool
-    {
-      return garbage_list_.use_count() > 1 || !garbage_list_->Empty();
-    }
-
-    /**
-     * @return the number of remaining garbage.
-     */
-    [[nodiscard]] auto
-    Size() const  //
-        -> size_t
-    {
-      return garbage_list_->Size();
-    }
-
-    /*##################################################################################
-     * Public utility functions
-     *################################################################################*/
-
-    /**
-     * @brief Release registered garbage if possible.
-     *
-     * @param protected_epoch an epoch value to check whether garbage can be freed.
+     * @param epoch an epoch value when a garbage is added.
+     * @param garbage_ptr a pointer to a target garbage.
      */
     void
-    ClearGarbage(const size_t protected_epoch)
+    AddGarbage(  //
+        const size_t epoch,
+        T *garbage_ptr)
     {
-      std::unique_lock guard{mtx_, std::defer_lock};
-      if (guard.try_lock()) {
-        if (T::kReusePages && garbage_list_.use_count() > 1) {
-          garbage_list_->DestructGarbage(protected_epoch);
-        } else {
-          garbage_list_->ClearGarbage(protected_epoch);
-        }
-      }
+      tail_ = GarbageList_t::AddGarbage(tail_, epoch, garbage_ptr);
     }
 
     /**
-     * @brief Delete all the garbage.
+     * @brief Reuse a released memory page if it exists in the list.
+     *
+     * @retval nullptr if the list does not have reusable pages.
+     * @retval a memory page.
+     */
+    auto
+    GetPageIfPossible()  //
+        -> void *
+    {
+      auto *data_node = data_node_.load(std::memory_order_relaxed);
+      return (data_node != nullptr) ? data_node->GetPageIfPossible() : nullptr;
+    }
+
+    /*##################################################################################
+     * Public utilities for a GC thread
+     *################################################################################*/
+
+    /**
+     * @brief Expire the corresponding garbage node for destruction.
      *
      */
     void
-    DestroyGarbage()
+    Expire()
     {
-      std::unique_lock guard{mtx_, std::defer_lock};
-      if (guard.try_lock()) {
-        garbage_list_->ClearGarbage(std::numeric_limits<size_t>::max());
-      }
+      auto *data_node = data_node_.load(std::memory_order_acquire);
+      data_node->Expire();
+      data_node_.store(nullptr, std::memory_order_relaxed);
     }
-
-    /*##################################################################################
-     * Public member variables
-     *################################################################################*/
-
-    /// a pointer to a next node.
-    GarbageNode *next{nullptr};  // NOLINT
 
    private:
     /*##################################################################################
      * Internal member variables
      *################################################################################*/
 
-    /// a pointer to a target garbage list.
-    std::shared_ptr<GarbageList<T>> garbage_list_{};
+    /// @brief A garbage list to be added new garbage.
+    GarbageList_p tail_{nullptr};
 
-    /// a mutex for preventing multi-threads modify the same node concurrently
-    std::mutex mtx_{};
+    /// @brief The corresponding garbage node.
+    std::atomic<GarbageNode_p> data_node_{nullptr};
+  };
 
-    /// the reference to target's GC information.
-    const T &target_info_;
+  /**
+   * @brief A class for representing linked-list nodes.
+   *
+   * @tparam DataNode a class for representing garbage nodes to be contained.
+   */
+  template <class DataNode>
+  class TLSNode
+  {
+   public:
+    /*##################################################################################
+     * Type aliases
+     *################################################################################*/
+
+    using TLSList_t = TLSList<DataNode>;
+
+    /*##################################################################################
+     * Public constructors and assignment operators
+     *################################################################################*/
+
+    /**
+     * @brief Construct a new TLSNode object.
+     *
+     * @param list the corresponding thread-local garbage list.
+     */
+    explicit TLSNode(std::shared_ptr<TLSList_t> list) : list_{std::move(list)} {}
+
+    TLSNode(const TLSNode &) = delete;
+    TLSNode(TLSNode &&) = delete;
+
+    auto operator=(const TLSNode &) -> TLSNode & = delete;
+    auto operator=(TLSNode &&) -> TLSNode & = delete;
+
+    /*##################################################################################
+     * Public destructors
+     *################################################################################*/
+
+    ~TLSNode() = default;
+
+    /*##################################################################################
+     * Public utilities for worker threads
+     *################################################################################*/
+
+    /**
+     * @brief Add a new node to a given linked list atomically.
+     *
+     * @param list a garbage list to be added.
+     * @param head the head of a linked list.
+     */
+    static void
+    AddNewNode(  //
+        const std::shared_ptr<TLSList_t> *list,
+        std::atomic<TLSNode *> *head)
+    {
+      auto *node = new TLSNode{*list};
+      auto *next = head->load(std::memory_order_relaxed);
+      do {
+        node->next_ = next;
+      } while (!head->compare_exchange_weak(next, node, std::memory_order_release));
+    }
+
+    /*##################################################################################
+     * Public utilities for a GC thread
+     *################################################################################*/
+
+    /**
+     * @brief Remove expired nodes from a linked list.
+     *
+     * @param node_p the address of the head pointer.
+     * @param force_expire expire all the nodes forcefully if true.
+     * @retval true if all the node are removed.
+     * @retval false otherwise.
+     */
+    static auto
+    RemoveExpiredNodes(  //
+        std::atomic<TLSNode *> *node_p,
+        const bool force_expire)  //
+        -> bool
+    {
+      auto *node = node_p->load(std::memory_order_acquire);
+      if (node == nullptr) return true;
+
+      while (node != nullptr) {
+        if (!force_expire && node->list_.use_count() > 1) {
+          // go to the next node
+          node_p = &(node->next_);
+          node = node_p->load(std::memory_order_relaxed);
+          continue;
+        }
+
+        // this node can be removed
+        auto *next = node->next_.load(std::memory_order_relaxed);
+        if (node_p->compare_exchange_strong(node, next, std::memory_order_acquire)) {
+          node->list_->Expire();
+          delete node;
+          node = next;
+        }
+      }
+
+      return false;
+    }
+
+   private:
+    /*##################################################################################
+     * Internal member variables
+     *################################################################################*/
+
+    /// @brief The corresponding thread-local garbage list.
+    std::shared_ptr<TLSList_t> list_{nullptr};
+
+    /// @brief The next node in a linked list.
+    std::atomic<TLSNode *> next_{nullptr};
   };
 
   /*####################################################################################
-   * Internal utility functions
+   * Recursive functions for managing static/thread_local variables
    *##################################################################################*/
 
+  /**
+   * @tparam Target a class for representing target garbage.
+   * @tparam Head the current class in garbage targets.
+   * @tparam Tails the remaining classes in garbage targets.
+   * @return a garbage list for each thread.
+   */
   template <class Target, class Head, class... Tails>
   [[nodiscard]] auto
-  GetGCTargetInfo() const  //
-      -> const Target &
+  GetTLSGarbageList() const  //
+      -> std::shared_ptr<TLSList<GarbageNode<Target>>> *
   {
+    using TLSList_t = TLSList<GarbageNode<Target>>;
+
     if constexpr (std::is_same_v<Head, Target>) {
-      return std::get<sizeof...(GCTargets) - (sizeof...(Tails) + 1)>(gc_targets_);
+      thread_local std::shared_ptr<TLSList_t> garbage_list{nullptr};
+      return &garbage_list;
     } else {
-      return GetGCTargetInfo<Target, Tails...>();
+      return GetTLSGarbageList<Target, Tails...>();
     }
   }
 
+  /**
+   * @tparam Target a class for representing target garbage.
+   * @return a garbage list for each thread.
+   */
   template <class Target>
   [[nodiscard]] auto
-  GetGCTargetInfo() const  //
-      -> const DefaultTarget &
+  GetTLSGarbageList() const  //
+      -> std::shared_ptr<TLSList<GarbageNode<DefaultTarget>>> *
   {
-    static DefaultTarget default_target{};
-    return default_target;
+    using TLSList_t = TLSList<GarbageNode<DefaultTarget>>;
+
+    thread_local std::shared_ptr<TLSList_t> garbage_list{nullptr};
+    return &garbage_list;
   }
 
+  /**
+   * @tparam Target a class for representing target garbage.
+   * @tparam Head the current class in garbage targets.
+   * @tparam Tails the remaining classes in garbage targets.
+   * @return the head of a linked list of TLS nodes.
+   */
   template <class Target, class Head, class... Tails>
   [[nodiscard]] auto
-  GetThreadLocalGarbageList() const  //
-      -> std::shared_ptr<GarbageList<Target>> &
+  GetTLSNodeHead() const  //
+      -> std::atomic<TLSNode<GarbageNode<Target>> *> *
   {
+    using TLSNode_t = TLSNode<GarbageNode<Target>>;
+
     if constexpr (std::is_same_v<Head, Target>) {
-      thread_local auto &&garbage_list = std::make_shared<GarbageList<Target>>();
-      return garbage_list;
+      static std::atomic<TLSNode_t *> head{nullptr};
+      return &head;
     } else {
-      return GetThreadLocalGarbageList<Target, Tails...>();
+      return GetTLSNodeHead<Target, Tails...>();
     }
   }
 
+  /**
+   * @tparam Target a class for representing target garbage.
+   * @return the head of a linked list of TLS nodes.
+   */
   template <class Target>
   [[nodiscard]] auto
-  GetThreadLocalGarbageList() const  //
-      -> std::shared_ptr<GarbageList<DefaultTarget>> &
+  GetTLSNodeHead() const  //
+      -> std::atomic<TLSNode<GarbageNode<DefaultTarget>> *> *
   {
-    thread_local auto &&garbage_list = std::make_shared<GarbageList<DefaultTarget>>();
-    return garbage_list;
+    using TLSNode_t = TLSNode<GarbageNode<DefaultTarget>>;
+
+    static std::atomic<TLSNode_t *> head{nullptr};
+    return &head;
   }
 
+  /**
+   * @tparam Target a class for representing target garbage.
+   * @tparam Head the current class in garbage targets.
+   * @tparam Tails the remaining classes in garbage targets.
+   * @return the head of a linked list of garbage nodes and its mutex object.
+   */
   template <class Target, class Head, class... Tails>
   [[nodiscard]] auto
   GetGarbageNodeHead() const  //
-      -> std::atomic<GarbageNode<Target> *> &
+      -> std::pair<GarbageNode<Target> **, std::mutex *>
   {
     if constexpr (std::is_same_v<Head, Target>) {
-      static std::atomic<GarbageNode<Target> *> node_head{nullptr};
-      return node_head;
+      static GarbageNode<Target> *head{nullptr};
+      static std::mutex mtx{};
+      return {&head, &mtx};
     } else {
       return GetGarbageNodeHead<Target, Tails...>();
     }
   }
 
+  /**
+   * @tparam Target a class for representing target garbage.
+   * @return the head of a linked list of garbage nodes and its mutex object.
+   */
   template <class Target>
   [[nodiscard]] auto
   GetGarbageNodeHead() const  //
-      -> std::atomic<GarbageNode<DefaultTarget> *> &
+      -> std::pair<GarbageNode<DefaultTarget> **, std::mutex *>
   {
-    static std::atomic<GarbageNode<DefaultTarget> *> node_head{nullptr};
-    return node_head;
+    static GarbageNode<DefaultTarget> *head{nullptr};
+    static std::mutex mtx{};
+    return {&head, &mtx};
   }
 
+  /*####################################################################################
+   * Internal utility functions
+   *##################################################################################*/
+
   /**
-   * @brief Remove expired nodes from the internal list.
+   * @brief Remove expired TLS nodes from garbage collection.
    *
+   * @tparam Head the current class in garbage targets.
+   * @tparam Tails the remaining classes in garbage targets.
+   * @param force_expire expire all the nodes forcefully if true.
+   * @retval true if all the node are removed for every target garbage.
+   * @retval false otherwise.
    */
   template <class Head, class... Tails>
-  void
-  RemoveExpiredNodesForEachTarget()
+  auto
+  RemoveExpiredNodes(const bool force_expire)  //
+      -> bool
   {
-    RemoveExpiredNodes<Head>();
+    using TLSNode_t = TLSNode<GarbageNode<Head>>;
+
+    auto *head = GetTLSNodeHead<Head, GCTargets...>();
+    auto all_node_expired = TLSNode_t::RemoveExpiredNodes(head, force_expire);
+
     if constexpr (sizeof...(Tails) > 0) {
-      RemoveExpiredNodesForEachTarget<Tails...>();
+      all_node_expired &= RemoveExpiredNodes<Tails...>(force_expire);
     }
+
+    return all_node_expired;
   }
 
   /**
-   * @brief Remove expired nodes from the internal list.
+   * @brief Clear registered garbage if possible.
    *
-   */
-  template <class Target>
-  void
-  RemoveExpiredNodes()
-  {
-    // if garbage-list nodes are variable, do nothing
-    auto *cur_node = GetGarbageNodeHead<Target, GCTargets...>().load(std::memory_order_acquire);
-    if (cur_node == nullptr) return;
-
-    // create lock to prevent cleaner threads from running
-    std::unique_lock guard{garbage_lists_lock_, std::defer_lock};
-    if (guard.try_lock()) {
-      // check whether there are expired nodes
-      auto *prev_node = cur_node;
-      while (true) {
-        cur_node = prev_node->next;
-        if (cur_node == nullptr) break;
-
-        if (cur_node->IsAlive()) {
-          prev_node = cur_node;
-        } else {
-          prev_node->next = cur_node->next;
-          delete cur_node;
-        }
-      }
-    }
-  }
-
-  /**
-   * @brief Remove expired nodes from the internal list.
-   *
+   * @tparam Head the current class in garbage targets.
+   * @tparam Tails the remaining classes in garbage targets.
+   * @param protected_epoch an epoch value to be protected.
+   * @retval true if all the garbage is released for every target type.
+   * @retval false otherwise.
    */
   template <class Head, class... Tails>
-  void
-  RemoveAllNodesForEachTarget()
+  auto
+  ClearGarbage(const size_t protected_epoch)  //
+      -> bool
   {
-    RemoveAllNodes<Head>();
+    using GarbageNode_t = GarbageNode<Head>;
+
+    auto [head, mtx_p] = GetGarbageNodeHead<Head, GCTargets...>();
+    auto all_garbage_released = GarbageNode_t::ClearGarbage(protected_epoch, mtx_p, head);
+
     if constexpr (sizeof...(Tails) > 0) {
-      RemoveAllNodesForEachTarget<Tails...>();
+      all_garbage_released &= ClearGarbage<Tails...>(protected_epoch);
     }
+
+    return all_garbage_released;
   }
 
   /**
-   * @brief Remove expired nodes from the internal list.
+   * @brief Run a procedure of garbage collection.
    *
-   */
-  template <class Target>
-  void
-  RemoveAllNodes()
-  {
-    auto &head_addr = GetGarbageNodeHead<Target, GCTargets...>();
-    auto *cur_node = head_addr.load(std::memory_order_acquire);
-    while (cur_node != nullptr) {
-      auto *prev_node = cur_node;
-      cur_node = cur_node->next;
-      delete prev_node;
-    }
-    head_addr.store(nullptr, std::memory_order_relaxed);
-  }
-
-  template <class Head, class... Tails>
-  void
-  ClearGarbageForEachTarget(const size_t protected_epoch)
-  {
-    ClearGarbage<Head>(protected_epoch);
-    if constexpr (sizeof...(Tails) > 0) {
-      ClearGarbageForEachTarget<Tails...>(protected_epoch);
-    }
-  }
-
-  template <class Target>
-  void
-  ClearGarbage(const size_t protected_epoch)
-  {
-    auto *cur_node = GetGarbageNodeHead<Target, GCTargets...>().load(std::memory_order_acquire);
-    while (cur_node != nullptr) {
-      cur_node->ClearGarbage(protected_epoch);
-      cur_node = cur_node->next;
-    }
-  }
-
-  template <class Head, class... Tails>
-  void
-  DestroyGarbageForEachTarget()
-  {
-    DestroyGarbage<Head>();
-    if constexpr (sizeof...(Tails) > 0) {
-      DestroyGarbageForEachTarget<Tails...>();
-    }
-  }
-
-  template <class Target>
-  void
-  DestroyGarbage()
-  {
-    auto *cur_node = GetGarbageNodeHead<Target, GCTargets...>().load(std::memory_order_acquire);
-    while (cur_node != nullptr) {
-      cur_node->DestroyGarbage();
-      cur_node = cur_node->next;
-    }
-  }
-
-  /**
-   * @brief Run garbage collection.
-   *
-   *  This function is assumed to be called in std::thread constructors.
    */
   void
   RunGC()
   {
-    auto cleaner = [&]() {
-      while (gc_is_running_.load(std::memory_order_relaxed)) {
-        {  // create a lock for preventing node expiration
-          const std::shared_lock guard{garbage_lists_lock_};
-          ClearGarbageForEachTarget<DefaultTarget, GCTargets...>(epoch_manager_.GetMinEpoch());
+    // create cleaner threads
+    for (size_t i = 0; i < gc_thread_num_; ++i) {
+      cleaner_threads_.emplace_back([&]() {
+        for (auto wake_time = Clock_t::now() + gc_interval_; true; wake_time += gc_interval_) {
+          // release unprotected garbage
+          auto released = ClearGarbage<DefaultTarget, GCTargets...>(epoch_manager_.GetMinEpoch());
+          auto is_running = gc_is_running_.load(std::memory_order_relaxed);
+          if (!is_running && released) break;
+
+          // wait until the next epoch
+          std::this_thread::sleep_until(wake_time);
         }
-
-        // wait until a next epoch
-        const auto sleep_time = LongToTimePoint(sleep_until_.load(std::memory_order_relaxed));
-        std::this_thread::sleep_until(sleep_time);
-      }
-
-      // release all garbage before destruction
-      const std::shared_lock guard{garbage_lists_lock_};
-      DestroyGarbageForEachTarget<DefaultTarget, GCTargets...>();
-    };
-
-    Clock_t::time_point sleep_time;
-
-    {
-      // create a lock to prevent cleaner threads from running
-      const std::unique_lock guard{garbage_lists_lock_};
-
-      // create cleaner threads
-      for (size_t i = 0; i < gc_thread_num_; ++i) {
-        cleaner_threads_.emplace_back(cleaner);
-      }
-
-      // set sleep-interval
-      sleep_time = Clock_t::now() + gc_interval_;
-      sleep_until_.store(TimePointToLong(sleep_time), std::memory_order_relaxed);
+      });
     }
 
-    // manage epochs and sleep-interval
-    while (gc_is_running_.load(std::memory_order_relaxed)) {
-      std::this_thread::sleep_until(sleep_time);
-      sleep_time += gc_interval_;
-      sleep_until_.store(TimePointToLong(sleep_time), std::memory_order_relaxed);
+    // manage the global epoch
+    for (auto wake_time = Clock_t::now() + gc_interval_; true; wake_time += gc_interval_) {
+      // remove expired TLS nodes
+      auto is_running = gc_is_running_.load(std::memory_order_relaxed);
+      auto expired = RemoveExpiredNodes<DefaultTarget, GCTargets...>(!is_running);
+      if (!is_running && expired) break;
 
+      // wait until the next epoch
+      std::this_thread::sleep_until(wake_time);
       epoch_manager_.ForwardGlobalEpoch();
-      RemoveExpiredNodesForEachTarget<DefaultTarget, GCTargets...>();
     }
 
     // wait all the cleaner threads return
-    for (auto &&t : cleaner_threads_) t.join();
+    for (auto &&t : cleaner_threads_) {
+      t.join();
+    }
     cleaner_threads_.clear();
-  }
-
-  /**
-   * @param t a time point.
-   * @return a converted unsigned integer value.
-   */
-  auto
-  TimePointToLong(const Clock_t::time_point t)  //
-      -> size_t
-  {
-    auto t_us = std::chrono::time_point_cast<std::chrono::microseconds>(t);
-    return t_us.time_since_epoch().count();
-  }
-
-  /**
-   * @param t an unsigned interger value.
-   * @return a converted time point.
-   */
-  auto
-  LongToTimePoint(const size_t t)  //
-      -> Clock_t::time_point
-  {
-    std::chrono::microseconds t_us{t};
-    return Clock_t::time_point{t_us};
   }
 
   /*####################################################################################
@@ -630,9 +666,6 @@ class EpochBasedGC
   /// the maximum number of cleaner threads
   const size_t gc_thread_num_{1};
 
-  /// the set of targets' GC information.
-  const std::tuple<GCTargets...> gc_targets_{};
-
   /// an epoch manager.
   EpochManager epoch_manager_{};
 
@@ -644,9 +677,6 @@ class EpochBasedGC
 
   /// worker threads to release garbage
   std::vector<std::thread> cleaner_threads_{};
-
-  /// a converted time point for GC interval
-  std::atomic_size_t sleep_until_{0};
 
   /// a flag to check whether garbage collection is running.
   std::atomic_bool gc_is_running_{false};

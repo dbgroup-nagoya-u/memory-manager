@@ -73,8 +73,7 @@ class EpochBasedGCFixture : public ::testing::Test
   void
   SetUp() override
   {
-    auto &&targets = std::make_tuple(SharedPtrTarget{});
-    gc_ = std::make_unique<EpochBasedGC_t>(kGCInterval, kThreadNum, std::move(targets));
+    gc_ = std::make_unique<EpochBasedGC_t>(kGCInterval, kThreadNum);
     gc_->StartGC();
   }
 

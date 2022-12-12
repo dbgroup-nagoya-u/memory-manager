@@ -179,9 +179,8 @@ main(  //
   std::mutex lock{};
 
   {
-    // create the set of GC targets and pass it to GC
-    auto &&gc_targets = std::make_tuple(SharedPtrTarget{});
-    ::dbgroup::memory::EpochBasedGC gc{kGCInterval, kThreadNum, std::move(gc_targets)};
+    // create a garbage collector with a specific target
+    ::dbgroup::memory::EpochBasedGC<SharedPtrTarget> gc{kGCInterval, kThreadNum};
     gc.StartGC();
 
     // prepare a sample worker procedure
@@ -270,9 +269,8 @@ main(  //
   constexpr size_t kThreadNum = 1;
   std::mutex lock{};
 
-  // create the set of GC targets and pass it to GC
-  auto &&gc_targets = std::make_tuple(ReusableTarget{});
-  ::dbgroup::memory::EpochBasedGC gc{kGCInterval, kThreadNum, std::move(gc_targets)};
+  // create a garbage collector with a reusable target
+  ::dbgroup::memory::EpochBasedGC<ReusableTarget> gc{kGCInterval, kThreadNum};
   gc.StartGC();
 
   // prepare a sample worker procedure
