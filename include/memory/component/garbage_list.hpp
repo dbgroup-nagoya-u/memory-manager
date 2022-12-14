@@ -67,43 +67,11 @@ class GarbageList
    * @brief Destroy the instance.
    *
    */
-  ~GarbageList()
-  {
-    const auto destructed_idx = destructed_idx_.load(std::memory_order_relaxed);
-    const auto end_idx = end_idx_.load(std::memory_order_acquire);
-
-    // release unprotected garbage
-    auto idx = begin_idx_.load(std::memory_order_relaxed);
-    for (; idx < destructed_idx; ++idx) {
-      // the garbage has been already destructed
-      Target::deleter(garbage_.at(idx).ptr);
-    }
-    for (; idx < end_idx; ++idx) {
-      auto *ptr = garbage_.at(idx).ptr;
-      if constexpr (!std::is_same_v<T, void>) {
-        ptr->~T();
-      }
-      Target::deleter(ptr);
-    }
-  }
+  ~GarbageList() = default;
 
   /*####################################################################################
    * Public getters/setters
    *##################################################################################*/
-
-  /**
-   * @return the number of unreleased garbases in entire lists.
-   */
-  [[nodiscard]] auto
-  Size() const  //
-      -> size_t
-  {
-    const auto end_idx = end_idx_.load(std::memory_order_acquire);
-    const auto size = end_idx - destructed_idx_.load(std::memory_order_relaxed);
-
-    if (end_idx < kGarbageBufferSize) return size;
-    return next_->Size() + size;
-  }
 
   /**
    * @retval true if this list is empty.
@@ -205,28 +173,26 @@ class GarbageList
       const size_t protected_epoch)  //
       -> GarbageList *
   {
-    // release unprotected garbage
-    const auto end_idx = buffer->end_idx_.load(std::memory_order_acquire);
-    auto idx = buffer->destructed_idx_.load(std::memory_order_relaxed);
-    for (; idx < end_idx; ++idx) {
-      if (buffer->garbage_.at(idx).epoch >= protected_epoch) break;
+    while (true) {
+      // release unprotected garbage
+      const auto end_idx = buffer->end_idx_.load(std::memory_order_acquire);
+      auto idx = buffer->destructed_idx_.load(std::memory_order_relaxed);
+      for (; idx < end_idx; ++idx) {
+        if (buffer->garbage_.at(idx).epoch >= protected_epoch) break;
 
-      // only call destructor to reuse pages
-      if constexpr (!std::is_same_v<T, void>) {
-        buffer->garbage_.at(idx).ptr->~T();
+        // only call destructor to reuse pages
+        if constexpr (!std::is_same_v<T, void>) {
+          buffer->garbage_.at(idx).ptr->~T();
+        }
       }
-    }
 
-    // update the position to make visible destructed garbage
-    auto *next_buf = (idx < kGarbageBufferSize) ? buffer : buffer->next_;
-    buffer->destructed_idx_.store(idx, std::memory_order_release);
+      // update the position to make visible destructed garbage
+      buffer->destructed_idx_.store(idx, std::memory_order_release);
+      if (idx < kGarbageBufferSize) return buffer;
 
-    if (next_buf != buffer) {
       // release the next buffer recursively
-      next_buf = GarbageList::Destruct(next_buf, protected_epoch);
+      buffer = buffer->next_;
     }
-
-    return next_buf;
   }
 
   /**
@@ -242,36 +208,35 @@ class GarbageList
       const size_t protected_epoch)  //
       -> GarbageList *
   {
-    const auto destructed_idx = buffer->destructed_idx_.load(std::memory_order_relaxed);
-    const auto end_idx = buffer->end_idx_.load(std::memory_order_acquire);
+    while (true) {
+      const auto destructed_idx = buffer->destructed_idx_.load(std::memory_order_relaxed);
+      const auto end_idx = buffer->end_idx_.load(std::memory_order_acquire);
 
-    // release unprotected garbage
-    auto idx = buffer->begin_idx_.load(std::memory_order_relaxed);
-    for (; idx < destructed_idx; ++idx) {
-      // the garbage has been already destructed
-      Target::deleter(buffer->garbage_.at(idx).ptr);
-    }
-    for (; idx < end_idx; ++idx) {
-      if (buffer->garbage_.at(idx).epoch >= protected_epoch) break;
-
-      auto *ptr = buffer->garbage_.at(idx).ptr;
-      if constexpr (!std::is_same_v<T, void>) {
-        ptr->~T();
+      // release unprotected garbage
+      auto idx = buffer->begin_idx_.load(std::memory_order_relaxed);
+      for (; idx < destructed_idx; ++idx) {
+        // the garbage has been already destructed
+        Target::deleter(buffer->garbage_.at(idx).ptr);
       }
-      Target::deleter(ptr);
-    }
-    buffer->begin_idx_.store(idx, std::memory_order_relaxed);
-    buffer->destructed_idx_.store(idx, std::memory_order_relaxed);
+      for (; idx < end_idx; ++idx) {
+        if (buffer->garbage_.at(idx).epoch >= protected_epoch) break;
 
-    if (idx < kGarbageBufferSize) {
-      // the buffer has unreleased garbage
-      return buffer;
-    }
+        auto *ptr = buffer->garbage_.at(idx).ptr;
+        if constexpr (!std::is_same_v<T, void>) {
+          ptr->~T();
+        }
+        Target::deleter(ptr);
+      }
+      buffer->begin_idx_.store(idx, std::memory_order_relaxed);
+      buffer->destructed_idx_.store(idx, std::memory_order_relaxed);
 
-    // release the next buffer recursively
-    auto *next = buffer->next_;
-    delete buffer;
-    return GarbageList::Clear(next, protected_epoch);
+      if (idx < kGarbageBufferSize) return buffer;
+
+      // release the next buffer recursively
+      auto *next = buffer->next_;
+      delete buffer;
+      buffer = next;
+    }
   }
 
  private:

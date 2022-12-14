@@ -20,6 +20,12 @@ set(
   "The number of worker threads for testing."
 )
 
+set(
+  DBGROUP_TEST_TMP_PMEM_PATH
+  "/tmp" CACHE STRING
+  "The path to a durable storage."
+)
+
 #--------------------------------------------------------------------------------------#
 # Build Unit Tests
 #--------------------------------------------------------------------------------------#
@@ -46,6 +52,12 @@ function(DBGROUP_ADD_TEST DBGROUP_TEST_TARGET)
     dbgroup::${PROJECT_NAME}
     GTest::gtest_main
   )
+
+  if(${MEMORY_MANAGER_USE_PERSISTENT_MEMORY})
+    target_compile_definitions(${DBGROUP_TEST_TARGET} PRIVATE
+      DBGROUP_TEST_TMP_PMEM_PATH=${DBGROUP_TEST_TMP_PMEM_PATH}
+    )
+  endif()
 
   add_test(NAME ${DBGROUP_TEST_TARGET} COMMAND $<TARGET_FILE:${DBGROUP_TEST_TARGET}>)
 endfunction()
