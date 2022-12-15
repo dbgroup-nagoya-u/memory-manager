@@ -134,7 +134,7 @@ class EpochBasedGC
     if (tls_list->use_count() <= 1) {
       // register the garbage list with GC
       auto *garbage_list = new GarbageList<Target>{};
-      auto [garbage_head, mtx_p] = GetGarbageNodeHead<Target, GCTargets...>();
+      auto [garbage_head, mtx_p] = GetGarbageNodeHead<Target>();
       mtx_p->lock();
       auto *garbage_node = new GarbageNode_t{garbage_list, *garbage_head};
       *garbage_head = garbage_node;
@@ -142,7 +142,7 @@ class EpochBasedGC
 
       // register the TLS information with GC
       *tls_list = std::make_shared<TLSList_t>(garbage_list, garbage_node);
-      auto *tls_head = GetTLSNodeHead<Target, GCTargets...>();
+      auto *tls_head = GetTLSNodeHead<Target>();
       TLSNode_t::AddNewNode(tls_list, tls_head);
     }
 
@@ -449,8 +449,130 @@ class EpochBasedGC
     std::atomic<TLSNode *> next_{nullptr};
   };
 
+  /**
+   * @brief A class for representing the heads of garbage lists.
+   *
+   * @tparam Target a class for representing target garbage.
+   */
+  template <class Target>
+  class GarbageHead
+  {
+   public:
+    /*##################################################################################
+     * Type aliases
+     *################################################################################*/
+
+    using GarbageNode_t = GarbageNode<Target>;
+    using GarbageNode_p = typename GarbageNode_t::GarbageNode_p;
+
+    /*##################################################################################
+     * Public constructors and assignment operators
+     *################################################################################*/
+
+    /**
+     * @brief Construct a new GarbageHead object.
+     *
+     */
+    GarbageHead() : head_{new GarbageNode_p{nullptr}} {}
+
+    GarbageHead(GarbageHead &&obj) noexcept
+    {
+      head_ = obj.head_;
+      obj.head_ = nullptr;
+    }
+
+    auto
+    operator=(GarbageHead &&obj) noexcept -> GarbageHead &
+    {
+      head_ = obj.head_;
+      obj.head_ = nullptr;
+      return *this;
+    }
+
+    // copies are deleted
+    GarbageHead(const GarbageHead &) = delete;
+    auto operator=(const GarbageHead &) -> GarbageHead & = delete;
+
+    /*##################################################################################
+     * Public destructors
+     *################################################################################*/
+
+    ~GarbageHead() { delete head_; }
+
+    /*##################################################################################
+     * Public getters/setters
+     *################################################################################*/
+
+    /**
+     * @retval 1st: the head pointer.
+     * @retval 2nd: the corresponding mutex.
+     */
+    auto
+    GetHead()  //
+        -> std::pair<GarbageNode_p *, std::mutex *>
+    {
+      return {head_, mtx_.get()};
+    }
+
+   private:
+    /*##################################################################################
+     * Internal member variables
+     *################################################################################*/
+
+    /// @brief The head of a linked list.
+    GarbageNode_p *head_{nullptr};
+
+    /// @brief A mutex object for modifying the head pointer.
+    std::unique_ptr<std::mutex> mtx_ = std::make_unique<std::mutex>();
+  };
+
+  /**
+   * @brief A class for representing the heads of TLS lists.
+   *
+   * @tparam Target a class for representing target garbage.
+   */
+  template <class Target>
+  struct TLSHead {
+    /*##################################################################################
+     * Type aliases
+     *################################################################################*/
+
+    using GarbageNode_t = typename GarbageHead<Target>::GarbageNode_t;
+    using TLSNode_t = std::atomic<TLSNode<GarbageNode_t> *>;
+
+    /*##################################################################################
+     * Public member variables
+     *################################################################################*/
+
+    /// @brief The head of a linked list.
+    std::unique_ptr<TLSNode_t> head = std::make_unique<TLSNode_t>(nullptr);
+  };
+
   /*####################################################################################
-   * Recursive functions for managing static/thread_local variables
+   * Recursive functions for converting parameter packs
+   *##################################################################################*/
+
+  template <template <class T> class OutT, class InT, class... Tails>
+  static auto
+  ConvToHeads()
+  {
+    using OutT_t = OutT<InT>;
+    return std::tuple_cat(std::tuple<OutT_t>{}, ConvToHeads<OutT, Tails...>());
+  }
+
+  template <template <class T> class OutT>
+  static auto
+  ConvToHeads()
+  {
+    using OutT_t = OutT<DefaultTarget>;
+    return std::tuple<OutT_t>{};
+  }
+
+  using GarbageHeads_t = decltype(ConvToHeads<GarbageHead, GCTargets...>());
+  using TLSHeads_t = decltype(ConvToHeads<TLSHead, GCTargets...>());
+
+  /*####################################################################################
+   * Recursive functions for managing thread_local variables
    *##################################################################################*/
 
   /**
@@ -483,85 +605,41 @@ class EpochBasedGC
   GetTLSGarbageList() const  //
       -> std::shared_ptr<TLSList<GarbageNode<DefaultTarget>>> *
   {
+    static_assert(std::is_same_v<Target, DefaultTarget>);
     using TLSList_t = TLSList<GarbageNode<DefaultTarget>>;
 
     thread_local std::shared_ptr<TLSList_t> garbage_list{nullptr};
     return &garbage_list;
   }
 
-  /**
-   * @tparam Target a class for representing target garbage.
-   * @tparam Head the current class in garbage targets.
-   * @tparam Tails the remaining classes in garbage targets.
-   * @return the head of a linked list of TLS nodes.
-   */
-  template <class Target, class Head, class... Tails>
-  [[nodiscard]] auto
-  GetTLSNodeHead() const  //
-      -> std::atomic<TLSNode<GarbageNode<Target>> *> *
-  {
-    using TLSNode_t = TLSNode<GarbageNode<Target>>;
-
-    if constexpr (std::is_same_v<Head, Target>) {
-      static std::atomic<TLSNode_t *> head{nullptr};
-      return &head;
-    } else {
-      return GetTLSNodeHead<Target, Tails...>();
-    }
-  }
-
-  /**
-   * @tparam Target a class for representing target garbage.
-   * @return the head of a linked list of TLS nodes.
-   */
-  template <class Target>
-  [[nodiscard]] auto
-  GetTLSNodeHead() const  //
-      -> std::atomic<TLSNode<GarbageNode<DefaultTarget>> *> *
-  {
-    using TLSNode_t = TLSNode<GarbageNode<DefaultTarget>>;
-
-    static std::atomic<TLSNode_t *> head{nullptr};
-    return &head;
-  }
-
-  /**
-   * @tparam Target a class for representing target garbage.
-   * @tparam Head the current class in garbage targets.
-   * @tparam Tails the remaining classes in garbage targets.
-   * @return the head of a linked list of garbage nodes and its mutex object.
-   */
-  template <class Target, class Head, class... Tails>
-  [[nodiscard]] auto
-  GetGarbageNodeHead() const  //
-      -> std::pair<GarbageNode<Target> **, std::mutex *>
-  {
-    if constexpr (std::is_same_v<Head, Target>) {
-      static GarbageNode<Target> *head{nullptr};
-      static std::mutex mtx{};
-      return {&head, &mtx};
-    } else {
-      return GetGarbageNodeHead<Target, Tails...>();
-    }
-  }
-
-  /**
-   * @tparam Target a class for representing target garbage.
-   * @return the head of a linked list of garbage nodes and its mutex object.
-   */
-  template <class Target>
-  [[nodiscard]] auto
-  GetGarbageNodeHead() const  //
-      -> std::pair<GarbageNode<DefaultTarget> **, std::mutex *>
-  {
-    static GarbageNode<DefaultTarget> *head{nullptr};
-    static std::mutex mtx{};
-    return {&head, &mtx};
-  }
-
   /*####################################################################################
    * Internal utility functions
    *##################################################################################*/
+
+  /**
+   * @tparam Target a class for representing target garbage.
+   * @return the head of a linked list of TLS nodes.
+   */
+  template <class Target>
+  [[nodiscard]] auto
+  GetTLSNodeHead()  //
+      -> std::atomic<TLSNode<GarbageNode<Target>> *> *
+  {
+    auto &target = std::get<TLSHead<Target>>(tls_heads_);
+    return target.head.get();
+  }
+
+  /**
+   * @tparam Target a class for representing target garbage.
+   * @return the head of a linked list of garbage nodes and its mutex object.
+   */
+  template <class Target>
+  [[nodiscard]] auto
+  GetGarbageNodeHead()  //
+      -> std::pair<GarbageNode<Target> **, std::mutex *>
+  {
+    return std::get<GarbageHead<Target>>(garbage_heads_).GetHead();
+  }
 
   /**
    * @brief Remove expired TLS nodes from garbage collection.
@@ -579,7 +657,7 @@ class EpochBasedGC
   {
     using TLSNode_t = TLSNode<GarbageNode<Head>>;
 
-    auto *head = GetTLSNodeHead<Head, GCTargets...>();
+    auto *head = GetTLSNodeHead<Head>();
     auto all_node_expired = TLSNode_t::RemoveExpiredNodes(head, force_expire);
 
     if constexpr (sizeof...(Tails) > 0) {
@@ -605,7 +683,7 @@ class EpochBasedGC
   {
     using GarbageNode_t = GarbageNode<Head>;
 
-    auto [head, mtx_p] = GetGarbageNodeHead<Head, GCTargets...>();
+    auto [head, mtx_p] = GetGarbageNodeHead<Head>();
     auto all_garbage_released = GarbageNode_t::ClearGarbage(protected_epoch, mtx_p, head);
 
     if constexpr (sizeof...(Tails) > 0) {
@@ -680,6 +758,12 @@ class EpochBasedGC
 
   /// a flag to check whether garbage collection is running.
   std::atomic_bool gc_is_running_{false};
+
+  /// @brief The heads of linked lists for each GC target.
+  GarbageHeads_t garbage_heads_ = ConvToHeads<GarbageHead, GCTargets...>();
+
+  /// @brief The heads of linked lists for each TLS watcher.
+  TLSHeads_t tls_heads_ = ConvToHeads<TLSHead, GCTargets...>();
 };
 
 }  // namespace dbgroup::memory
