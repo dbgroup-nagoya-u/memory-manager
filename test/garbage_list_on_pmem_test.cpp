@@ -157,7 +157,7 @@ class GarbageListOnPMEMFixture : public ::testing::Test
   void
   ClearGarbage(const size_t epoch_value)
   {
-    GarbageNode_t::ClearGarbage(epoch_value, &node_mtx_, &(pool_.root()->head), pool_);
+    GarbageNode_t::ClearGarbage(epoch_value, &node_mtx_, &(pool_.root()->head));
   }
 
   void

@@ -32,6 +32,7 @@
 #include <libpmemobj++/persistent_ptr.hpp>
 #include <libpmemobj++/pool.hpp>
 #include <libpmemobj++/transaction.hpp>
+#include <libpmemobj++/utils.hpp>
 
 // local sources
 #include "common.hpp"
@@ -46,8 +47,6 @@ namespace dbgroup::memory::component
 template <class Target>
 class GarbageListOnPMEM
 {
-  using T = typename Target::T;
-
  public:
   /*####################################################################################
    * Public classes
@@ -69,6 +68,7 @@ class GarbageListOnPMEM
    * Type aliases
    *##################################################################################*/
 
+  using T = typename Target::T;
   using GarbageList_p = ::pmem::obj::persistent_ptr<GarbageListOnPMEM>;
   using Target_p = ::pmem::obj::persistent_ptr<T>;
 
@@ -309,6 +309,23 @@ class alignas(kCashLineSize) GarbageNodeOnPMEM
   }
 
   /*####################################################################################
+   * Public utility functions for worker threads
+   *##################################################################################*/
+
+  /**
+   * @brief Reuse a released memory page if it exists in the list.
+   *
+   * @retval nullptr if the list does not have reusable pages.
+   * @retval a memory page otherwise.
+   */
+  auto
+  GetPageIfPossible()  //
+      -> void *
+  {
+    return nullptr;
+  }
+
+  /*####################################################################################
    * Public utility functions for GC threads
    *##################################################################################*/
 
@@ -321,13 +338,11 @@ class alignas(kCashLineSize) GarbageNodeOnPMEM
    * @retval true if all the node are removed.
    * @retval false otherwise.
    */
-  template <class PMEMPool>
   static auto
   ClearGarbage(  //
       const size_t protected_epoch,
       std::mutex *prev_mtx,
-      GarbageNode_p *next_on_prev_node,
-      PMEMPool &pool)  //
+      GarbageNode_p *next_on_prev_node)  //
       -> bool
   {
     prev_mtx->lock();
@@ -340,6 +355,7 @@ class alignas(kCashLineSize) GarbageNodeOnPMEM
     }
 
     // release garbage or remove expired nodes
+    auto &&pool = ::pmem::obj::pool_by_pptr(node);
     while (node != nullptr) {
       if (!node->list_mtx.try_lock()) {
         // the other thread is modifying this node, so go to the next node

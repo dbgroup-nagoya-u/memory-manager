@@ -17,6 +17,7 @@
 #ifndef MEMORY_EPOCH_BASED_GC_HPP
 #define MEMORY_EPOCH_BASED_GC_HPP
 
+// C++ standard libraries
 #include <atomic>
 #include <chrono>
 #include <functional>
@@ -28,10 +29,15 @@
 #include <utility>
 #include <vector>
 
+// local sources
 #include "component/epoch_guard.hpp"
 #include "component/garbage_list.hpp"
 #include "epoch_manager.hpp"
 #include "utility.hpp"
+
+#ifdef MEMORY_MANAGER_USE_PERSISTENT_MEMORY
+#include "component/garbage_list_on_pmem.hpp"
+#endif
 
 namespace dbgroup::memory
 {
@@ -59,6 +65,14 @@ class EpochBasedGC
 
   template <class Target>
   using GarbageNode = component::GarbageNode<Target>;
+
+#ifdef MEMORY_MANAGER_USE_PERSISTENT_MEMORY
+  template <class T>
+  using GarbageListOnPMEM = component::GarbageListOnPMEM<T>;
+
+  template <class Target>
+  using GarbageNodeOnPMEM = component::GarbageNodeOnPMEM<Target>;
+#endif
 
  public:
   /*####################################################################################
@@ -142,8 +156,7 @@ class EpochBasedGC
 
       // register the TLS information with GC
       *tls_list = std::make_shared<TLSList_t>(garbage_list, garbage_node);
-      auto *tls_head = GetTLSNodeHead<Target>();
-      TLSNode_t::AddNewNode(tls_list, tls_head);
+      TLSNode_t::AddNewNode(tls_list, GetTLSNodeHead<Target>());
     }
 
     // the current thread has already joined GC
@@ -167,6 +180,69 @@ class EpochBasedGC
     if (tls_list->use_count() <= 1) return nullptr;
     return (*tls_list)->GetPageIfPossible();
   }
+
+#ifdef MEMORY_MANAGER_USE_PERSISTENT_MEMORY
+  /*####################################################################################
+   * Public utility functions for persistent memory
+   *##################################################################################*/
+
+  template <class Target>
+  void
+  SetHeadAddrOnPMEM(::pmem::obj::persistent_ptr<GarbageNodeOnPMEM<Target>> *head_addr)
+  {
+    static_assert(Target::kOnPMEM);
+    std::get<GarbageHead<Target>>(garbage_heads_).SetHead(head_addr);
+  }
+
+  /**
+   * @brief Add a new garbage instance.
+   *
+   * @param garbage_ptr a pointer to a target garbage.
+   */
+  template <class Target, class PMEMPool>
+  void
+  AddGarbage(  //
+      ::pmem::obj::persistent_ptr<typename Target::T> garbage_ptr,
+      PMEMPool &pool)
+  {
+    static_assert(Target::kOnPMEM);
+
+    using GarbageNode_t = GarbageNodeOnPMEM<Target>;
+    using GarbageList_t = typename GarbageNode_t::GarbageList_t;
+    using GarbageList_p = typename GarbageNode_t::GarbageList_p;
+    using GarbageNode_p = typename GarbageNode_t::GarbageNode_p;
+    using TLSList_t = TLSList<GarbageNode_t>;
+    using TLSNode_t = TLSNode<GarbageNode_t>;
+
+    auto *tls_list = GetTLSGarbageList<Target, GCTargets...>();
+    if (tls_list->use_count() <= 1) {
+      GarbageList_p garb_list{nullptr};
+      GarbageNode_p garb_node{nullptr};
+
+      // register the garbage list with GC
+      try {
+        ::pmem::obj::transaction::run(pool, [&] {
+          auto [garb_head, mtx_p] = GetGarbageNodeHead<Target>();
+          garb_list = ::pmem::obj::make_persistent<GarbageList_t>();
+          mtx_p->lock();
+          garb_node = ::pmem::obj::make_persistent<GarbageNode_t>(garb_list, *garb_head);
+          *garb_head = std::move(garb_node);
+          mtx_p->unlock();
+        });
+      } catch (const std::exception &e) {
+        std::cerr << e.what() << std::endl;
+        std::terminate();
+      }
+
+      // register the TLS information with GC
+      *tls_list = std::make_shared<TLSList_t>(garb_list, garb_node);
+      TLSNode_t::AddNewNode(tls_list, GetTLSNodeHead<Target>());
+    }
+
+    // the current thread has already joined GC
+    (*tls_list)->AddGarbage(epoch_manager_.GetCurrentEpoch(), garbage_ptr, pool);
+  }
+#endif
 
   /*####################################################################################
    * Public GC control functions
@@ -208,6 +284,24 @@ class EpochBasedGC
 
  private:
   /*####################################################################################
+   * Internal utility functions for type aliases
+   *##################################################################################*/
+
+  template <class Target>
+  static auto
+  ConvToNodeT()
+  {
+#ifndef MEMORY_MANAGER_USE_PERSISTENT_MEMORY
+    using GarbageNode_t = GarbageNode<Target>;
+#else
+    using GarbageNode_t =
+        std::conditional_t<Target::kOnPMEM, GarbageNodeOnPMEM<Target>, GarbageNode<Target>>;
+#endif
+    GarbageNode_t *dummy{nullptr};
+    return dummy;
+  }
+
+  /*####################################################################################
    * Internal classes
    *##################################################################################*/
 
@@ -221,6 +315,11 @@ class EpochBasedGC
 
     /// do not reuse pages after GC (release immediately).
     static constexpr bool kReusePages = false;
+
+#ifdef MEMORY_MANAGER_USE_PERSISTENT_MEMORY
+    /// @brief Default targets are on volatile memory.
+    static constexpr bool kOnPMEM = false;
+#endif
 
     /// use the standard delete function to release pages.
     static const inline std::function<void(void *)> deleter = [](void *ptr) {
@@ -259,9 +358,8 @@ class EpochBasedGC
     TLSList(  //
         GarbageList_p list,
         GarbageNode_p node)
-        : tail_{list}
+        : tail_{std::move(list)}, data_node_{std::move(node)}
     {
-      data_node_.store(node, std::memory_order_release);
     }
 
     TLSList(const TLSList &) = delete;
@@ -277,7 +375,7 @@ class EpochBasedGC
     ~TLSList() = default;
 
     /*##################################################################################
-     * Public utilities for a worker thread
+     * Public utilities for worker threads
      *################################################################################*/
 
     /**
@@ -304,9 +402,26 @@ class EpochBasedGC
     GetPageIfPossible()  //
         -> void *
     {
-      auto *data_node = data_node_.load(std::memory_order_relaxed);
-      return (data_node != nullptr) ? data_node->GetPageIfPossible() : nullptr;
+      return data_node_->GetPageIfPossible();
     }
+
+#ifdef MEMORY_MANAGER_USE_PERSISTENT_MEMORY
+    /**
+     * @brief Add a new garbage instance.
+     *
+     * @param epoch an epoch value when a garbage is added.
+     * @param garbage_ptr a pointer to a target garbage.
+     */
+    template <class PMEMPool>
+    void
+    AddGarbage(  //
+        const size_t epoch,
+        ::pmem::obj::persistent_ptr<T> &garbage_ptr,
+        PMEMPool &pool)
+    {
+      tail_ = GarbageList_t::AddGarbage(tail_, epoch, garbage_ptr, pool);
+    }
+#endif
 
     /*##################################################################################
      * Public utilities for a GC thread
@@ -319,9 +434,7 @@ class EpochBasedGC
     void
     Expire()
     {
-      auto *data_node = data_node_.load(std::memory_order_acquire);
-      data_node->Expire();
-      data_node_.store(nullptr, std::memory_order_relaxed);
+      data_node_->Expire();
     }
 
    private:
@@ -333,7 +446,7 @@ class EpochBasedGC
     GarbageList_p tail_{nullptr};
 
     /// @brief The corresponding garbage node.
-    std::atomic<GarbageNode_p> data_node_{nullptr};
+    GarbageNode_p data_node_{nullptr};
   };
 
   /**
@@ -462,7 +575,7 @@ class EpochBasedGC
      * Type aliases
      *################################################################################*/
 
-    using GarbageNode_t = GarbageNode<Target>;
+    using GarbageNode_t = std::remove_pointer_t<decltype(ConvToNodeT<Target>())>;
     using GarbageNode_p = typename GarbageNode_t::GarbageNode_p;
 
     /*##################################################################################
@@ -473,7 +586,16 @@ class EpochBasedGC
      * @brief Construct a new GarbageHead object.
      *
      */
-    GarbageHead() : head_{new GarbageNode_p{nullptr}} {}
+    GarbageHead()
+    {
+#ifndef MEMORY_MANAGER_USE_PERSISTENT_MEMORY
+      head_ = new GarbageNode_p{nullptr};
+#else
+      if constexpr (!Target::kOnPMEM) {
+        head_ = new GarbageNode_p{nullptr};
+      }
+#endif
+    }
 
     GarbageHead(GarbageHead &&obj) noexcept
     {
@@ -497,7 +619,16 @@ class EpochBasedGC
      * Public destructors
      *################################################################################*/
 
-    ~GarbageHead() { delete head_; }
+    ~GarbageHead()
+    {
+#ifndef MEMORY_MANAGER_USE_PERSISTENT_MEMORY
+      delete head_;
+#else
+      if constexpr (!Target::kOnPMEM) {
+        delete head_;
+      }
+#endif
+    }
 
     /*##################################################################################
      * Public getters/setters
@@ -512,6 +643,12 @@ class EpochBasedGC
         -> std::pair<GarbageNode_p *, std::mutex *>
     {
       return {head_, mtx_.get()};
+    }
+
+    void
+    SetHead(GarbageNode_p *addr)
+    {
+      head_ = addr;
     }
 
    private:
@@ -583,10 +720,10 @@ class EpochBasedGC
    */
   template <class Target, class Head, class... Tails>
   [[nodiscard]] auto
-  GetTLSGarbageList() const  //
-      -> std::shared_ptr<TLSList<GarbageNode<Target>>> *
+  GetTLSGarbageList() const
   {
-    using TLSList_t = TLSList<GarbageNode<Target>>;
+    using GarbageNode_t = std::remove_pointer_t<decltype(ConvToNodeT<Target>())>;
+    using TLSList_t = TLSList<GarbageNode_t>;
 
     if constexpr (std::is_same_v<Head, Target>) {
       thread_local std::shared_ptr<TLSList_t> garbage_list{nullptr};
@@ -602,8 +739,7 @@ class EpochBasedGC
    */
   template <class Target>
   [[nodiscard]] auto
-  GetTLSGarbageList() const  //
-      -> std::shared_ptr<TLSList<GarbageNode<DefaultTarget>>> *
+  GetTLSGarbageList() const
   {
     static_assert(std::is_same_v<Target, DefaultTarget>);
     using TLSList_t = TLSList<GarbageNode<DefaultTarget>>;
@@ -622,8 +758,7 @@ class EpochBasedGC
    */
   template <class Target>
   [[nodiscard]] auto
-  GetTLSNodeHead()  //
-      -> std::atomic<TLSNode<GarbageNode<Target>> *> *
+  GetTLSNodeHead()
   {
     auto &target = std::get<TLSHead<Target>>(tls_heads_);
     return target.head.get();
@@ -635,8 +770,7 @@ class EpochBasedGC
    */
   template <class Target>
   [[nodiscard]] auto
-  GetGarbageNodeHead()  //
-      -> std::pair<GarbageNode<Target> **, std::mutex *>
+  GetGarbageNodeHead()
   {
     return std::get<GarbageHead<Target>>(garbage_heads_).GetHead();
   }
@@ -655,7 +789,8 @@ class EpochBasedGC
   RemoveExpiredNodes(const bool force_expire)  //
       -> bool
   {
-    using TLSNode_t = TLSNode<GarbageNode<Head>>;
+    using GarbageNode_t = std::remove_pointer_t<decltype(ConvToNodeT<Head>())>;
+    using TLSNode_t = TLSNode<GarbageNode_t>;
 
     auto *head = GetTLSNodeHead<Head>();
     auto all_node_expired = TLSNode_t::RemoveExpiredNodes(head, force_expire);
@@ -681,7 +816,7 @@ class EpochBasedGC
   ClearGarbage(const size_t protected_epoch)  //
       -> bool
   {
-    using GarbageNode_t = GarbageNode<Head>;
+    using GarbageNode_t = std::remove_pointer_t<decltype(ConvToNodeT<Head>())>;
 
     auto [head, mtx_p] = GetGarbageNodeHead<Head>();
     auto all_garbage_released = GarbageNode_t::ClearGarbage(protected_epoch, mtx_p, head);
