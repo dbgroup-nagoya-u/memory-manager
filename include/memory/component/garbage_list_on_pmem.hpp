@@ -26,10 +26,12 @@
 #include <utility>
 
 // external system libraries
+#include <libpmemobj++/detail/common.hpp>
 #include <libpmemobj++/make_persistent.hpp>
 #include <libpmemobj++/mutex.hpp>
 #include <libpmemobj++/p.hpp>
 #include <libpmemobj++/persistent_ptr.hpp>
+#include <libpmemobj++/pexceptions.hpp>
 #include <libpmemobj++/pool.hpp>
 #include <libpmemobj++/transaction.hpp>
 #include <libpmemobj++/utils.hpp>
@@ -171,12 +173,98 @@ class GarbageListOnPMEM
   }
 
   /**
+   * @brief Reuse a garbage-collected memory page.
+   *
+   * @param buffer a garbage buffer to be reused.
+   * @param out_page a persistent pointer to be stored a reusable page.
+   * @param pool a pool object for managing persistent memory.
+   * @return the current head buffer.
+   */
+  template <class PMEMPool>
+  static auto
+  ReusePage(  //
+      GarbageList_p buffer,
+      Target_p &out_page,
+      PMEMPool &pool)  //
+      -> GarbageList_p
+  {
+    const auto pos = buffer->begin_idx_atom.load(std::memory_order_relaxed);
+    const auto mid_pos = buffer->mid_idx_atom.load(std::memory_order_acquire);
+
+    // check whether there are released garbage
+    if (pos >= mid_pos) return buffer;
+
+    // get a released page
+    try {
+      ::pmem::obj::flat_transaction::run(pool, [&] {
+        out_page = buffer->garbages[pos];
+        buffer->garbages[pos] = nullptr;
+        buffer->begin_idx = pos + 1;
+      });
+    } catch (const std::exception &e) {
+      std::cerr << e.what() << std::endl;
+      std::terminate();
+    }
+    buffer->begin_idx_atom.fetch_add(1, std::memory_order_relaxed);
+
+    // check whether all the pages in the list are reused
+    if (pos >= kGarbageBufferSize - 1) {
+      // the list has become empty, so delete it
+      buffer = buffer->next;
+    }
+    return buffer;
+  }
+
+  /**
+   * @brief Destruct garbage where their epoch is less than a protected one.
+   *
+   * @param buffer a target barbage buffer.
+   * @param protected_epoch a protected epoch.
+   * @param pool a pool object for managing persistent memory.
+   * @return a head of garbage buffers.
+   */
+  template <class PMEMPool>
+  static auto
+  Destruct(  //
+      GarbageList_p buffer,
+      const size_t protected_epoch,
+      PMEMPool &pool)  //
+      -> GarbageList_p
+  {
+    size_t pos{};
+
+    while (true) {
+      try {
+        const auto end_pos = buffer->end_idx_atom.load(std::memory_order_acquire);
+
+        // release unprotected garbage
+        pos = buffer->mid_idx.get_ro();
+        ::pmem::obj::flat_transaction::run(pool, [&] {
+          for (; pos < end_pos; ++pos) {
+            if (buffer->epochs[pos] >= protected_epoch) break;
+            (buffer->garbages[pos])->~T();
+          }
+          buffer->mid_idx = pos;
+        });
+      } catch (const std::exception &e) {
+        std::cerr << e.what() << std::endl;
+        std::terminate();
+      }
+
+      buffer->mid_idx_atom.store(pos, std::memory_order_release);
+      if (pos < kGarbageBufferSize) return buffer;
+      // go to the next buffer
+      buffer = buffer->next;
+    }
+  }
+
+  /**
    * @brief Release garbage where their epoch is less than a protected one.
    *
    * @param buffer a target barbage buffer.
    * @param protected_epoch a protected epoch.
    * @param pool a pool object for managing persistent memory.
-   * @return GarbageListOnPMEM* a head of garbage buffers.
+   * @return a head of garbage buffers.
    */
   template <class PMEMPool>
   static auto
@@ -189,24 +277,33 @@ class GarbageListOnPMEM
     size_t pos{};
 
     try {
+      const auto mid_pos = buffer->mid_idx.get_ro();
       const auto end_pos = buffer->end_idx_atom.load(std::memory_order_acquire);
 
       // release unprotected garbage
+      pos = buffer->begin_idx_atom.load(std::memory_order_relaxed);
       ::pmem::obj::flat_transaction::run(pool, [&] {
-        pos = buffer->begin_idx.get_ro();
+        for (; pos < mid_pos; ++pos) {
+          if (buffer->epochs[pos] >= protected_epoch) break;
+          if (pmemobj_tx_free(*(buffer->garbages[pos].raw_ptr())) != 0) {
+            throw ::pmem::transaction_free_error{"failed to delete persistent memory object"};
+          }
+          buffer->garbages[pos] = nullptr;
+        }
         for (; pos < end_pos; ++pos) {
           if (buffer->epochs[pos] >= protected_epoch) break;
-
           ::pmem::obj::delete_persistent<T>(buffer->garbages[pos]);
           buffer->garbages[pos] = nullptr;
         }
         buffer->begin_idx = pos;
+        buffer->mid_idx = pos;
       });
     } catch (const std::exception &e) {
       std::cerr << e.what() << std::endl;
       std::terminate();
     }
 
+    buffer->begin_idx_atom.store(pos, std::memory_order_relaxed);
     if (pos >= kGarbageBufferSize) {
       // the buffer should be released
       buffer = buffer->next;
@@ -218,19 +315,28 @@ class GarbageListOnPMEM
    * Public member variables // they must be public to access via persistent_ptr
    *##################################################################################*/
 
-  /// the index to represent a head position.
+  /// @brief the position of the head of destructed garbage.
   ::pmem::obj::p<size_t> begin_idx{0};
 
-  /// the index to represent a tail position.
+  /// @brief the position of the head of unreleased garbage.
+  ::pmem::obj::p<size_t> mid_idx{0};
+
+  /// @brief the position of the tail of unreleased garbage.
   ::pmem::obj::p<size_t> end_idx{0};
 
-  /// the index to notify cleaner threads of a tail position.
+  /// @brief the atomic instance to notify cleaner threads of the begin position.
+  std::atomic_size_t begin_idx_atom{0};
+
+  /// @brief the atomic instance to notify cleaner threads of the middle position.
+  std::atomic_size_t mid_idx_atom{0};
+
+  /// @brief the atomic instance to notify cleaner threads of the tail position.
   std::atomic_size_t end_idx_atom{0};
 
-  /// a pointer to a next garbage buffer.
+  /// @brief a pointer to a next garbage buffer.
   GarbageList_p next{nullptr};
 
-  /// a buffer of garbage instances with added epochs.
+  /// @brief a buffer of garbage instances with added epochs.
   ::pmem::obj::p<size_t> epochs[kGarbageBufferSize]{};
 
   Target_p garbages[kGarbageBufferSize]{};
@@ -247,16 +353,18 @@ class GarbageListOnPMEM
  * @tparam Target a target class of garbage collection.
  */
 template <class Target>
-class alignas(kCashLineSize) GarbageNodeOnPMEM
+class GarbageNodeOnPMEM
 {
  public:
   /*####################################################################################
    * Type aliases
    *##################################################################################*/
 
+  using T = typename Target::T;
   using GarbageList_t = GarbageListOnPMEM<Target>;
   using GarbageList_p = ::pmem::obj::persistent_ptr<GarbageList_t>;
   using GarbageNode_p = ::pmem::obj::persistent_ptr<GarbageNodeOnPMEM>;
+  using Target_p = ::pmem::obj::persistent_ptr<T>;
 
   /*####################################################################################
    * Public constructors and assignment operators
@@ -271,7 +379,7 @@ class alignas(kCashLineSize) GarbageNodeOnPMEM
   GarbageNodeOnPMEM(  //
       GarbageList_p list,
       GarbageNode_p next)
-      : head{std::move(list)}, next{std::move(next)}
+      : head{list}, mid{std::move(list)}, next{std::move(next)}
   {
   }
 
@@ -311,11 +419,21 @@ class alignas(kCashLineSize) GarbageNodeOnPMEM
    * @retval nullptr if the list does not have reusable pages.
    * @retval a memory page otherwise.
    */
-  auto
-  GetPageIfPossible()  //
-      -> void *
+  template <class PMEMPool>
+  void
+  GetPageIfPossible(  //
+      Target_p &out_page,
+      PMEMPool &pool)
   {
-    return nullptr;
+    auto &&next = GarbageList_t::ReusePage(head, out_page, pool);
+    if (next == head) return;
+
+    // if the current buffer has become empty, release it
+    ::pmem::obj::flat_transaction::run(pool, [&] {
+      ::pmem::obj::delete_persistent<GarbageList_t>(head);
+      head = std::move(next);
+    });
+    expired.store(false, std::memory_order_release);
   }
 
   /*####################################################################################
@@ -361,7 +479,7 @@ class alignas(kCashLineSize) GarbageNodeOnPMEM
       }
 
       try {
-        if (node->expired.load(std::memory_order_relaxed)) {
+        if (node->expired.load(std::memory_order_acquire)) {
           // this node can be removed
           if (node->head == nullptr) {
             // remove this node
@@ -388,7 +506,11 @@ class alignas(kCashLineSize) GarbageNodeOnPMEM
         } else {
           // release/destruct garbage
           prev_mtx->unlock();
-          node->ClearGarbageInBuffer(protected_epoch, pool);
+          if (Target::kReusePages) {
+            node->mid = GarbageList_t::Destruct(node->mid, protected_epoch, pool);
+          } else {
+            node->ClearGarbageInBuffer(protected_epoch, pool);
+          }
         }
       } catch (const std::exception &e) {
         std::cerr << e.what() << std::endl;
@@ -459,8 +581,11 @@ class alignas(kCashLineSize) GarbageNodeOnPMEM
   /// @brief A mutex object for locking a garbage list.
   std::mutex list_mtx{};
 
-  /// @brief A garbage list that has not destructed pages.
+  /// @brief A garbage list that has destructed pages.
   GarbageList_p head{nullptr};
+
+  /// @brief A garbage list that has not destructed pages.
+  GarbageList_p mid{nullptr};
 
   /// @brief A flag for indicating the corresponding thread has exited.
   std::atomic_bool expired{false};

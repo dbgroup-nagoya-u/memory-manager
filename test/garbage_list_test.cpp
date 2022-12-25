@@ -181,7 +181,9 @@ TEST_F(GarbageListFixture, GetPageIfPossibleWithPagesReturnReusablePage)
   ClearGarbage(kMaxLong);
 
   for (size_t i = 0; i < kLargeNum; ++i) {
-    EXPECT_NE(nullptr, garbage_node_->GetPageIfPossible());
+    auto *page = garbage_node_->GetPageIfPossible();
+    EXPECT_NE(nullptr, page);
+    ::operator delete(page);
   }
   EXPECT_EQ(nullptr, garbage_node_->GetPageIfPossible());
 }

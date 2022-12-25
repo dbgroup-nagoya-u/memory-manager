@@ -60,6 +60,9 @@ class GarbageListOnPMEMFixture : public ::testing::Test
 
   struct SharedPtrTarget {
     using T = std::shared_ptr<Target>;
+
+    static constexpr bool kReusePages = true;
+    static constexpr bool kOnPMEM = true;
   };
 
   struct PMEMRoot {
@@ -136,16 +139,22 @@ class GarbageListOnPMEMFixture : public ::testing::Test
   void
   AddGarbage(const size_t n)
   {
+    auto &&head = pool_.root()->head;
     for (size_t i = 0; i < n; ++i) {
       auto *target = new Target{0};
       ::pmem::obj::persistent_ptr<std::shared_ptr<Target>> garbage{nullptr};
-      try {
-        ::pmem::obj::flat_transaction::run(pool_, [&] {
-          garbage = ::pmem::obj::make_persistent<std::shared_ptr<Target>>(target);
-        });
-      } catch (const std::exception &e) {
-        std::cerr << e.what() << std::endl;
-        std::terminate();
+      head->GetPageIfPossible(garbage, pool_);
+      if (garbage == nullptr) {
+        try {
+          ::pmem::obj::flat_transaction::run(pool_, [&] {
+            garbage = ::pmem::obj::make_persistent<std::shared_ptr<Target>>(target);
+          });
+        } catch (const std::exception &e) {
+          std::cerr << e.what() << std::endl;
+          std::terminate();
+        }
+      } else {
+        new (garbage.get()) std::shared_ptr<Target>{target};
       }
 
       const auto cur_epoch = current_epoch_.load();
@@ -216,6 +225,40 @@ TEST_F(GarbageListOnPMEMFixture, ClearGarbageWithProtectedEpochKeepProtectedGarb
   ClearGarbage(protected_epoch);
 
   CheckGarbage(kLargeNum);
+}
+
+TEST_F(GarbageListOnPMEMFixture, GetPageIfPossibleWithoutPagesReturnNullptr)
+{
+  auto &&head = pool_.root()->head;
+  ::pmem::obj::persistent_ptr<std::shared_ptr<Target>> page{nullptr};
+  head->GetPageIfPossible(page, pool_);
+
+  EXPECT_EQ(nullptr, page);
+}
+
+TEST_F(GarbageListOnPMEMFixture, GetPageIfPossibleWithPagesReturnReusablePage)
+{
+  AddGarbage(kLargeNum);
+  ClearGarbage(kMaxLong);
+
+  auto &&head = pool_.root()->head;
+  ::pmem::obj::persistent_ptr<std::shared_ptr<Target>> page{nullptr};
+  for (size_t i = 0; i < kLargeNum; ++i) {
+    head->GetPageIfPossible(page, pool_);
+    EXPECT_NE(nullptr, page);
+    try {
+      ::pmem::obj::flat_transaction::run(pool_, [&] {
+        ::pmem::obj::delete_persistent<std::shared_ptr<Target>>(page);
+        page = nullptr;
+      });
+    } catch (const std::exception &e) {
+      std::cerr << e.what() << std::endl;
+      std::terminate();
+    }
+  }
+
+  head->GetPageIfPossible(page, pool_);
+  EXPECT_EQ(nullptr, page);
 }
 
 TEST_F(GarbageListOnPMEMFixture, AddAndClearGarbageWithMultiThreadsReleaseAllGarbage)

@@ -59,13 +59,8 @@ class EpochBasedGCFixture : public ::testing::Test
   struct SharedPtrTarget {
     using T = std::shared_ptr<Target>;
 
-    static constexpr bool kReusePages = true;
-
+    static constexpr bool kReusePages = false;
     static constexpr bool kOnPMEM = true;
-
-    static const inline std::function<void(void *)> deleter = [](void *ptr) {
-      ::operator delete(ptr);
-    };
   };
 
   struct PMEMRoot {
