@@ -129,6 +129,7 @@ class GarbageListOnPMEM
    * @param buffer a garbage buffer to be added.
    * @param epoch an epoch value when a garbage is added.
    * @param garbage a new garbage instance.
+   * @param pool a pool object for managing persistent memory.
    * @return a pointer to a current tail garbage buffer.
    */
   template <class PMEMPool>
@@ -174,6 +175,7 @@ class GarbageListOnPMEM
    *
    * @param buffer a target barbage buffer.
    * @param protected_epoch a protected epoch.
+   * @param pool a pool object for managing persistent memory.
    * @return GarbageListOnPMEM* a head of garbage buffers.
    */
   template <class PMEMPool>
@@ -187,38 +189,29 @@ class GarbageListOnPMEM
     size_t pos{};
 
     try {
-      while (true) {
-        const auto end_pos = buffer->end_idx_atom.load(std::memory_order_acquire);
+      const auto end_pos = buffer->end_idx_atom.load(std::memory_order_acquire);
 
-        // release unprotected garbage
-        ::pmem::obj::flat_transaction::run(pool, [&] {
-          pos = buffer->begin_idx.get_ro();
-          for (; pos < end_pos; ++pos) {
-            if (buffer->epochs[pos] >= protected_epoch) break;
+      // release unprotected garbage
+      ::pmem::obj::flat_transaction::run(pool, [&] {
+        pos = buffer->begin_idx.get_ro();
+        for (; pos < end_pos; ++pos) {
+          if (buffer->epochs[pos] >= protected_epoch) break;
 
-            ::pmem::obj::delete_persistent<T>(buffer->garbages[pos]);
-            buffer->garbages[pos] = nullptr;
-          }
-          buffer->begin_idx = pos;
-        });
-
-        if (pos < kGarbageBufferSize) {
-          // the buffer has unreleased garbage
-          return buffer;
+          ::pmem::obj::delete_persistent<T>(buffer->garbages[pos]);
+          buffer->garbages[pos] = nullptr;
         }
-
-        // release the next buffer recursively
-        auto next = buffer->next;
-        ::pmem::obj::flat_transaction::run(pool, [&] {
-          ::pmem::obj::delete_persistent<GarbageListOnPMEM>(buffer);
-          buffer = nullptr;
-        });
-        buffer = std::move(next);
-      }
+        buffer->begin_idx = pos;
+      });
     } catch (const std::exception &e) {
       std::cerr << e.what() << std::endl;
       std::terminate();
     }
+
+    if (pos >= kGarbageBufferSize) {
+      // the buffer should be released
+      buffer = buffer->next;
+    }
+    return buffer;
   }
 
   /*####################################################################################
@@ -385,7 +378,7 @@ class alignas(kCashLineSize) GarbageNodeOnPMEM
 
           // release remaining garbage
           prev_mtx->unlock();
-          node->head = GarbageList_t::Clear(node->head, protected_epoch, pool);
+          node->ClearGarbageInBuffer(protected_epoch, pool);
           if (node->head->Empty()) {
             ::pmem::obj::flat_transaction::run(pool, [&] {
               ::pmem::obj::delete_persistent<GarbageList_t>(node->head);
@@ -395,8 +388,7 @@ class alignas(kCashLineSize) GarbageNodeOnPMEM
         } else {
           // release/destruct garbage
           prev_mtx->unlock();
-          auto &&head = GarbageList_t::Clear(node->head, protected_epoch, pool);
-          ::pmem::obj::flat_transaction::run(pool, [&] { node->head = std::move(head); });
+          node->ClearGarbageInBuffer(protected_epoch, pool);
         }
       } catch (const std::exception &e) {
         std::cerr << e.what() << std::endl;
@@ -413,6 +405,51 @@ class alignas(kCashLineSize) GarbageNodeOnPMEM
 
     prev_mtx->unlock();
     return false;
+  }
+
+  /**
+   * @brief Release all the registered garbage for recovery.
+   *
+   * @param next_on_prev_node the memory address of `next` on the previous node.
+   */
+  static void
+  ReleaseAllGarbage(GarbageNode_p *next_on_prev_node)
+  {
+    constexpr size_t kMaxEpoch = std::numeric_limits<size_t>::max();
+
+    // check all the nodes are removed
+    auto node = *next_on_prev_node;
+    if (node == nullptr) {
+      return;
+    }
+
+    // release garbage or remove expired nodes
+    auto &&pool = ::pmem::obj::pool_by_pptr(node);
+    while (node != nullptr) {
+      try {
+        if (node->head != nullptr) {
+          // release all the registered garbage
+          node->ClearGarbageInBuffer(kMaxEpoch, pool);
+          ::pmem::obj::flat_transaction::run(pool, [&] {
+            ::pmem::obj::delete_persistent<GarbageList_t>(node->head);
+            node->head = nullptr;
+          });
+        }
+
+        // remove this node
+        ::pmem::obj::flat_transaction::run(pool, [&] {
+          *next_on_prev_node = node->next;
+          ::pmem::obj::delete_persistent<GarbageNodeOnPMEM>(node);
+          node = nullptr;
+        });
+      } catch (const std::exception &e) {
+        std::cerr << e.what() << std::endl;
+        std::terminate();
+      }
+
+      // go to the next node
+      node = *next_on_prev_node;
+    }
   }
 
   /*####################################################################################
@@ -433,6 +470,34 @@ class alignas(kCashLineSize) GarbageNodeOnPMEM
 
   /// @brief The next node.
   GarbageNode_p next{nullptr};
+
+ private:
+  /*####################################################################################
+   * Internal utility functions
+   *##################################################################################*/
+
+  /**
+   * @brief Clear garbage in linked-buffers.
+   *
+   * @tparam PMEMPool a class of a persistent pool.
+   * @param protected_epoch an epoch value to check whether garbage can be freed.
+   * @param pool a pool object for managing persistent memory.
+   */
+  template <class PMEMPool>
+  void
+  ClearGarbageInBuffer(  //
+      const size_t protected_epoch,
+      PMEMPool &pool)
+  {
+    while (true) {
+      auto &&next = GarbageList_t::Clear(head, protected_epoch, pool);
+      if (next == head) break;
+      ::pmem::obj::flat_transaction::run(pool, [&] {
+        ::pmem::obj::delete_persistent<GarbageList_t>(head);
+        head = std::move(next);
+      });
+    }
+  }
 };
 
 }  // namespace dbgroup::memory::component

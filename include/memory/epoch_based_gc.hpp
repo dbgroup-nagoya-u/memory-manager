@@ -645,11 +645,22 @@ class EpochBasedGC
       return {head_, mtx_.get()};
     }
 
+#ifdef MEMORY_MANAGER_USE_PERSISTENT_MEMORY
+    /**
+     * @brief Set the persistent memory region of a head pointer.
+     *
+     * If the given address has a certain head pointer due to power failure, this
+     * function releases the remaining garbage for recovery.
+     *
+     * @param addr the address of a head pointer.
+     */
     void
     SetHead(GarbageNode_p *addr)
     {
       head_ = addr;
+      GarbageNode_t::ReleaseAllGarbage(head_);
     }
+#endif
 
    private:
     /*##################################################################################
