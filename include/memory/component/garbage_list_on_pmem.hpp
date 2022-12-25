@@ -296,7 +296,6 @@ class GarbageListOnPMEM
           buffer->garbages[pos] = nullptr;
         }
         buffer->begin_idx = pos;
-        buffer->mid_idx = pos;
       });
     } catch (const std::exception &e) {
       std::cerr << e.what() << std::endl;
@@ -304,6 +303,53 @@ class GarbageListOnPMEM
     }
 
     buffer->begin_idx_atom.store(pos, std::memory_order_relaxed);
+    if (pos >= kGarbageBufferSize) {
+      // the buffer should be released
+      buffer = buffer->next;
+    }
+    return buffer;
+  }
+
+  /**
+   * @brief Release garbage where their epoch is less than a protected one.
+   *
+   * @param buffer a target barbage buffer.
+   * @param pool a pool object for managing persistent memory.
+   * @return a head of garbage buffers.
+   */
+  template <class PMEMPool>
+  static auto
+  Release(  //
+      GarbageList_p buffer,
+      PMEMPool &pool)  //
+      -> GarbageList_p
+  {
+    size_t pos{};
+
+    try {
+      const auto mid_pos = buffer->mid_idx.get_ro();
+      const auto end_pos = buffer->end_idx.get_ro();
+
+      // release unprotected garbage
+      pos = buffer->begin_idx.get_ro();
+      ::pmem::obj::flat_transaction::run(pool, [&] {
+        for (; pos < mid_pos; ++pos) {
+          if (pmemobj_tx_free(*(buffer->garbages[pos].raw_ptr())) != 0) {
+            throw ::pmem::transaction_free_error{"failed to delete persistent memory object"};
+          }
+          buffer->garbages[pos] = nullptr;
+        }
+        for (; pos < end_pos; ++pos) {
+          ::pmem::obj::delete_persistent<T>(buffer->garbages[pos]);
+          buffer->garbages[pos] = nullptr;
+        }
+        buffer->begin_idx = pos;
+      });
+    } catch (const std::exception &e) {
+      std::cerr << e.what() << std::endl;
+      std::terminate();
+    }
+
     if (pos >= kGarbageBufferSize) {
       // the buffer should be released
       buffer = buffer->next;
@@ -537,8 +583,6 @@ class GarbageNodeOnPMEM
   static void
   ReleaseAllGarbage(GarbageNode_p *next_on_prev_node)
   {
-    constexpr size_t kMaxEpoch = std::numeric_limits<size_t>::max();
-
     // check all the nodes are removed
     auto node = *next_on_prev_node;
     if (node == nullptr) {
@@ -551,7 +595,14 @@ class GarbageNodeOnPMEM
       try {
         if (node->head != nullptr) {
           // release all the registered garbage
-          node->ClearGarbageInBuffer(kMaxEpoch, pool);
+          while (true) {
+            auto &&next = GarbageList_t::Release(node->head, pool);
+            if (next == node->head) break;
+            ::pmem::obj::flat_transaction::run(pool, [&] {
+              ::pmem::obj::delete_persistent<GarbageList_t>(node->head);
+              node->head = std::move(next);
+            });
+          }
           ::pmem::obj::flat_transaction::run(pool, [&] {
             ::pmem::obj::delete_persistent<GarbageList_t>(node->head);
             node->head = nullptr;
