@@ -41,6 +41,11 @@
 
 namespace dbgroup::memory
 {
+#ifdef MEMORY_MANAGER_USE_PERSISTENT_MEMORY
+template <class Target>
+using GarbageNodeOnPMEM = component::GarbageNodeOnPMEM<Target>;
+#endif
+
 /**
  * @brief A class to manage garbage collection.
  *
@@ -69,9 +74,6 @@ class EpochBasedGC
 #ifdef MEMORY_MANAGER_USE_PERSISTENT_MEMORY
   template <class T>
   using GarbageListOnPMEM = component::GarbageListOnPMEM<T>;
-
-  template <class Target>
-  using GarbageNodeOnPMEM = component::GarbageNodeOnPMEM<Target>;
 #endif
 
  public:
