@@ -63,7 +63,7 @@ class GarbageListOnPMEM
     size_t epoch{};
 
     /// a pointer to the registered garbage.
-    PMEMoid ptr{};
+    PMEMoid oid{OID_NULL};
   };
 
   /*####################################################################################
@@ -139,18 +139,22 @@ class GarbageListOnPMEM
   AddGarbage(  //
       GarbageList_p buffer,
       const size_t epoch,
-      Target_p &garbage,
+      PMEMoid *garbage,
       PMEMPool &pool)  //
       -> GarbageList_p
   {
     const auto pos = buffer->end_idx;
     auto return_buf = buffer;
 
+    auto &elem = buffer->garbage_arr[pos];
+    elem.epoch = epoch;  // epoch can be outside of a transaction
     try {
       ::pmem::obj::flat_transaction::run(pool, [&] {
         // insert a new garbage
-        buffer->epochs[pos] = epoch;
-        buffer->garbages[pos] = garbage;
+        pmemobj_tx_add_range_direct(&(elem.oid), sizeof(PMEMoid));
+        elem.oid = *garbage;
+        pmemobj_tx_add_range_direct(garbage, sizeof(PMEMoid));
+        *garbage = OID_NULL;
 
         // check whether the list is full
         if (pos >= kGarbageBufferSize - 1) {
@@ -184,7 +188,7 @@ class GarbageListOnPMEM
   static auto
   ReusePage(  //
       GarbageList_p buffer,
-      Target_p &out_page,
+      PMEMoid *out_page,
       PMEMPool &pool)  //
       -> GarbageList_p
   {
@@ -195,10 +199,13 @@ class GarbageListOnPMEM
     if (pos >= mid_pos) return buffer;
 
     // get a released page
+    auto &oid = buffer->garbage_arr[pos].oid;
     try {
       ::pmem::obj::flat_transaction::run(pool, [&] {
-        out_page = buffer->garbages[pos];
-        buffer->garbages[pos] = nullptr;
+        pmemobj_tx_add_range_direct(out_page, sizeof(PMEMoid));
+        *out_page = oid;
+        pmemobj_tx_add_range_direct(&oid, sizeof(PMEMoid));
+        oid = OID_NULL;
         buffer->begin_idx = pos + 1;
       });
     } catch (const std::exception &e) {
@@ -241,8 +248,13 @@ class GarbageListOnPMEM
         pos = buffer->mid_idx.get_ro();
         ::pmem::obj::flat_transaction::run(pool, [&] {
           for (; pos < end_pos; ++pos) {
-            if (buffer->epochs[pos] >= protected_epoch) break;
-            (buffer->garbages[pos])->~T();
+            auto &elem = buffer->garbage_arr[pos];
+            if (elem.epoch >= protected_epoch) break;
+            if constexpr (!std::is_same_v<T, void>) {
+              auto *garbage = static_cast<T *>(pmemobj_direct(elem.oid));
+              pmemobj_tx_add_range_direct(garbage, sizeof(T));
+              garbage->~T();
+            }
           }
           buffer->mid_idx = pos;
         });
@@ -284,16 +296,27 @@ class GarbageListOnPMEM
       pos = buffer->begin_idx_atom.load(std::memory_order_relaxed);
       ::pmem::obj::flat_transaction::run(pool, [&] {
         for (; pos < mid_pos; ++pos) {
-          if (buffer->epochs[pos] >= protected_epoch) break;
-          if (pmemobj_tx_free(*(buffer->garbages[pos].raw_ptr())) != 0) {
+          if (buffer->garbage_arr[pos].epoch >= protected_epoch) break;
+          auto &oid = buffer->garbage_arr[pos].oid;
+          pmemobj_tx_add_range_direct(&oid, sizeof(PMEMoid));
+          if (pmemobj_tx_free(oid) != 0) {
             throw ::pmem::transaction_free_error{"failed to delete persistent memory object"};
           }
-          buffer->garbages[pos] = nullptr;
+          oid = OID_NULL;
         }
         for (; pos < end_pos; ++pos) {
-          if (buffer->epochs[pos] >= protected_epoch) break;
-          ::pmem::obj::delete_persistent<T>(buffer->garbages[pos]);
-          buffer->garbages[pos] = nullptr;
+          if (buffer->garbage_arr[pos].epoch >= protected_epoch) break;
+          auto &oid = buffer->garbage_arr[pos].oid;
+          if constexpr (!std::is_same_v<T, void>) {
+            auto *garbage = static_cast<T *>(pmemobj_direct(oid));
+            pmemobj_tx_add_range_direct(garbage, sizeof(T));
+            garbage->~T();
+          }
+          pmemobj_tx_add_range_direct(&oid, sizeof(PMEMoid));
+          if (pmemobj_tx_free(oid) != 0) {
+            throw ::pmem::transaction_free_error{"failed to delete persistent memory object"};
+          }
+          oid = OID_NULL;
         }
         buffer->begin_idx = pos;
       });
@@ -334,14 +357,25 @@ class GarbageListOnPMEM
       pos = buffer->begin_idx.get_ro();
       ::pmem::obj::flat_transaction::run(pool, [&] {
         for (; pos < mid_pos; ++pos) {
-          if (pmemobj_tx_free(*(buffer->garbages[pos].raw_ptr())) != 0) {
+          auto &oid = buffer->garbage_arr[pos].oid;
+          pmemobj_tx_add_range_direct(&oid, sizeof(PMEMoid));
+          if (pmemobj_tx_free(oid) != 0) {
             throw ::pmem::transaction_free_error{"failed to delete persistent memory object"};
           }
-          buffer->garbages[pos] = nullptr;
+          oid = OID_NULL;
         }
         for (; pos < end_pos; ++pos) {
-          ::pmem::obj::delete_persistent<T>(buffer->garbages[pos]);
-          buffer->garbages[pos] = nullptr;
+          auto &oid = buffer->garbage_arr[pos].oid;
+          if constexpr (!std::is_same_v<T, void>) {
+            auto *garbage = static_cast<T *>(pmemobj_direct(oid));
+            pmemobj_tx_add_range_direct(garbage, sizeof(T));
+            garbage->~T();
+          }
+          pmemobj_tx_add_range_direct(&oid, sizeof(PMEMoid));
+          if (pmemobj_tx_free(oid) != 0) {
+            throw ::pmem::transaction_free_error{"failed to delete persistent memory object"};
+          }
+          oid = OID_NULL;
         }
         buffer->begin_idx = pos;
       });
@@ -383,14 +417,7 @@ class GarbageListOnPMEM
   GarbageList_p next{nullptr};
 
   /// @brief a buffer of garbage instances with added epochs.
-  ::pmem::obj::p<size_t> epochs[kGarbageBufferSize]{};
-
-  Target_p garbages[kGarbageBufferSize]{};
-
- private:
-  /*####################################################################################
-   * Internal classes
-   *##################################################################################*/
+  Garbage garbage_arr[kGarbageBufferSize]{};
 };
 
 /**
@@ -468,7 +495,7 @@ class GarbageNodeOnPMEM
   template <class PMEMPool>
   void
   GetPageIfPossible(  //
-      Target_p &out_page,
+      PMEMoid *out_page,
       PMEMPool &pool)
   {
     auto &&next = GarbageList_t::ReusePage(head, out_page, pool);

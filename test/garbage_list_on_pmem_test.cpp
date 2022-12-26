@@ -143,7 +143,7 @@ class GarbageListOnPMEMFixture : public ::testing::Test
     for (size_t i = 0; i < n; ++i) {
       auto *target = new Target{0};
       ::pmem::obj::persistent_ptr<std::shared_ptr<Target>> garbage{nullptr};
-      head->GetPageIfPossible(garbage, pool_);
+      head->GetPageIfPossible(garbage.raw_ptr(), pool_);
       if (garbage == nullptr) {
         try {
           ::pmem::obj::flat_transaction::run(pool_, [&] {
@@ -157,9 +157,9 @@ class GarbageListOnPMEMFixture : public ::testing::Test
         new (garbage.get()) std::shared_ptr<Target>{target};
       }
 
-      const auto cur_epoch = current_epoch_.load();
-      tail_ = GarbageList_t::AddGarbage(tail_, cur_epoch, garbage, pool_);
       references_.emplace_back(*garbage);
+      const auto cur_epoch = current_epoch_.load();
+      tail_ = GarbageList_t::AddGarbage(tail_, cur_epoch, garbage.raw_ptr(), pool_);
     }
   }
 
@@ -231,7 +231,7 @@ TEST_F(GarbageListOnPMEMFixture, GetPageIfPossibleWithoutPagesReturnNullptr)
 {
   auto &&head = pool_.root()->head;
   ::pmem::obj::persistent_ptr<std::shared_ptr<Target>> page{nullptr};
-  head->GetPageIfPossible(page, pool_);
+  head->GetPageIfPossible(page.raw_ptr(), pool_);
 
   EXPECT_EQ(nullptr, page);
 }
@@ -244,7 +244,7 @@ TEST_F(GarbageListOnPMEMFixture, GetPageIfPossibleWithPagesReturnReusablePage)
   auto &&head = pool_.root()->head;
   ::pmem::obj::persistent_ptr<std::shared_ptr<Target>> page{nullptr};
   for (size_t i = 0; i < kLargeNum; ++i) {
-    head->GetPageIfPossible(page, pool_);
+    head->GetPageIfPossible(page.raw_ptr(), pool_);
     EXPECT_NE(nullptr, page);
     try {
       ::pmem::obj::flat_transaction::run(pool_, [&] {
@@ -257,7 +257,7 @@ TEST_F(GarbageListOnPMEMFixture, GetPageIfPossibleWithPagesReturnReusablePage)
     }
   }
 
-  head->GetPageIfPossible(page, pool_);
+  head->GetPageIfPossible(page.raw_ptr(), pool_);
   EXPECT_EQ(nullptr, page);
 }
 
