@@ -170,12 +170,12 @@ class EpochBasedGC
    * @retval nullptr if there are no reusable pages.
    * @retval a memory page.
    */
-  template <class T = DefaultTarget>
+  template <class Target = DefaultTarget>
   auto
   GetPageIfPossible()  //
       -> void *
   {
-    auto *tls_list = GetTLSGarbageList<T, GCTargets...>();
+    auto *tls_list = GetTLSGarbageList<Target, GCTargets...>();
 
     if (tls_list->use_count() <= 1) return nullptr;
     return (*tls_list)->GetPageIfPossible();
@@ -202,7 +202,7 @@ class EpochBasedGC
   template <class Target, class PMEMPool>
   void
   AddGarbage(  //
-      ::pmem::obj::persistent_ptr<typename Target::T> garbage_ptr,
+      PMEMoid *garbage_ptr,
       PMEMPool &pool)
   {
     static_assert(Target::kOnPMEM);
@@ -241,6 +241,24 @@ class EpochBasedGC
 
     // the current thread has already joined GC
     (*tls_list)->AddGarbage(epoch_manager_.GetCurrentEpoch(), garbage_ptr, pool);
+  }
+
+  /**
+   * @brief Reuse a released memory page if it exists.
+   *
+   * @param out_oid an address to be stored a reusable page.
+   * @param pool a pool object for managing persistent memory.
+   */
+  template <class Target, class PMEMPool>
+  void
+  GetPageIfPossible(  //
+      PMEMoid *out_oid,
+      PMEMPool &pool)
+  {
+    auto *tls_list = GetTLSGarbageList<Target, GCTargets...>();
+
+    if (tls_list->use_count() <= 1) return;
+    (*tls_list)->GetPageIfPossible(out_oid, pool);
   }
 #endif
 
@@ -416,10 +434,25 @@ class EpochBasedGC
     void
     AddGarbage(  //
         const size_t epoch,
-        ::pmem::obj::persistent_ptr<T> &garbage_ptr,
+        PMEMoid *garbage_ptr,
         PMEMPool &pool)
     {
       tail_ = GarbageList_t::AddGarbage(tail_, epoch, garbage_ptr, pool);
+    }
+
+    /**
+     * @brief Reuse a released memory page if it exists in the list.
+     *
+     * @param out_oid an address to be stored a reusable page.
+     * @param pool a pool object for managing persistent memory.
+     */
+    template <class PMEMPool>
+    void
+    GetPageIfPossible(  //
+        PMEMoid *out_oid,
+        PMEMPool &pool)
+    {
+      return data_node_->GetPageIfPossible(out_oid, pool);
     }
 #endif
 

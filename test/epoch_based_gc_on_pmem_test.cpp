@@ -59,7 +59,7 @@ class EpochBasedGCFixture : public ::testing::Test
   struct SharedPtrTarget {
     using T = std::shared_ptr<Target>;
 
-    static constexpr bool kReusePages = false;
+    static constexpr bool kReusePages = true;
     static constexpr bool kOnPMEM = true;
   };
 
@@ -133,17 +133,22 @@ class EpochBasedGCFixture : public ::testing::Test
     for (size_t loop = 0; loop < garbage_num; ++loop) {
       auto *target = new Target{loop};
       ::pmem::obj::persistent_ptr<std::shared_ptr<Target>> garbage{nullptr};
-      try {
-        ::pmem::obj::flat_transaction::run(pool_, [&] {
-          garbage = ::pmem::obj::make_persistent<std::shared_ptr<Target>>(target);
-        });
-      } catch (const std::exception &e) {
-        std::cerr << e.what() << std::endl;
-        std::terminate();
+      gc_->GetPageIfPossible<SharedPtrTarget>(garbage.raw_ptr(), pool_);
+      if (garbage == nullptr) {
+        try {
+          ::pmem::obj::flat_transaction::run(pool_, [&] {
+            garbage = ::pmem::obj::make_persistent<std::shared_ptr<Target>>(target);
+          });
+        } catch (const std::exception &e) {
+          std::cerr << e.what() << std::endl;
+          std::terminate();
+        }
+      } else {
+        new (garbage.get()) std::shared_ptr<Target>{target};
       }
 
       target_weak_ptrs.emplace_back(*garbage);
-      gc_->AddGarbage<SharedPtrTarget>(garbage, pool_);
+      gc_->AddGarbage<SharedPtrTarget>(garbage.raw_ptr(), pool_);
     }
 
     p.set_value(std::move(target_weak_ptrs));
@@ -179,71 +184,87 @@ class EpochBasedGCFixture : public ::testing::Test
     return target_weak_ptrs;
   }
 
-  // auto
-  // TestReuse(const size_t garbage_num)  //
-  //     -> GarbageRef
-  // {
-  //   // an array for embedding reserved pages
-  //   std::array<std::atomic<std::shared_ptr<Target> *>, kThreadNum> arr{};
-  //   for (auto &&page : arr) {
-  //     page.store(nullptr, std::memory_order_release);
-  //   }
+  auto
+  TestReuse(const size_t garbage_num)  //
+      -> GarbageRef
+  {
+    using SharedTarget_p = ::pmem::obj::persistent_ptr<std::shared_ptr<Target>>;
 
-  //   // a lambda function for embedding pages in each thread
-  //   auto f = [&](std::promise<GarbageRef> p) {
-  //     // prepare a random-value engine
-  //     std::mt19937_64 rand_engine(std::random_device{}());
-  //     std::uniform_int_distribution<size_t> id_dist{0, arr.size() - 1};
+    // an array for embedding reserved pages
+    std::array<std::pair<std::mutex, SharedTarget_p>, kThreadNum> arr{};
 
-  //     GarbageRef target_weak_ptrs;
-  //     for (size_t loop = 0; loop < garbage_num; ++loop) {
-  //       const auto guard = gc_->CreateEpochGuard();
+    // a lambda function for embedding pages in each thread
+    auto f = [&](std::promise<GarbageRef> p) {
+      // prepare a random-value engine
+      std::mt19937_64 rand_engine(std::random_device{}());
+      std::uniform_int_distribution<size_t> id_dist{0, arr.size() - 1};
 
-  //       // prepare a page for embedding
-  //       auto *target = new Target{loop};
-  //       auto *page = gc_->GetPageIfPossible<SharedPtrTarget>();
-  //       auto *target_shared =  //
-  //           (page == nullptr) ? new std::shared_ptr<Target>{target}
-  //                             : new (page) std::shared_ptr<Target>{target};
+      GarbageRef target_weak_ptrs;
+      for (size_t loop = 0; loop < garbage_num; ++loop) {
+        const auto guard = gc_->CreateEpochGuard();
 
-  //       // embed the page
-  //       const auto pos = id_dist(rand_engine);
-  //       auto *expected = arr.at(pos).load(std::memory_order_acquire);
-  //       while (!arr.at(pos).compare_exchange_weak(expected, target_shared,  //
-  //                                                 std::memory_order_acq_rel)) {
-  //         // continue until embedding succeeds
-  //       }
+        // prepare a page for embedding
+        auto *target = new Target{loop};
+        SharedTarget_p new_target{nullptr};
+        gc_->GetPageIfPossible<SharedPtrTarget>(new_target.raw_ptr(), pool_);
+        if (new_target == nullptr) {
+          try {
+            ::pmem::obj::flat_transaction::run(pool_, [&] {
+              new_target = ::pmem::obj::make_persistent<std::shared_ptr<Target>>(target);
+            });
+          } catch (const std::exception &e) {
+            std::cerr << e.what() << std::endl;
+            std::terminate();
+          }
+        } else {
+          new (new_target.get()) std::shared_ptr<Target>{target};
+        }
 
-  //       target_weak_ptrs.emplace_back(*target_shared);
-  //       if (expected != nullptr) gc_->AddGarbage<SharedPtrTarget>(expected, pool_);
-  //     }
+        // embed the page
+        SharedTarget_p old_target{nullptr};
+        {
+          const auto pos = id_dist(rand_engine);
+          [[maybe_unused]] std::lock_guard guard{arr.at(pos).first};
+          old_target = arr.at(pos).second;
+          arr.at(pos).second = new_target;
+        }
 
-  //     p.set_value(std::move(target_weak_ptrs));
-  //   };
+        target_weak_ptrs.emplace_back(*new_target);
+        if (old_target != nullptr) gc_->AddGarbage<SharedPtrTarget>(old_target.raw_ptr(), pool_);
+      }
 
-  //   // run a reuse test with multi-threads
-  //   std::vector<std::future<GarbageRef>> futures;
-  //   for (size_t i = 0; i < kThreadNum; ++i) {
-  //     std::promise<GarbageRef> p;
-  //     futures.emplace_back(p.get_future());
-  //     std::thread{f, std::move(p)}.detach();
-  //   }
+      p.set_value(std::move(target_weak_ptrs));
+    };
 
-  //   // gather weak pointers of GC targets
-  //   GarbageRef target_weak_ptrs;
-  //   for (auto &&future : futures) {
-  //     auto weak_ptrs = future.get();
-  //     target_weak_ptrs.insert(target_weak_ptrs.end(), weak_ptrs.begin(), weak_ptrs.end());
-  //   }
+    // run a reuse test with multi-threads
+    std::vector<std::future<GarbageRef>> futures;
+    for (size_t i = 0; i < kThreadNum; ++i) {
+      std::promise<GarbageRef> p;
+      futures.emplace_back(p.get_future());
+      std::thread{f, std::move(p)}.detach();
+    }
 
-  //   // delete remaining instances
-  //   for (auto &&page : arr) {
-  //     auto *shared_p = page.load(std::memory_order_acquire);
-  //     delete shared_p;
-  //   }
+    // gather weak pointers of GC targets
+    GarbageRef target_weak_ptrs;
+    for (auto &&future : futures) {
+      auto weak_ptrs = future.get();
+      target_weak_ptrs.insert(target_weak_ptrs.end(), weak_ptrs.begin(), weak_ptrs.end());
+    }
 
-  //   return target_weak_ptrs;
-  // }
+    // delete remaining instances
+    for (auto &&elem : arr) {
+      try {
+        ::pmem::obj::flat_transaction::run(pool_, [&] {  //
+          ::pmem::obj::delete_persistent<std::shared_ptr<Target>>(elem.second);
+        });
+      } catch (const std::exception &e) {
+        std::cerr << e.what() << std::endl;
+        std::terminate();
+      }
+    }
+
+    return target_weak_ptrs;
+  }
 
   /*####################################################################################
    * Functions for verification
@@ -314,18 +335,18 @@ class EpochBasedGCFixture : public ::testing::Test
     guarder.join();
   }
 
-  // void
-  // VerifyReusePageIfPossible()
-  // {
-  //   // register garbage to GC
-  //   auto target_weak_ptrs = TestReuse(kGarbageNumLarge);
-  //   gc_->StopGC();
+  void
+  VerifyReusePageIfPossible()
+  {
+    // register garbage to GC
+    auto target_weak_ptrs = TestReuse(kGarbageNumLarge);
+    gc_->StopGC();
 
-  //   // check there is no referece to target pointers
-  //   for (auto &&target_weak : target_weak_ptrs) {
-  //     EXPECT_TRUE(target_weak.expired());
-  //   }
-  // }
+    // check there is no referece to target pointers
+    for (auto &&target_weak : target_weak_ptrs) {
+      EXPECT_TRUE(target_weak.expired());
+    }
+  }
 
   static void
   VerifyDefaultTarget()
@@ -384,6 +405,11 @@ TEST_F(EpochBasedGCFixture, CreateEpochGuardWithMultiThreadsProtectGarbage)
   VerifyCreateEpochGuard(kThreadNum);
 }
 
+TEST_F(EpochBasedGCFixture, ReusePageIfPossibleWithMultiThreadsReleasePageOnlyOnce)
+{  //
+  VerifyReusePageIfPossible();
+}
+
 TEST_F(EpochBasedGCFixture, RunGCMultipleTimesWithSamePool)
 {
   constexpr size_t kRpeatNum = 10;
@@ -396,11 +422,6 @@ TEST_F(EpochBasedGCFixture, RunGCMultipleTimesWithSamePool)
     gc_->StartGC();
   }
 }
-
-// TEST_F(EpochBasedGCFixture, ReusePageIfPossibleWithMultiThreadsReleasePageOnlyOnce)
-// {  //
-//   VerifyReusePageIfPossible();
-// }
 
 TEST_F(EpochBasedGCFixture, EmptyDeclarationActAsGCOnlyMode)
 {  //

@@ -489,8 +489,8 @@ class GarbageNodeOnPMEM
   /**
    * @brief Reuse a released memory page if it exists in the list.
    *
-   * @retval nullptr if the list does not have reusable pages.
-   * @retval a memory page otherwise.
+   * @param out_page an address to be stored a reusable page.
+   * @param pool a pool object for managing persistent memory.
    */
   template <class PMEMPool>
   void
