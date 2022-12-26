@@ -15,6 +15,7 @@ This repository is an open source implementation of epoch-based garbage collecti
     - [Collect and Release Garbage Pages](#collect-and-release-garbage-pages)
     - [Destruct Garbage before Releasing](#destruct-garbage-before-releasing)
     - [Reuse Garbage-Collected Pages](#reuse-garbage-collected-pages)
+    - [Perform GC on Persistent Memory](#perform-gc-on-persistent-memory)
 
 
 ## Build
@@ -27,12 +28,19 @@ This repository is an open source implementation of epoch-based garbage collecti
 sudo apt update && sudo apt install -y build-essential cmake
 ```
 
+If you use this library for pages on persistent memory, install [libpmemobj++ (>= ver. 1.12)](https://pmem.io/pmdk/). You can install related packages by using a package manager on Ubuntu 22.04 LTS.
+
+```bash
+sudo apt update && sudo apt install -y libpmemobj-cpp-dev
+```
+
 ### Build Options
 
 #### Tuning Parameters
 
 - `MEMORY_MANAGER_GARBAGE_BUFFER_SIZE`: the size of buffers for retaining garbage (default `1024`).
 - `MEMORY_MANAGER_EXPECTED_THREAD_NUM`: the expected number of worker threads (default: `128`).
+- `MEMORY_MANAGER_USE_PERSISTENT_MEMORY`: perform garbage collection for pages on persistent memory (default: `OFF`).
 
 #### Parameters for Unit Testing
 
@@ -178,9 +186,8 @@ main(  //
   std::mutex lock{};
 
   {
-    // create the set of GC targets and pass it to GC
-    auto &&gc_targets = std::make_tuple(SharedPtrTarget{});
-    ::dbgroup::memory::EpochBasedGC gc{kGCInterval, kThreadNum, std::move(gc_targets)};
+    // create a garbage collector with a specific target
+    ::dbgroup::memory::EpochBasedGC<SharedPtrTarget> gc{kGCInterval, kThreadNum};
     gc.StartGC();
 
     // prepare a sample worker procedure
@@ -269,9 +276,8 @@ main(  //
   constexpr size_t kThreadNum = 1;
   std::mutex lock{};
 
-  // create the set of GC targets and pass it to GC
-  auto &&gc_targets = std::make_tuple(ReusableTarget{});
-  ::dbgroup::memory::EpochBasedGC gc{kGCInterval, kThreadNum, std::move(gc_targets)};
+  // create a garbage collector with a reusable target
+  ::dbgroup::memory::EpochBasedGC<ReusableTarget> gc{kGCInterval, kThreadNum};
   gc.StartGC();
 
   // prepare a sample worker procedure
@@ -291,6 +297,114 @@ main(  //
 
         auto *garbage = new (page) size_t{loop};
         gc.AddGarbage<ReusableTarget>(page);
+      }
+
+      std::this_thread::sleep_for(std::chrono::microseconds{100});  // dummy sleep
+    }
+  };
+
+  std::vector<std::thread> threads{};
+  for (size_t i = 0; i < 8; ++i) {
+    threads.emplace_back(worker);
+  }
+  for (auto &&t : threads) {
+    t.join();
+  }
+
+  return 0;
+}
+```
+
+### Perform GC on Persistent Memory
+
+You can use our GC with peristent memory. Although the usage is roughly the same as for volatile memory, note that some APIs are slightly different.
+
+```cpp
+// C++ standard libraries
+#include <chrono>
+#include <iostream>
+#include <mutex>
+#include <thread>
+#include <tuple>
+#include <vector>
+
+// our libraries
+#include "memory/epoch_based_gc.hpp"
+
+// prepare the information of target garbage
+struct PMEMTarget {
+  // do not call destructor
+  using T = void;
+
+  // target pages are on persistent memory
+  static constexpr bool kOnPMEM = true;
+
+  // reuse garbage-collected pages
+  static constexpr bool kReusePages = true;
+
+  // cannot specify a deleter function
+  // static const inline std::function<void(void *)> deleter = [](void *ptr) {
+  //   ::operator delete(ptr);
+  // };
+};
+
+// a root region of your pool must have a head of garbage lists for recovery
+struct PMEMRoot {
+  using GarbageNode_t = ::dbgroup::memory::GarbageNodeOnPMEM<PMEMTarget>;
+
+  ::pmem::obj::persistent_ptr<GarbageNode_t> head{nullptr};
+};
+
+auto
+main(  //
+    const int argc,
+    const char *argv[])  //
+    -> int
+{
+  constexpr size_t kGCInterval = 1E3;
+  constexpr size_t kThreadNum = 1;
+  std::mutex lock{};
+
+  // prepare a pool on persistent memory before creating a GC instance
+  constexpr size_t kSize = PMEMOBJ_MIN_POOL * 32;
+  constexpr int kModeRW = S_IWUSR | S_IRUSR;
+  auto &&pool = ::pmem::obj::pool<PMEMRoot>::create("/pmem_tmp/test", "test", kSize, kModeRW);
+
+  // create a garbage collector
+  ::dbgroup::memory::EpochBasedGC<PMEMTarget> gc{kGCInterval, kThreadNum};
+  gc.SetHeadAddrOnPMEM<PMEMTarget>(&(pool.root()->head));  // set the corresponding head
+  gc.StartGC();
+
+  // prepare a sample worker procedure
+  auto worker = [&]() {
+    for (size_t loop = 0; loop < 100; ++loop) {
+      {
+        const auto &guard = gc.CreateEpochGuard();
+
+        // get a page if exist
+        ::pmem::obj::persistent_ptr<size_t> garbage{nullptr};
+
+        // this function get a reusable page atomically, so `garbage` variable should
+        // be allocated on persistent memory in practical to prevent memory leak.
+        gc.GetPageIfPossible<PMEMTarget>(garbage.raw_ptr(), pool);
+        if (garbage == nullptr) {
+          // allocate a page dynamically
+          try {
+            ::pmem::obj::flat_transaction::run(
+                pool, [&] { garbage = ::pmem::obj::make_persistent<size_t>(loop); });
+          } catch (const std::exception &e) {
+            std::cerr << e.what() << std::endl;
+            std::terminate();
+          }
+        } else {
+          // reuse the allocated page
+          new (garbage.get()) size_t{loop};
+          const auto &lock_guard = std::lock_guard{lock};
+          std::cout << "Page Reused." << std::endl;
+        }
+
+        // add garbage on persistent memory
+        gc.AddGarbage<PMEMTarget>(garbage.raw_ptr(), pool);
       }
 
       std::this_thread::sleep_for(std::chrono::microseconds{100});  // dummy sleep

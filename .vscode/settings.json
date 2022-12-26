@@ -28,6 +28,7 @@
   // extra words for spell checking
   "cSpell.words": [
     "alignas",
+    "cerr",
     "cout",
     "ctest",
     "DCMAKE",
@@ -36,11 +37,16 @@
     "endl",
     "gtest",
     "iostream",
+    "IRUSR",
+    "IWUSR",
     "JEMALLOC",
     "libjemalloc",
+    "LIBPMEMOBJ",
     "MIMALLOC",
     "NOLINT",
     "nullptr",
+    "pmem",
+    "PMEMOBJ",
     "pthread",
     "STREQ",
     "struct",
@@ -127,6 +133,7 @@
     "cfenv": "cpp",
     "typeindex": "cpp",
     "valarray": "cpp",
-    "*.ipp": "cpp"
+    "*.ipp": "cpp",
+    "source_location": "cpp"
   },
 }

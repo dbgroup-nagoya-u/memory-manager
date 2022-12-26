@@ -30,6 +30,12 @@ if(NOT TARGET dbgroup::${PROJECT_NAME})
     "the expected number of worker threads."
   )
 
+  option(
+    MEMORY_MANAGER_USE_PERSISTENT_MEMORY
+    "perform garbage collection for pages on persistent memory."
+    OFF
+  )
+
   #------------------------------------------------------------------------------------#
   # Configure external libraries
   #------------------------------------------------------------------------------------#
@@ -46,7 +52,7 @@ if(NOT TARGET dbgroup::${PROJECT_NAME})
   target_compile_features(${PROJECT_NAME} INTERFACE
     "cxx_std_17"
   )
-  target_compile_definitions(memory_manager INTERFACE
+  target_compile_definitions(${PROJECT_NAME} INTERFACE
     MEMORY_MANAGER_GARBAGE_BUFFER_SIZE=${MEMORY_MANAGER_GARBAGE_BUFFER_SIZE}
     MEMORY_MANAGER_EXPECTED_THREAD_NUM=${MEMORY_MANAGER_EXPECTED_THREAD_NUM}
   )
@@ -56,6 +62,21 @@ if(NOT TARGET dbgroup::${PROJECT_NAME})
   target_link_libraries(${PROJECT_NAME} INTERFACE
     Threads::Threads
   )
+
+  if(${MEMORY_MANAGER_USE_PERSISTENT_MEMORY})
+    find_package(PkgConfig)
+    pkg_check_modules(LIBPMEMOBJ++ REQUIRED libpmemobj++)
+
+    target_compile_definitions(${PROJECT_NAME} INTERFACE
+      MEMORY_MANAGER_USE_PERSISTENT_MEMORY=${MEMORY_MANAGER_USE_PERSISTENT_MEMORY}
+    )
+    target_include_directories(${PROJECT_NAME} INTERFACE
+      "${LIBPMEMOBJ++_INCLUDE_DIRS}"
+    )
+    target_link_libraries(${PROJECT_NAME} INTERFACE
+      ${LIBPMEMOBJ++_LIBRARIES}
+    )
+  endif()
 endif()
 
 #--------------------------------------------------------------------------------------#

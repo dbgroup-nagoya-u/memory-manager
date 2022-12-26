@@ -34,6 +34,9 @@ constexpr size_t kGarbageBufferSize = MEMORY_MANAGER_GARBAGE_BUFFER_SIZE;
 /// the expected number of worker threads.
 constexpr size_t kExpectedThreadNum = MEMORY_MANAGER_EXPECTED_THREAD_NUM;
 
+/// @brief The expected cache-line size.
+constexpr size_t kCashLineSize = 64;
+
 }  // namespace dbgroup::memory
 
 #endif  // MEMORY_UTILITY_HPP

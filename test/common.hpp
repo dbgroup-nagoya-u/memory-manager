@@ -23,6 +23,10 @@
 
 namespace dbgroup::memory::test
 {
+// utility macros for expanding compile definitions as std::string
+#define DBGROUP_ADD_QUOTES_INNER(x) #x                     // NOLINT
+#define DBGROUP_ADD_QUOTES(x) DBGROUP_ADD_QUOTES_INNER(x)  // NOLINT
+
 constexpr size_t kULMax = std::numeric_limits<size_t>::max();
 
 constexpr size_t kThreadNum = DBGROUP_TEST_THREAD_NUM;

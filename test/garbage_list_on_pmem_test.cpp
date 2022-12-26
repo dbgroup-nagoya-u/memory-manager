@@ -15,15 +15,18 @@
  */
 
 // the corresponding header
-#include "memory/component/garbage_list.hpp"
+#include "memory/component/garbage_list_on_pmem.hpp"
 
 // C++ standard libraries
+#include <cstdio>
+#include <filesystem>
 #include <future>
 #include <memory>
+#include <string>
 #include <thread>
 #include <vector>
 
-// external sources
+// external libraries
 #include "gtest/gtest.h"
 
 // local sources
@@ -37,7 +40,18 @@ namespace dbgroup::memory::component::test
 
 using Target = uint64_t;
 
-class GarbageListFixture : public ::testing::Test
+/*######################################################################################
+ * Global constants
+ *####################################################################################*/
+
+/// a file permission for pmemobj_pool.
+constexpr int kModeRW = S_IWUSR | S_IRUSR;  // NOLINT
+
+constexpr std::string_view kTmpPMEMPath = DBGROUP_ADD_QUOTES(DBGROUP_TEST_TMP_PMEM_PATH);
+constexpr const char *kPoolName = "memory_manager_garbage_list_on_pmem_test";
+constexpr const char *kLayout = "target";
+
+class GarbageListOnPMEMFixture : public ::testing::Test
 {
  protected:
   /*####################################################################################
@@ -48,18 +62,22 @@ class GarbageListFixture : public ::testing::Test
     using T = std::shared_ptr<Target>;
 
     static constexpr bool kReusePages = true;
+    static constexpr bool kOnPMEM = true;
+  };
 
-    static const inline std::function<void(void *)> deleter = [](void *ptr) {
-      ::operator delete(ptr);
-    };
+  struct PMEMRoot {
+    ::pmem::obj::persistent_ptr<GarbageNodeOnPMEM<SharedPtrTarget>> head{nullptr};
   };
 
   /*####################################################################################
    * Type aliases
    *##################################################################################*/
 
-  using GarbageList_t = GarbageList<SharedPtrTarget>;
-  using GarbageNode_t = GarbageNode<SharedPtrTarget>;
+  using GarbageList_t = GarbageListOnPMEM<SharedPtrTarget>;
+  using GarbageNode_t = GarbageNodeOnPMEM<SharedPtrTarget>;
+  using GarbageList_p = typename GarbageNode_t::GarbageList_p;
+  using GarbageNode_p = typename GarbageNode_t::GarbageNode_p;
+  using PMEMPool_t = ::pmem::obj::pool<PMEMRoot>;
 
   /*####################################################################################
    * Test setup/teardown
@@ -69,16 +87,49 @@ class GarbageListFixture : public ::testing::Test
   SetUp() override
   {
     current_epoch_ = 1;
-    tail_ = new GarbageList_t{};
-    garbage_node_ = new GarbageNode_t{tail_, nullptr};
+
+    try {
+      // create a user directory for testing
+      const std::string user_name{std::getenv("USER")};
+      std::filesystem::path pool_path{kTmpPMEMPath};
+      pool_path /= user_name;
+      std::filesystem::create_directories(pool_path);
+      pool_path /= kPoolName;
+      std::filesystem::remove(pool_path);
+
+      // create a persistent pool for testing
+      constexpr size_t kSize = PMEMOBJ_MIN_POOL * 64;
+      pool_ = PMEMPool_t::create(pool_path, kLayout, kSize, kModeRW);
+
+      // allocate regions on persistent memory
+      ::pmem::obj::flat_transaction::run(pool_, [&] {
+        auto &&root = pool_.root();
+        tail_ = ::pmem::obj::make_persistent<GarbageList_t>();
+        root->head = ::pmem::obj::make_persistent<GarbageNode_t>(tail_, nullptr);
+      });
+    } catch (const std::exception &e) {
+      std::cerr << e.what() << std::endl;
+      std::terminate();
+    }
   }
 
   void
   TearDown() override
   {
     ClearGarbage(kMaxLong);
-    delete garbage_node_;
-    delete tail_;
+
+    try {
+      // delete regions on persistent memory
+      ::pmem::obj::flat_transaction::run(pool_, [&] {
+        ::pmem::obj::delete_persistent<GarbageList_t>(tail_);
+        ::pmem::obj::delete_persistent<GarbageNode_t>(pool_.root()->head);
+      });
+    } catch (const std::exception &e) {
+      std::cerr << e.what() << std::endl;
+      std::terminate();
+    }
+
+    pool_.close();
   }
 
   /*####################################################################################
@@ -88,26 +139,34 @@ class GarbageListFixture : public ::testing::Test
   void
   AddGarbage(const size_t n)
   {
+    auto &&head = pool_.root()->head;
     for (size_t i = 0; i < n; ++i) {
       auto *target = new Target{0};
-      auto *page = garbage_node_->GetPageIfPossible();
-
-      std::shared_ptr<Target> *garbage{};
-      if (page == nullptr) {
-        garbage = new std::shared_ptr<Target>{target};
+      ::pmem::obj::persistent_ptr<std::shared_ptr<Target>> garbage{nullptr};
+      head->GetPageIfPossible(garbage.raw_ptr(), pool_);
+      if (garbage == nullptr) {
+        try {
+          ::pmem::obj::flat_transaction::run(pool_, [&] {
+            garbage = ::pmem::obj::make_persistent<std::shared_ptr<Target>>(target);
+          });
+        } catch (const std::exception &e) {
+          std::cerr << e.what() << std::endl;
+          std::terminate();
+        }
       } else {
-        garbage = new (page) std::shared_ptr<Target>{target};
+        new (garbage.get()) std::shared_ptr<Target>{target};
       }
 
-      tail_ = GarbageList_t::AddGarbage(tail_, current_epoch_.load(), garbage);
       references_.emplace_back(*garbage);
+      const auto cur_epoch = current_epoch_.load();
+      tail_ = GarbageList_t::AddGarbage(tail_, cur_epoch, garbage.raw_ptr(), pool_);
     }
   }
 
   void
   ClearGarbage(const size_t epoch_value)
   {
-    GarbageNode_t::ClearGarbage(epoch_value, &node_mtx_, &garbage_node_);
+    GarbageNode_t::ClearGarbage(epoch_value, &node_mtx_, &(pool_.root()->head));
   }
 
   void
@@ -137,18 +196,18 @@ class GarbageListFixture : public ::testing::Test
 
   std::vector<std::weak_ptr<Target>> references_{};
 
-  GarbageList_t *tail_{nullptr};
+  PMEMPool_t pool_{};
+
+  GarbageList_p tail_{nullptr};
 
   std::mutex node_mtx_{};
-
-  GarbageNode_t *garbage_node_{nullptr};
 };
 
 /*######################################################################################
  * Unit test definitions
  *####################################################################################*/
 
-TEST_F(GarbageListFixture, ClearGarbageWithoutProtectedEpochReleaseAllGarbage)
+TEST_F(GarbageListOnPMEMFixture, ClearGarbageWithoutProtectedEpochReleaseAllGarbage)
 {
   AddGarbage(kLargeNum);
   ClearGarbage(kMaxLong);
@@ -156,7 +215,7 @@ TEST_F(GarbageListFixture, ClearGarbageWithoutProtectedEpochReleaseAllGarbage)
   CheckGarbage(kLargeNum);
 }
 
-TEST_F(GarbageListFixture, ClearGarbageWithProtectedEpochKeepProtectedGarbage)
+TEST_F(GarbageListOnPMEMFixture, ClearGarbageWithProtectedEpochKeepProtectedGarbage)
 {
   const size_t protected_epoch = current_epoch_.load() + 1;
 
@@ -168,29 +227,43 @@ TEST_F(GarbageListFixture, ClearGarbageWithProtectedEpochKeepProtectedGarbage)
   CheckGarbage(kLargeNum);
 }
 
-TEST_F(GarbageListFixture, GetPageIfPossibleWithoutPagesReturnNullptr)
+TEST_F(GarbageListOnPMEMFixture, GetPageIfPossibleWithoutPagesReturnNullptr)
 {
-  auto *page = garbage_node_->GetPageIfPossible();
+  auto &&head = pool_.root()->head;
+  ::pmem::obj::persistent_ptr<std::shared_ptr<Target>> page{nullptr};
+  head->GetPageIfPossible(page.raw_ptr(), pool_);
 
   EXPECT_EQ(nullptr, page);
 }
 
-TEST_F(GarbageListFixture, GetPageIfPossibleWithPagesReturnReusablePage)
+TEST_F(GarbageListOnPMEMFixture, GetPageIfPossibleWithPagesReturnReusablePage)
 {
   AddGarbage(kLargeNum);
   ClearGarbage(kMaxLong);
 
+  auto &&head = pool_.root()->head;
+  ::pmem::obj::persistent_ptr<std::shared_ptr<Target>> page{nullptr};
   for (size_t i = 0; i < kLargeNum; ++i) {
-    auto *page = garbage_node_->GetPageIfPossible();
+    head->GetPageIfPossible(page.raw_ptr(), pool_);
     EXPECT_NE(nullptr, page);
-    ::operator delete(page);
+    try {
+      ::pmem::obj::flat_transaction::run(pool_, [&] {
+        ::pmem::obj::delete_persistent<std::shared_ptr<Target>>(page);
+        page = nullptr;
+      });
+    } catch (const std::exception &e) {
+      std::cerr << e.what() << std::endl;
+      std::terminate();
+    }
   }
-  EXPECT_EQ(nullptr, garbage_node_->GetPageIfPossible());
+
+  head->GetPageIfPossible(page.raw_ptr(), pool_);
+  EXPECT_EQ(nullptr, page);
 }
 
-TEST_F(GarbageListFixture, AddAndClearGarbageWithMultiThreadsReleaseAllGarbage)
+TEST_F(GarbageListOnPMEMFixture, AddAndClearGarbageWithMultiThreadsReleaseAllGarbage)
 {
-  constexpr size_t kLoopNum = 1e6;
+  constexpr size_t kLoopNum = 1e5;
   std::atomic_bool is_running = true;
 
   std::thread loader{[&]() {
@@ -198,7 +271,7 @@ TEST_F(GarbageListFixture, AddAndClearGarbageWithMultiThreadsReleaseAllGarbage)
       AddGarbage(1);
       current_epoch_.fetch_add(1);
     }
-    garbage_node_->Expire();
+    pool_.root()->head->Expire();
   }};
 
   std::thread cleaner{[&]() {
@@ -207,7 +280,7 @@ TEST_F(GarbageListFixture, AddAndClearGarbageWithMultiThreadsReleaseAllGarbage)
     }
     do {
       ClearGarbage(kMaxLong);
-    } while (garbage_node_ != nullptr);
+    } while (pool_.root()->head != nullptr);
   }};
 
   loader.join();
