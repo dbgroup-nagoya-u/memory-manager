@@ -52,7 +52,11 @@ class EpochManager
    * @brief Construct a new instance.
    *
    */
-  EpochManager() = default;
+  EpochManager()
+  {
+    std::vector<size_t> protected_epochs = {0};
+    protected_epochs_ = std::make_shared<const std::vector<size_t>>(std::move(protected_epochs));
+  }
 
   EpochManager(const EpochManager &) = delete;
   auto operator=(const EpochManager &) -> EpochManager & = delete;
@@ -321,8 +325,7 @@ class EpochManager
   std::atomic<EpochNode *> epochs_{nullptr};
 
   /// protected epoch values.
-  std::shared_ptr<const std::vector<size_t>> protected_epochs_ =
-      std::make_shared<const std::vector<size_t>>(0);
+  std::shared_ptr<const std::vector<size_t>> protected_epochs_{nullptr};
 
   /// a mutex for updating protected epochs.
   std::shared_mutex epochs_mtx_{};

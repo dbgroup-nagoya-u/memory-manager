@@ -81,6 +81,11 @@ TEST_F(EpochManagerFixture, GetEpochWithForwardEpochKeepReferenceToGlobalEpoch)
 TEST_F(EpochManagerFixture, GetProtectedEpochWithoutEpochsGetCurrentEpoch)
 {
   EXPECT_EQ(0, epoch_manager_->GetMinEpoch());
+
+  const auto &protected_epochs = epoch_manager_->GetProtectedEpochs();
+  EXPECT_NE(protected_epochs, nullptr);
+  EXPECT_EQ(protected_epochs->size(), 1);
+  EXPECT_EQ(protected_epochs->front(), 0);
 }
 
 TEST_F(EpochManagerFixture, GetProtectedEpochWithEnteredEpochGetEnteredEpoch)
