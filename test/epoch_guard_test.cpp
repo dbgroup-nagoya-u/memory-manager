@@ -62,7 +62,7 @@ class EpochGuardFixture : public ::testing::Test
 
 TEST_F(EpochGuardFixture, ConstructorWithCurrentEpochProtectEpoch)
 {
-  const auto guard = EpochGuard{epoch_.get()};
+  const EpochGuard guard{epoch_.get()};
 
   EXPECT_EQ(0, epoch_->GetProtectedEpoch());
 }
@@ -70,10 +70,26 @@ TEST_F(EpochGuardFixture, ConstructorWithCurrentEpochProtectEpoch)
 TEST_F(EpochGuardFixture, DestructorWithCurrentEpochUnprotectEpoch)
 {
   {
-    const auto guard = EpochGuard{epoch_.get()};
+    const EpochGuard guard{epoch_.get()};
   }
 
   EXPECT_EQ(kULMax, epoch_->GetProtectedEpoch());
+}
+
+TEST_F(EpochGuardFixture, MoveConstructorKeepEpochProtected)
+{
+  EpochGuard guard{epoch_.get()};
+  [[maybe_unused]] EpochGuard moved{std::move(guard)};
+
+  EXPECT_EQ(0, epoch_->GetProtectedEpoch());
+}
+
+TEST_F(EpochGuardFixture, MoveAssignmentKeepEpochProtected)
+{
+  EpochGuard guard{epoch_.get()};
+  [[maybe_unused]] auto &&moved = std::move(guard);
+
+  EXPECT_EQ(0, epoch_->GetProtectedEpoch());
 }
 
 }  // namespace dbgroup::memory::component::test

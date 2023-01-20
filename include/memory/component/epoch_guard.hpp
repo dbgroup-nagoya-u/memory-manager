@@ -32,6 +32,8 @@ class EpochGuard
    * Public constructors and assignment operators
    *##################################################################################*/
 
+  constexpr EpochGuard() = default;
+
   /**
    * @brief Construct a new instance and protect a current epoch.
    *
@@ -39,10 +41,24 @@ class EpochGuard
    */
   explicit EpochGuard(Epoch *epoch) : epoch_{epoch} { epoch_->EnterEpoch(); }
 
+  constexpr EpochGuard(EpochGuard &&obj) noexcept
+  {
+    epoch_ = obj.epoch_;
+    obj.epoch_ = nullptr;
+  }
+
+  constexpr auto
+  operator=(EpochGuard &&obj) noexcept  //
+      -> EpochGuard &
+  {
+    epoch_ = obj.epoch_;
+    obj.epoch_ = nullptr;
+    return *this;
+  }
+
+  // delete the copy constructor/assignment
   EpochGuard(const EpochGuard &) = delete;
   auto operator=(const EpochGuard &) -> EpochGuard & = delete;
-  constexpr EpochGuard(EpochGuard &&) = default;
-  auto operator=(EpochGuard &&) -> EpochGuard & = default;
 
   /*####################################################################################
    * Public destructors
@@ -52,7 +68,12 @@ class EpochGuard
    * @brief Destroy the instace and release a protected epoch.
    *
    */
-  ~EpochGuard() { epoch_->LeaveEpoch(); }
+  ~EpochGuard()
+  {
+    if (epoch_ != nullptr) {
+      epoch_->LeaveEpoch();
+    }
+  }
 
  private:
   /*####################################################################################
