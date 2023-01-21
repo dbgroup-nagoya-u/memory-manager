@@ -277,14 +277,18 @@ class EpochManager
   CollectProtectedEpochs(const size_t next_epoch)  //
       -> std::vector<size_t> *
   {
-    auto &&protected_epochs = new std::vector<size_t>{next_epoch};
+    auto *protected_epochs = new std::vector<size_t>{};
     protected_epochs->reserve(kExpectedThreadNum);
+    protected_epochs->emplace_back(next_epoch);
 
     // check the head node of the epoch list
     auto *previous = epochs_.load(std::memory_order_acquire);
     if (previous == nullptr) return protected_epochs;
     if (previous->IsAlive()) {
-      protected_epochs->emplace_back(previous->GetProtectedEpoch());
+      const auto protected_epoch = previous->GetProtectedEpoch();
+      if (protected_epoch < std::numeric_limits<size_t>::max()) {
+        protected_epochs->emplace_back(protected_epoch);
+      }
     }
 
     // check the tail nodes of the epoch list
@@ -292,7 +296,10 @@ class EpochManager
     while (current != nullptr) {
       if (current->IsAlive()) {
         // if the epoch is alive, get the protected epoch value
-        protected_epochs->emplace_back(current->GetProtectedEpoch());
+        const auto protected_epoch = current->GetProtectedEpoch();
+        if (protected_epoch < std::numeric_limits<size_t>::max()) {
+          protected_epochs->emplace_back(protected_epoch);
+        }
         previous = current;
         current = current->next;
       } else {
