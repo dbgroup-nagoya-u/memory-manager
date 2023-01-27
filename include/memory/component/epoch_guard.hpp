@@ -39,7 +39,13 @@ class EpochGuard
    *
    * @param epoch a reference to a target epoch.
    */
-  explicit EpochGuard(Epoch *epoch) : epoch_{epoch} { epoch_->EnterEpoch(); }
+  explicit EpochGuard(  //
+      Epoch *epoch,
+      std::optional<size_t> entered = std::nullopt)
+      : epoch_{epoch}
+  {
+    epoch_->EnterEpoch(entered);
+  }
 
   constexpr EpochGuard(EpochGuard &&obj) noexcept
   {

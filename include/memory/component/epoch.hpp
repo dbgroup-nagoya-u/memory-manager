@@ -19,6 +19,7 @@
 
 #include <atomic>
 #include <limits>
+#include <optional>
 
 #include "common.hpp"
 
@@ -98,9 +99,10 @@ class Epoch
    *
    */
   void
-  EnterEpoch()
+  EnterEpoch(std::optional<size_t> entered = std::nullopt)
   {
-    entered_.store(GetCurrentEpoch(), std::memory_order_relaxed);
+    const auto current = (entered) ? *entered : GetCurrentEpoch();
+    entered_.store(current, std::memory_order_relaxed);
   }
 
   /**

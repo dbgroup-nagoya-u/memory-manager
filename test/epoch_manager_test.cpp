@@ -64,28 +64,25 @@ class EpochManagerFixture : public ::testing::Test
  * Unit test definitions
  *####################################################################################*/
 
+TEST_F(EpochManagerFixture, ConstructorInitializeGlobalEpoch)
+{
+  EXPECT_EQ(1, epoch_manager_->GetCurrentEpoch());
+}
+
 TEST_F(EpochManagerFixture, ForwardGlobalEpochAfterConstructGetIncrementedEpoch)
 {
   epoch_manager_->ForwardGlobalEpoch();
 
-  EXPECT_EQ(1, epoch_manager_->GetCurrentEpoch());
-}
-
-TEST_F(EpochManagerFixture, GetEpochWithForwardEpochKeepReferenceToGlobalEpoch)
-{
-  epoch_manager_->ForwardGlobalEpoch();
-
-  EXPECT_EQ(1, epoch_manager_->GetCurrentEpoch());
+  EXPECT_EQ(2, epoch_manager_->GetCurrentEpoch());
 }
 
 TEST_F(EpochManagerFixture, GetProtectedEpochWithoutEpochsGetCurrentEpoch)
 {
-  EXPECT_EQ(0, epoch_manager_->GetMinEpoch());
+  EXPECT_EQ(1, epoch_manager_->GetMinEpoch());
 
-  const auto &protected_epochs = epoch_manager_->GetProtectedEpochs();
-  EXPECT_NE(protected_epochs, nullptr);
-  EXPECT_EQ(protected_epochs->size(), 1);
-  EXPECT_EQ(protected_epochs->front(), 0);
+  const auto &[ep_guard, protected_epochs] = epoch_manager_->GetProtectedEpochs();
+  EXPECT_EQ(protected_epochs.size(), 2);
+  EXPECT_EQ(protected_epochs.front(), 1);
 }
 
 TEST_F(EpochManagerFixture, GetProtectedEpochWithEnteredEpochGetEnteredEpoch)
@@ -107,20 +104,19 @@ TEST_F(EpochManagerFixture, GetProtectedEpochWithEnteredEpochGetEnteredEpoch)
     const std::unique_lock<std::mutex> guard{mtx_};
     for (size_t i = 0; i < kRepeatNum; ++i) {
       threads.emplace_back([&]() {
-        [[maybe_unused]] const auto &guard = epoch_manager_->CreateEpochGuard();
+        [[maybe_unused]] const auto &epoch_guard = epoch_manager_->CreateEpochGuard();
         const std::unique_lock<std::mutex> lock{mtx_};
       });
     }
 
     forwarder.join();
 
-    const auto &protected_epochs = epoch_manager_->GetProtectedEpochs();
-    EXPECT_NE(protected_epochs, nullptr);
-    for (size_t i = 0; i < protected_epochs->size() - 1; ++i) {
-      EXPECT_GT(protected_epochs->at(i), protected_epochs->at(i + 1));
+    const auto &[ep_guard, protected_epochs] = epoch_manager_->GetProtectedEpochs();
+    for (size_t i = 0; i < protected_epochs.size() - 1; ++i) {
+      EXPECT_GT(protected_epochs.at(i), protected_epochs.at(i + 1));
     }
-    EXPECT_EQ(protected_epochs->front(), epoch_manager_->GetCurrentEpoch());
-    EXPECT_EQ(protected_epochs->back(), epoch_manager_->GetMinEpoch());
+    EXPECT_EQ(protected_epochs.front(), epoch_manager_->GetCurrentEpoch());
+    EXPECT_EQ(protected_epochs.back(), epoch_manager_->GetMinEpoch());
   }
   for (auto &&t : threads) t.join();
 }
@@ -145,7 +141,7 @@ TEST_F(EpochManagerFixture, GetProtectedEpochWithLeavedEpochGetCurrentEpoch)
     for (size_t i = 0; i < kRepeatNum; ++i) {
       threads.emplace_back([&]() {
         {
-          [[maybe_unused]] const auto &guard = epoch_manager_->CreateEpochGuard();
+          [[maybe_unused]] const auto &epoch_guard = epoch_manager_->CreateEpochGuard();
         }
         const std::unique_lock<std::mutex> lock{mtx_};
       });
@@ -153,10 +149,55 @@ TEST_F(EpochManagerFixture, GetProtectedEpochWithLeavedEpochGetCurrentEpoch)
 
     forwarder.join();
 
-    const auto &protected_epochs = epoch_manager_->GetProtectedEpochs();
-    EXPECT_NE(protected_epochs, nullptr);
-    EXPECT_EQ(protected_epochs->size(), 1);
-    EXPECT_EQ(protected_epochs->front(), epoch_manager_->GetCurrentEpoch());
+    const auto &[ep_guard, protected_epochs] = epoch_manager_->GetProtectedEpochs();
+    EXPECT_EQ(protected_epochs.size(), 2);
+    EXPECT_EQ(protected_epochs.front(), epoch_manager_->GetCurrentEpoch());
+  }
+  for (auto &&t : threads) t.join();
+}
+
+TEST_F(EpochManagerFixture, EpochGuardProtectProtectedEpochLists)
+{
+  constexpr size_t kLoopNum = 1000;
+  constexpr size_t kRepeatNum = 10;
+
+  // a flag for controling worker threads
+  std::atomic_bool is_running{true};
+
+  // forward global epoch
+  std::thread forwarder{[&]() {
+    for (size_t i = 0; i < kLoopNum; ++i) {
+      std::this_thread::sleep_for(std::chrono::milliseconds{1});
+      epoch_manager_->ForwardGlobalEpoch();
+    }
+  }};
+
+  // create entered epochs
+  std::vector<std::thread> threads;
+  {
+    const std::unique_lock<std::mutex> guard{mtx_};
+    for (size_t i = 0; i < kRepeatNum; ++i) {
+      threads.emplace_back([&]() {
+        const auto &[ep_guard, protected_epochs] = epoch_manager_->GetProtectedEpochs();
+        while (is_running) {
+          for (size_t i = 0; i < protected_epochs.size() - 1; ++i) {
+            EXPECT_GT(protected_epochs.at(i), protected_epochs.at(i + 1));
+          }
+        }
+
+        const std::unique_lock<std::mutex> lock{mtx_};
+      });
+    }
+
+    forwarder.join();
+    is_running = false;
+
+    const auto &[ep_guard, protected_epochs] = epoch_manager_->GetProtectedEpochs();
+    for (size_t i = 0; i < protected_epochs.size() - 1; ++i) {
+      EXPECT_GT(protected_epochs.at(i), protected_epochs.at(i + 1));
+    }
+    EXPECT_EQ(protected_epochs.front(), epoch_manager_->GetCurrentEpoch());
+    EXPECT_EQ(protected_epochs.back(), epoch_manager_->GetMinEpoch());
   }
   for (auto &&t : threads) t.join();
 }

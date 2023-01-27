@@ -38,6 +38,14 @@ class EpochManager
 {
  public:
   /*####################################################################################
+   * Public constants
+   *##################################################################################*/
+
+  static constexpr size_t kInitialEpoch = 1;
+
+  static constexpr size_t kMinEpoch = 0;
+
+  /*####################################################################################
    * Type aliases
    *##################################################################################*/
 
@@ -55,9 +63,8 @@ class EpochManager
   EpochManager()
   {
     // initialize protected epochs
-    auto *protected_epochs = new std::vector<size_t>{};
-    protected_epochs->emplace_back(0);
-    auto *head = new ProtectedEpochsNode{protected_epochs, nullptr};
+    std::vector<size_t> protected_epochs = {kInitialEpoch, kMinEpoch};
+    auto *head = new ProtectedEpochsNode{std::move(protected_epochs), nullptr};
     protected_epoch_lists_.store(head, std::memory_order_release);
   }
 
@@ -127,11 +134,12 @@ class EpochManager
    * @return protected epoch values.
    */
   [[nodiscard]] auto
-  GetProtectedEpochs() const  //
-      -> std::shared_ptr<const std::vector<size_t>>
+  GetProtectedEpochs()  //
+      -> std::pair<EpochGuard, const std::vector<size_t> &>
   {
     const auto *head = protected_epoch_lists_.load(std::memory_order_acquire);
-    return head->GetProtectedEpochs();
+    const auto &protected_epochs = head->GetProtectedEpochs();
+    return {CreateEpochGuard(protected_epochs.front()), protected_epochs};
   }
 
   /*####################################################################################
@@ -144,7 +152,7 @@ class EpochManager
    * @return EpochGuard a created epoch guard.
    */
   [[nodiscard]] auto
-  CreateEpochGuard()  //
+  CreateEpochGuard(std::optional<size_t> entered = std::nullopt)  //
       -> EpochGuard
   {
     thread_local std::shared_ptr<Epoch> epoch = std::make_shared<Epoch>();
@@ -159,7 +167,7 @@ class EpochManager
       }
     }
 
-    return EpochGuard{epoch.get()};
+    return EpochGuard{epoch.get(), entered};
   }
 
   /**
@@ -170,39 +178,43 @@ class EpochManager
   void
   ForwardGlobalEpoch()
   {
-    const auto next_epoch = global_epoch_.load(std::memory_order_relaxed) + 1;
+    const auto cur_epoch = global_epoch_.load(std::memory_order_relaxed);
+
+    // update protected epoch values
+    auto &&protected_epochs = CollectProtectedEpochs(cur_epoch);
+    const auto &it_end = protected_epochs.cend();
+    auto &&it = protected_epochs.cbegin();
+    auto protected_epoch = (++(++it) != it_end) ? *it : kMinEpoch;
 
     // remove out-dated lists
-    auto *current = protected_epoch_lists_.load(std::memory_order_acquire);
-    auto *next = current->next;
-    while (next != nullptr) {
-      if (next->IsAlive()) {
+    auto *const old_head = protected_epoch_lists_.load(std::memory_order_acquire);
+    auto *current = old_head;
+    while (current->next != nullptr) {
+      auto *next = current->next;
+      auto epoch = next->GetEpoch();
+      if (epoch == protected_epoch) {
+        // this node is still referred, so skip
         current = next;
-        next = next->next;
+        protected_epoch = (++it != it_end) ? *it : kMinEpoch;
         continue;
       }
 
       // remove the out-dated list
-      current->next = next->next;
-      delete next;
-      next = current->next;
+      next = next->next;
+      delete current->next;
+      current->next = next;
     }
 
-    // update protected epoch values
-    auto *protected_epochs = CollectProtectedEpochs(next_epoch);
-    auto *head = new ProtectedEpochsNode{protected_epochs, current};
+    const auto min_epoch = protected_epochs.back();
+    auto *head = new ProtectedEpochsNode{std::move(protected_epochs), old_head};
     protected_epoch_lists_.store(head, std::memory_order_release);
 
     // store the max/min epoch values for efficiency
-    global_epoch_.store(next_epoch, std::memory_order_relaxed);
-    min_epoch_.store(protected_epochs->back(), std::memory_order_relaxed);
+    global_epoch_.fetch_add(1, std::memory_order_relaxed);
+    min_epoch_.store(min_epoch, std::memory_order_relaxed);
   }
 
  private:
-  /*####################################################################################
-   * Internal constants
-   *##################################################################################*/
-
   /*####################################################################################
    * Internal structs
    *##################################################################################*/
@@ -305,7 +317,7 @@ class EpochManager
      * @param next a pointer to a next node.
      */
     ProtectedEpochsNode(  //
-        std::vector<size_t> *protected_epochs,
+        std::vector<size_t> &&protected_epochs,
         ProtectedEpochsNode *next)
         : next{next}, protected_epochs_{protected_epochs}
     {
@@ -331,14 +343,13 @@ class EpochManager
      *################################################################################*/
 
     /**
-     * @retval true if the protected epochs are still referred.
-     * @retval false if the protected epochs can be released.
+     * @return the epoch value of this node.
      */
     [[nodiscard]] auto
-    IsAlive() const  //
-        -> bool
+    GetEpoch() const  //
+        -> size_t
     {
-      return protected_epochs_.use_count() > 1;
+      return protected_epochs_.front();
     }
 
     /**
@@ -346,7 +357,7 @@ class EpochManager
      */
     [[nodiscard]] auto
     GetProtectedEpochs() const  //
-        -> std::shared_ptr<const std::vector<size_t>>
+        -> const std::vector<size_t> &
     {
       return protected_epochs_;
     }
@@ -364,7 +375,7 @@ class EpochManager
      *################################################################################*/
 
     /// protected epochs in this epoch interval.
-    std::shared_ptr<const std::vector<size_t>> protected_epochs_{nullptr};
+    const std::vector<size_t> protected_epochs_{};
   };
 
   /*####################################################################################
@@ -380,12 +391,13 @@ class EpochManager
    * @return protected epoch values.
    */
   auto
-  CollectProtectedEpochs(const size_t next_epoch)  //
-      -> std::vector<size_t> *
+  CollectProtectedEpochs(const size_t cur_epoch)  //
+      -> std::vector<size_t>
   {
-    auto *protected_epochs = new std::vector<size_t>{};
-    protected_epochs->reserve(kExpectedThreadNum);
-    protected_epochs->emplace_back(next_epoch);
+    std::vector<size_t> protected_epochs{};
+    protected_epochs.reserve(kExpectedThreadNum);
+    protected_epochs.emplace_back(cur_epoch + 1);  // reserve the next epoch
+    protected_epochs.emplace_back(cur_epoch);
 
     // check the head node of the epoch list
     auto *previous = epochs_.load(std::memory_order_acquire);
@@ -393,7 +405,7 @@ class EpochManager
     if (previous->IsAlive()) {
       const auto protected_epoch = previous->GetProtectedEpoch();
       if (protected_epoch < std::numeric_limits<size_t>::max()) {
-        protected_epochs->emplace_back(protected_epoch);
+        protected_epochs.emplace_back(protected_epoch);
       }
     }
 
@@ -404,7 +416,7 @@ class EpochManager
         // if the epoch is alive, get the protected epoch value
         const auto protected_epoch = current->GetProtectedEpoch();
         if (protected_epoch < std::numeric_limits<size_t>::max()) {
-          protected_epochs->emplace_back(protected_epoch);
+          protected_epochs.emplace_back(protected_epoch);
         }
         previous = current;
         current = current->next;
@@ -417,9 +429,9 @@ class EpochManager
     }
 
     // remove duplicate values
-    std::sort(protected_epochs->begin(), protected_epochs->end(), std::greater<size_t>{});
-    auto &&end_iter = std::unique(protected_epochs->begin(), protected_epochs->end());
-    protected_epochs->erase(end_iter, protected_epochs->end());
+    std::sort(protected_epochs.begin(), protected_epochs.end(), std::greater<size_t>{});
+    auto &&end_iter = std::unique(protected_epochs.begin(), protected_epochs.end());
+    protected_epochs.erase(end_iter, protected_epochs.end());
 
     return protected_epochs;
   }
@@ -429,10 +441,10 @@ class EpochManager
    *##################################################################################*/
 
   /// a global epoch counter.
-  std::atomic_size_t global_epoch_{0};
+  std::atomic_size_t global_epoch_{kInitialEpoch};
 
   /// the minimum protected ecpoch value.
-  std::atomic_size_t min_epoch_{0};
+  std::atomic_size_t min_epoch_{kInitialEpoch};
 
   /// the head pointer of a linked list of epochs.
   std::atomic<EpochNode *> epochs_{nullptr};
