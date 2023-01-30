@@ -15,6 +15,7 @@ cppcoreguidelines-*,
 -cppcoreguidelines-pro-type-const-cast,
 concurrency-*,
 google-*,
+-google-runtime-references,
 hicpp-*,
 -hicpp-braces-around-statements,
 -hicpp-avoid-c-arrays,
@@ -47,11 +48,11 @@ CheckOptions:
     value:           CamelCase
   - key:             readability-identifier-naming.MemberCase
     value:           lower_case
-  - key:             readability-identifier-naming.MemberSuffix
+  - key:             readability-identifier-naming.PrivateMemberSuffix
+    value:           _
+  - key:             readability-identifier-naming.ProtectedMemberSuffix
     value:           _
   - key:             readability-identifier-naming.ParameterCase
-    value:           lower_case
-  - key:             readability-identifier-naming.PublicMemberCase
     value:           lower_case
   - key:             readability-identifier-naming.UnionCase
     value:           CamelCase

@@ -39,13 +39,7 @@ class EpochGuard
    *
    * @param epoch a reference to a target epoch.
    */
-  explicit EpochGuard(  //
-      Epoch *epoch,
-      std::optional<size_t> entered = std::nullopt)
-      : epoch_{epoch}
-  {
-    epoch_->EnterEpoch(entered);
-  }
+  explicit EpochGuard(Epoch *epoch) : epoch_{epoch} { epoch_->EnterEpoch(); }
 
   constexpr EpochGuard(EpochGuard &&obj) noexcept
   {
@@ -79,6 +73,20 @@ class EpochGuard
     if (epoch_ != nullptr) {
       epoch_->LeaveEpoch();
     }
+  }
+
+  /*####################################################################################
+   * Public getters
+   *##################################################################################*/
+
+  /**
+   * @return the epoch value protected by this object.
+   */
+  [[nodiscard]] auto
+  GetProtectedEpoch() const  //
+      -> size_t
+  {
+    return epoch_->GetProtectedEpoch();
   }
 
  private:

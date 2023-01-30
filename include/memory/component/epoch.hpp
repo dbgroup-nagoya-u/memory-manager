@@ -68,7 +68,7 @@ class Epoch
   GetCurrentEpoch() const  //
       -> size_t
   {
-    return current_->load(std::memory_order_relaxed);
+    return current_->load(std::memory_order_acquire);
   }
 
   /**
@@ -99,10 +99,9 @@ class Epoch
    *
    */
   void
-  EnterEpoch(std::optional<size_t> entered = std::nullopt)
+  EnterEpoch()
   {
-    const auto current = (entered) ? *entered : GetCurrentEpoch();
-    entered_.store(current, std::memory_order_relaxed);
+    entered_.store(GetCurrentEpoch(), std::memory_order_relaxed);
   }
 
   /**

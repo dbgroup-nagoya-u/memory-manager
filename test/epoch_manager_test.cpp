@@ -66,23 +66,23 @@ class EpochManagerFixture : public ::testing::Test
 
 TEST_F(EpochManagerFixture, ConstructorInitializeGlobalEpoch)
 {
-  EXPECT_EQ(1, epoch_manager_->GetCurrentEpoch());
+  EXPECT_EQ(EpochManager::kInitialEpoch, epoch_manager_->GetCurrentEpoch());
 }
 
 TEST_F(EpochManagerFixture, ForwardGlobalEpochAfterConstructGetIncrementedEpoch)
 {
   epoch_manager_->ForwardGlobalEpoch();
 
-  EXPECT_EQ(2, epoch_manager_->GetCurrentEpoch());
+  EXPECT_EQ(EpochManager::kInitialEpoch + 1, epoch_manager_->GetCurrentEpoch());
 }
 
 TEST_F(EpochManagerFixture, GetProtectedEpochWithoutEpochsGetCurrentEpoch)
 {
-  EXPECT_EQ(1, epoch_manager_->GetMinEpoch());
+  EXPECT_EQ(EpochManager::kInitialEpoch, epoch_manager_->GetMinEpoch());
 
   const auto &[ep_guard, protected_epochs] = epoch_manager_->GetProtectedEpochs();
-  EXPECT_EQ(protected_epochs.size(), 2);
-  EXPECT_EQ(protected_epochs.front(), 1);
+  EXPECT_EQ(protected_epochs.size(), 1);
+  EXPECT_EQ(protected_epochs.front(), EpochManager::kInitialEpoch);
 }
 
 TEST_F(EpochManagerFixture, GetProtectedEpochWithEnteredEpochGetEnteredEpoch)
@@ -158,7 +158,7 @@ TEST_F(EpochManagerFixture, GetProtectedEpochWithLeavedEpochGetCurrentEpoch)
 
 TEST_F(EpochManagerFixture, EpochGuardProtectProtectedEpochLists)
 {
-  constexpr size_t kLoopNum = 1000;
+  constexpr size_t kLoopNum = 1000 * 100;
   constexpr size_t kRepeatNum = 10;
 
   // a flag for controling worker threads
@@ -167,7 +167,7 @@ TEST_F(EpochManagerFixture, EpochGuardProtectProtectedEpochLists)
   // forward global epoch
   std::thread forwarder{[&]() {
     for (size_t i = 0; i < kLoopNum; ++i) {
-      std::this_thread::sleep_for(std::chrono::milliseconds{1});
+      std::this_thread::sleep_for(std::chrono::microseconds{1});
       epoch_manager_->ForwardGlobalEpoch();
     }
   }};
@@ -178,8 +178,8 @@ TEST_F(EpochManagerFixture, EpochGuardProtectProtectedEpochLists)
     const std::unique_lock<std::mutex> guard{mtx_};
     for (size_t i = 0; i < kRepeatNum; ++i) {
       threads.emplace_back([&]() {
-        const auto &[ep_guard, protected_epochs] = epoch_manager_->GetProtectedEpochs();
         while (is_running) {
+          const auto &[ep_guard, protected_epochs] = epoch_manager_->GetProtectedEpochs();
           for (size_t i = 0; i < protected_epochs.size() - 1; ++i) {
             EXPECT_GT(protected_epochs.at(i), protected_epochs.at(i + 1));
           }
