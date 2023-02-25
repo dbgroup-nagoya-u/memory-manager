@@ -901,11 +901,11 @@ class EpochBasedGC
       // remove expired TLS nodes
       auto is_running = gc_is_running_.load(std::memory_order_relaxed);
       auto expired = RemoveExpiredNodes<DefaultTarget, GCTargets...>(!is_running);
-      if (!is_running && expired) break;
 
       // wait until the next epoch
       std::this_thread::sleep_until(wake_time);
       epoch_manager_.ForwardGlobalEpoch();
+      if (!is_running && expired) break;
     }
 
     // wait all the cleaner threads return
