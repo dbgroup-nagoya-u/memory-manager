@@ -87,17 +87,18 @@ class EpochBasedGC
    * @param gc_interval_micro_sec the duration of interval for GC.
    * @param gc_thread_num the maximum number of threads to perform GC.
    */
-  constexpr EpochBasedGC(  //
-      const size_t gc_interval_micro_sec,
-      const size_t gc_thread_num)
+  constexpr explicit EpochBasedGC(  //
+      const size_t gc_interval_micro_sec = kDefaultGCTime,
+      const size_t gc_thread_num = kDefaultGCThreadNum)
       : gc_interval_{gc_interval_micro_sec}, gc_thread_num_{gc_thread_num}
   {
     cleaner_threads_.reserve(gc_thread_num_);
   }
 
   EpochBasedGC(const EpochBasedGC &) = delete;
-  auto operator=(const EpochBasedGC &) -> EpochBasedGC & = delete;
   EpochBasedGC(EpochBasedGC &&) = delete;
+
+  auto operator=(const EpochBasedGC &) -> EpochBasedGC & = delete;
   auto operator=(EpochBasedGC &&) -> EpochBasedGC & = delete;
 
   /*####################################################################################
@@ -920,7 +921,7 @@ class EpochBasedGC
    *##################################################################################*/
 
   /// the duration of garbage collection in micro seconds.
-  const std::chrono::microseconds gc_interval_{static_cast<size_t>(1e5)};
+  const std::chrono::microseconds gc_interval_{};
 
   /// the maximum number of cleaner threads
   const size_t gc_thread_num_{1};
