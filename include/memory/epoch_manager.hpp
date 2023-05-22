@@ -48,13 +48,13 @@ class EpochManager
    * Public constants
    *##################################################################################*/
 
-  /// @brief The capacity of nodes for protected epochs.
+  /// The capacity of nodes for protected epochs.
   static constexpr size_t kCapacity = 256;
 
-  /// @brief The initial value of epochs.
+  /// The initial value of epochs.
   static constexpr size_t kInitialEpoch = kCapacity;
 
-  /// @brief The minimum value of epochs.
+  /// The minimum value of epochs.
   static constexpr size_t kMinEpoch = 0;
 
   /*####################################################################################
@@ -275,7 +275,7 @@ class EpochManager
      * Public member variables
      *################################################################################*/
 
-    /// a pointer to the next node.
+    /// A pointer to the next node.
     EpochNode *next{nullptr};
 
    private:
@@ -283,7 +283,7 @@ class EpochManager
      * Internal member variables
      *################################################################################*/
 
-    /// a shared pointer for monitoring the lifetime of a target epoch.
+    /// A shared pointer for monitoring the lifetime of a target epoch.
     const std::shared_ptr<Epoch> epoch_{};
   };
 
@@ -331,6 +331,10 @@ class EpochManager
      *################################################################################*/
 
     /**
+     * @brief Get protected epoch values based on a given epoch.
+     *
+     * @param epoch a target epoch value.
+     * @param node the head pointer of a linked list.
      * @return the protected epochs.
      */
     [[nodiscard]] static auto
@@ -348,6 +352,9 @@ class EpochManager
       return node->epoch_lists_.at(epoch & kLowerMask);
     }
 
+    /**
+     * @return the upper bits of the current epoch.
+     */
     [[nodiscard]] constexpr auto
     GetUpperBits() const  //
         -> size_t
@@ -359,7 +366,7 @@ class EpochManager
      * Public member variables
      *################################################################################*/
 
-    /// @brief A pointer to the next node.
+    /// A pointer to the next node.
     ProtectedNode *next{nullptr};  // NOLINT
 
    private:
@@ -367,10 +374,10 @@ class EpochManager
      * Internal member variables
      *################################################################################*/
 
-    /// @brief The upper bits of epoch values to be retained in this node.
+    /// The upper bits of epoch values to be retained in this node.
     size_t upper_epoch_{};
 
-    /// @brief The list of protected epochs.
+    /// The list of protected epochs.
     std::array<std::vector<size_t>, kCapacity> epoch_lists_{};
   };
 
@@ -378,10 +385,10 @@ class EpochManager
    * Internal constants
    *##################################################################################*/
 
-  /// @brief A bitmask for extracting lower bits from epochs.
+  /// A bitmask for extracting lower bits from epochs.
   static constexpr size_t kLowerMask = kCapacity - 1UL;
 
-  /// @brief A bitmask for extracting upper bits from epochs.
+  /// A bitmask for extracting upper bits from epochs.
   static constexpr size_t kUpperMask = ~kLowerMask;
 
   /*####################################################################################
@@ -393,7 +400,7 @@ class EpochManager
    *
    * This function also removes dead epochs from the internal list while computing.
    *
-   * @param next_epoch the next global epoch value.
+   * @param cur_epoch the current global epoch value.
    * @param protected_epochs protected epoch values.
    */
   void
@@ -484,16 +491,16 @@ class EpochManager
    * Internal member variables
    *##################################################################################*/
 
-  /// a global epoch counter.
+  /// A global epoch counter.
   std::atomic_size_t global_epoch_{kInitialEpoch};
 
-  /// the minimum protected ecpoch value.
+  /// The minimum protected ecpoch value.
   std::atomic_size_t min_epoch_{kInitialEpoch};
 
-  /// the head pointer of a linked list of epochs.
+  /// The head pointer of a linked list of epochs.
   std::atomic<EpochNode *> epochs_{nullptr};
 
-  /// the head pointer of a linked list of epochs.
+  /// The head pointer of a linked list of epochs.
   ProtectedNode *protected_lists_{new ProtectedNode{kInitialEpoch, nullptr}};
 };
 

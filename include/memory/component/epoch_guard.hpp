@@ -94,7 +94,7 @@ class EpochGuard
    * Internal member variables
    *##################################################################################*/
 
-  /// a reference to a target epoch.
+  /// A reference to a target epoch.
   Epoch *epoch_{nullptr};
 };
 

@@ -59,10 +59,10 @@ class GarbageListOnPMEM
    *
    */
   struct Garbage {
-    /// an epoch value when the garbage is registered.
+    /// An epoch value when the garbage is registered.
     size_t epoch{};
 
-    /// a pointer to the registered garbage.
+    /// A pointer to the registered garbage.
     PMEMoid oid{OID_NULL};
   };
 
@@ -336,6 +336,7 @@ class GarbageListOnPMEM
   /**
    * @brief Release garbage where their epoch is less than a protected one.
    *
+   * @tparam PMEMPool a class of a persistent pool.
    * @param buffer a target barbage buffer.
    * @param pool a pool object for managing persistent memory.
    * @return a head of garbage buffers.
@@ -395,28 +396,28 @@ class GarbageListOnPMEM
    * Public member variables // they must be public to access via persistent_ptr
    *##################################################################################*/
 
-  /// @brief the position of the head of destructed garbage.
+  /// The position of the head of destructed garbage.
   ::pmem::obj::p<size_t> begin_idx{0};
 
-  /// @brief the position of the head of unreleased garbage.
+  /// The position of the head of unreleased garbage.
   ::pmem::obj::p<size_t> mid_idx{0};
 
-  /// @brief the position of the tail of unreleased garbage.
+  /// The position of the tail of unreleased garbage.
   ::pmem::obj::p<size_t> end_idx{0};
 
-  /// @brief the atomic instance to notify cleaner threads of the begin position.
+  /// The atomic instance to notify cleaner threads of the begin position.
   std::atomic_size_t begin_idx_atom{0};
 
-  /// @brief the atomic instance to notify cleaner threads of the middle position.
+  /// The atomic instance to notify cleaner threads of the middle position.
   std::atomic_size_t mid_idx_atom{0};
 
-  /// @brief the atomic instance to notify cleaner threads of the tail position.
+  /// The atomic instance to notify cleaner threads of the tail position.
   std::atomic_size_t end_idx_atom{0};
 
-  /// @brief a pointer to a next garbage buffer.
+  /// A pointer to a next garbage buffer.
   GarbageList_p next{nullptr};
 
-  /// @brief a buffer of garbage instances with added epochs.
+  /// A buffer of garbage instances with added epochs.
   Garbage garbage_arr[kGarbageBufferSize]{};
 };
 
@@ -489,6 +490,7 @@ class GarbageNodeOnPMEM
   /**
    * @brief Reuse a released memory page if it exists in the list.
    *
+   * @tparam PMEMPool a class of a persistent pool.
    * @param out_page an address to be stored a reusable page.
    * @param pool a pool object for managing persistent memory.
    */
@@ -656,22 +658,22 @@ class GarbageNodeOnPMEM
    * Public member variables // they must be public to access via persistent_ptr
    *##################################################################################*/
 
-  /// @brief A mutex object for locking a garbage list.
+  /// A mutex object for locking a garbage list.
   std::mutex list_mtx{};
 
-  /// @brief A garbage list that has destructed pages.
+  /// A garbage list that has destructed pages.
   GarbageList_p head{nullptr};
 
-  /// @brief A garbage list that has not destructed pages.
+  /// A garbage list that has not destructed pages.
   GarbageList_p mid{nullptr};
 
-  /// @brief A flag for indicating the corresponding thread has exited.
+  /// A flag for indicating the corresponding thread has exited.
   std::atomic_bool expired{false};
 
-  /// @brief A mutex object for locking the pointer to the next node.
+  /// A mutex object for locking the pointer to the next node.
   std::mutex next_mtx{};
 
-  /// @brief The next node.
+  /// The next node.
   GarbageNode_p next{nullptr};
 
  private:

@@ -136,6 +136,7 @@ class EpochBasedGC
   /**
    * @brief Add a new garbage instance.
    *
+   * @tparam Target a class for representing target garbage.
    * @param garbage_ptr a pointer to a target garbage.
    */
   template <class Target = DefaultTarget>
@@ -170,6 +171,7 @@ class EpochBasedGC
   /**
    * @brief Reuse a released memory page if it exists.
    *
+   * @tparam Target a class for representing target garbage.
    * @retval nullptr if there are no reusable pages.
    * @retval a memory page.
    */
@@ -308,6 +310,10 @@ class EpochBasedGC
    * Internal utility functions for type aliases
    *##################################################################################*/
 
+  /**
+   * @brief A dummy function for creating type aliases.
+   *
+   */
   template <class Target>
   static auto
   ConvToNodeT()
@@ -331,18 +337,18 @@ class EpochBasedGC
    *
    */
   struct DefaultTarget {
-    /// use the void type and do not perform destructors.
+    /// Use the void type and do not perform destructors.
     using T = void;
 
-    /// do not reuse pages after GC (release immediately).
+    /// Do not reuse pages after GC (release immediately).
     static constexpr bool kReusePages = false;
 
 #ifdef MEMORY_MANAGER_USE_PERSISTENT_MEMORY
-    /// @brief Default targets are on volatile memory.
+    /// Default targets are on volatile memory.
     static constexpr bool kOnPMEM = false;
 #endif
 
-    /// use the standard delete function to release pages.
+    /// Use the standard delete function to release pages.
     static const inline std::function<void(void *)> deleter = [](void *ptr) {
       ::operator delete(ptr);
     };
@@ -478,10 +484,10 @@ class EpochBasedGC
      * Internal member variables
      *################################################################################*/
 
-    /// @brief A garbage list to be added new garbage.
+    /// A garbage list to be added new garbage.
     GarbageList_p tail_{nullptr};
 
-    /// @brief The corresponding garbage node.
+    /// The corresponding garbage node.
     GarbageNode_p data_node_{nullptr};
   };
 
@@ -591,10 +597,10 @@ class EpochBasedGC
      * Internal member variables
      *################################################################################*/
 
-    /// @brief The corresponding thread-local garbage list.
+    /// The corresponding thread-local garbage list.
     std::shared_ptr<TLSList_t> list_{nullptr};
 
-    /// @brief The next node in a linked list.
+    /// The next node in a linked list.
     std::atomic<TLSNode *> next_{nullptr};
   };
 
@@ -703,10 +709,10 @@ class EpochBasedGC
      * Internal member variables
      *################################################################################*/
 
-    /// @brief The head of a linked list.
+    /// The head of a linked list.
     GarbageNode_p *head_{nullptr};
 
-    /// @brief A mutex object for modifying the head pointer.
+    /// A mutex object for modifying the head pointer.
     std::unique_ptr<std::mutex> mtx_ = std::make_unique<std::mutex>();
   };
 
@@ -728,7 +734,7 @@ class EpochBasedGC
      * Public member variables
      *################################################################################*/
 
-    /// @brief The head of a linked list.
+    /// The head of a linked list.
     std::unique_ptr<TLSNode_t> head = std::make_unique<TLSNode_t>(nullptr);
   };
 
@@ -736,6 +742,10 @@ class EpochBasedGC
    * Recursive functions for converting parameter packs
    *##################################################################################*/
 
+  /**
+   * @brief A dummy function for creating type aliases.
+   *
+   */
   template <template <class T> class OutT, class InT, class... Tails>
   static auto
   ConvToHeads()
@@ -744,6 +754,10 @@ class EpochBasedGC
     return std::tuple_cat(std::tuple<OutT_t>{}, ConvToHeads<OutT, Tails...>());
   }
 
+  /**
+   * @brief A dummy function for creating type aliases.
+   *
+   */
   template <template <class T> class OutT>
   static auto
   ConvToHeads()
@@ -920,31 +934,31 @@ class EpochBasedGC
    * Internal member variables
    *##################################################################################*/
 
-  /// the duration of garbage collection in micro seconds.
+  /// The duration of garbage collection in micro seconds.
   const std::chrono::microseconds gc_interval_{};
 
-  /// the maximum number of cleaner threads
+  /// The maximum number of cleaner threads
   const size_t gc_thread_num_{1};
 
-  /// an epoch manager.
+  /// An epoch manager.
   EpochManager epoch_manager_{};
 
-  /// a mutex to protect liked garbage lists
+  /// A mutex to protect liked garbage lists
   std::shared_mutex garbage_lists_lock_{};
 
-  /// a thread to run garbage collection.
+  /// A thread to run garbage collection.
   std::thread gc_thread_{};
 
-  /// worker threads to release garbage
+  /// Worker threads to release garbage
   std::vector<std::thread> cleaner_threads_{};
 
-  /// a flag to check whether garbage collection is running.
+  /// A flag to check whether garbage collection is running.
   std::atomic_bool gc_is_running_{false};
 
-  /// @brief The heads of linked lists for each GC target.
+  /// The heads of linked lists for each GC target.
   GarbageHeads_t garbage_heads_ = ConvToHeads<GarbageHead, GCTargets...>();
 
-  /// @brief The heads of linked lists for each TLS watcher.
+  /// The heads of linked lists for each TLS watcher.
   TLSHeads_t tls_heads_ = ConvToHeads<TLSHead, GCTargets...>();
 };
 
