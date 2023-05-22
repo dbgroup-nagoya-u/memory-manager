@@ -17,10 +17,12 @@
 #ifndef MEMORY_COMPONENT_EPOCH_HPP
 #define MEMORY_COMPONENT_EPOCH_HPP
 
+// C++ standard libraries
 #include <atomic>
 #include <limits>
 #include <optional>
 
+// local sources
 #include "common.hpp"
 
 namespace dbgroup::memory::component

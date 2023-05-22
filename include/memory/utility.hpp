@@ -17,6 +17,7 @@
 #ifndef MEMORY_UTILITY_HPP
 #define MEMORY_UTILITY_HPP
 
+// C++ standard libraries
 #include <cassert>
 #include <cstddef>
 #include <cstdint>

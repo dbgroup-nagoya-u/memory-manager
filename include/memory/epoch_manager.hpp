@@ -17,6 +17,7 @@
 #ifndef MEMORY_COMPONENT_EPOCH_MANAGER_HPP
 #define MEMORY_COMPONENT_EPOCH_MANAGER_HPP
 
+// C++ standard libraries
 #include <algorithm>
 #include <atomic>
 #include <chrono>
@@ -26,6 +27,7 @@
 #include <utility>
 #include <vector>
 
+// local sources
 #include "component/epoch_guard.hpp"
 
 namespace dbgroup::memory

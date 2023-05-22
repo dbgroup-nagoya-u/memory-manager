@@ -17,8 +17,10 @@
 #ifndef MEMORY_COMPONENT_COMMON_HPP
 #define MEMORY_COMPONENT_COMMON_HPP
 
+// C++ standard libraries
 #include <atomic>
 
+// local sources
 #include "memory/utility.hpp"
 
 #endif  // MEMORY_COMPONENT_COMMON_HPP

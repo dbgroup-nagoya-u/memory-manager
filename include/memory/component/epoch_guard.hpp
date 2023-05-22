@@ -17,6 +17,7 @@
 #ifndef MEMORY_COMPONENT_EPOCH_GUARD_HPP
 #define MEMORY_COMPONENT_EPOCH_GUARD_HPP
 
+// local sources
 #include "epoch.hpp"
 
 namespace dbgroup::memory::component

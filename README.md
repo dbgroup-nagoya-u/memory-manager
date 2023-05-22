@@ -20,7 +20,7 @@ This repository is an open source implementation of epoch-based garbage collecti
 
 ## Build
 
-**Note**: this is a header only library. You can use this without pre-build.
+**Note**: this is a header-only library. You can use this without pre-build.
 
 ### Prerequisites
 

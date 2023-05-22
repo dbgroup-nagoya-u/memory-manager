@@ -17,6 +17,7 @@
 #ifndef MEMORY_COMPONENT_GARBAGE_LIST_HPP
 #define MEMORY_COMPONENT_GARBAGE_LIST_HPP
 
+// C++ standard libraries
 #include <array>
 #include <atomic>
 #include <limits>
@@ -25,6 +26,7 @@
 #include <tuple>
 #include <utility>
 
+// local sources
 #include "common.hpp"
 
 namespace dbgroup::memory::component
