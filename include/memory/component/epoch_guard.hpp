@@ -17,6 +17,7 @@
 #ifndef MEMORY_COMPONENT_EPOCH_GUARD_HPP
 #define MEMORY_COMPONENT_EPOCH_GUARD_HPP
 
+// local sources
 #include "epoch.hpp"
 
 namespace dbgroup::memory::component
@@ -94,7 +95,7 @@ class EpochGuard
    * Internal member variables
    *##################################################################################*/
 
-  /// a reference to a target epoch.
+  /// A reference to a target epoch.
   Epoch *epoch_{nullptr};
 };
 

@@ -17,10 +17,12 @@
 #ifndef MEMORY_COMPONENT_EPOCH_HPP
 #define MEMORY_COMPONENT_EPOCH_HPP
 
+// C++ standard libraries
 #include <atomic>
 #include <limits>
 #include <optional>
 
+// local sources
 #include "common.hpp"
 
 namespace dbgroup::memory::component
@@ -119,10 +121,10 @@ class Epoch
    * Internal member variables
    *##################################################################################*/
 
-  /// a current epoch.
+  /// A current epoch.
   std::atomic_size_t *current_{nullptr};
 
-  /// a snapshot to denote a protected epoch.
+  /// A snapshot to denote a protected epoch.
   std::atomic_size_t entered_{std::numeric_limits<size_t>::max()};
 };
 

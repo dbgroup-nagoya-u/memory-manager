@@ -17,6 +17,7 @@
 #ifndef MEMORY_COMPONENT_GARBAGE_LIST_HPP
 #define MEMORY_COMPONENT_GARBAGE_LIST_HPP
 
+// C++ standard libraries
 #include <array>
 #include <atomic>
 #include <limits>
@@ -25,6 +26,7 @@
 #include <tuple>
 #include <utility>
 
+// local sources
 #include "common.hpp"
 
 namespace dbgroup::memory::component
@@ -249,10 +251,10 @@ class GarbageList
    *
    */
   struct Garbage {
-    /// an epoch value when the garbage is registered.
+    /// An epoch value when the garbage is registered.
     size_t epoch{};
 
-    /// a pointer to the registered garbage.
+    /// A pointer to the registered garbage.
     T *ptr{};
   };
 
@@ -260,19 +262,19 @@ class GarbageList
    * Internal member variables
    *##################################################################################*/
 
-  /// the index to represent a head position.
+  /// The index to represent a head position.
   std::atomic_size_t begin_idx_{0};
 
-  /// the end of released indexes
+  /// The end of released indexes
   std::atomic_size_t destructed_idx_{0};
 
-  /// the index to represent a tail position.
+  /// The index to represent a tail position.
   std::atomic_size_t end_idx_{0};
 
-  /// a pointer to a next garbage buffer.
+  /// A pointer to a next garbage buffer.
   GarbageList *next_{nullptr};
 
-  /// a buffer of garbage instances with added epochs.
+  /// A buffer of garbage instances with added epochs.
   std::array<Garbage, kGarbageBufferSize> garbage_{};
 };
 
@@ -444,22 +446,22 @@ struct alignas(kCashLineSize) GarbageNode {
    * Internal member variables
    *##################################################################################*/
 
-  /// @brief A mutex object for locking a garbage list.
+  /// A mutex object for locking a garbage list.
   std::mutex list_mtx_{};
 
-  /// @brief A garbage list that has not destructed pages.
+  /// A garbage list that has not destructed pages.
   GarbageList_t *mid_{nullptr};
 
-  /// @brief A flag for indicating the corresponding thread has exited.
+  /// A flag for indicating the corresponding thread has exited.
   std::atomic_bool expired_{false};
 
-  /// @brief A garbage list that has destructed pages.
+  /// A garbage list that has destructed pages.
   std::atomic<GarbageList_t *> head_{nullptr};
 
-  /// @brief A mutex object for locking the pointer to the next node.
+  /// A mutex object for locking the pointer to the next node.
   std::mutex next_mtx_{};
 
-  /// @brief The next node.
+  /// The next node.
   GarbageNode *next_{nullptr};
 };
 

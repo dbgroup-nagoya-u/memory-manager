@@ -17,6 +17,7 @@
 #ifndef MEMORY_UTILITY_HPP
 #define MEMORY_UTILITY_HPP
 
+// C++ standard libraries
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
@@ -28,23 +29,23 @@ namespace dbgroup::memory
  * Global constants
  *####################################################################################*/
 
-/// the default time interval for garbage collection [us].
+/// The default time interval for garbage collection [us].
 constexpr size_t kDefaultGCTime = 10000;  // 10 ms
 
-/// the default number of worker threads for garbage collection.
+/// The default number of worker threads for garbage collection.
 constexpr size_t kDefaultGCThreadNum = 1;
 
 /*######################################################################################
  * Turning parameters
  *####################################################################################*/
 
-/// the size of buffers for retaining garbages.
+/// The size of buffers for retaining garbages.
 constexpr size_t kGarbageBufferSize = MEMORY_MANAGER_GARBAGE_BUFFER_SIZE;
 
-/// the expected number of worker threads.
+/// The expected number of worker threads.
 constexpr size_t kExpectedThreadNum = MEMORY_MANAGER_EXPECTED_THREAD_NUM;
 
-/// @brief The expected cache-line size.
+/// The expected cache-line size.
 constexpr size_t kCashLineSize = 64;
 
 }  // namespace dbgroup::memory
