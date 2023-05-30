@@ -40,6 +40,8 @@
     "IRUSR",
     "IWUSR",
     "JEMALLOC",
+    "JPNP",
+    "KAKENHI",
     "libjemalloc",
     "LIBPMEMOBJ",
     "MIMALLOC",

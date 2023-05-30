@@ -16,6 +16,7 @@ This repository is an open source implementation of epoch-based garbage collecti
     - [Destruct Garbage before Releasing](#destruct-garbage-before-releasing)
     - [Reuse Garbage-Collected Pages](#reuse-garbage-collected-pages)
     - [Perform GC on Persistent Memory](#perform-gc-on-persistent-memory)
+- [Acknowledgments](#acknowledgments)
 
 
 ## Build
@@ -422,3 +423,7 @@ main(  //
   return 0;
 }
 ```
+
+## Acknowledgments
+
+This work is based on results from project JPNP16007 commissioned by the New Energy and Industrial Technology Development Organization (NEDO), and it was supported partially by KAKENHI (JP16H01722, JP20K19804, JP21H03555, and JP22H03594).
