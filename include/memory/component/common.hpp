@@ -23,4 +23,15 @@
 // local sources
 #include "memory/utility.hpp"
 
+namespace dbgroup::memory
+{
+/*######################################################################################
+ * Global constants
+ *####################################################################################*/
+
+/// The size of buffers for retaining garbages.
+constexpr size_t kBufferSize = (kVMPageSize - 4 * kWordSize) / (2 * kWordSize);
+
+}  // namespace dbgroup::memory
+
 #endif  // MEMORY_COMPONENT_COMMON_HPP

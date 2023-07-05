@@ -39,11 +39,11 @@ constexpr size_t kDefaultGCThreadNum = 1;
  * Turning parameters
  *####################################################################################*/
 
-/// The size of buffers for retaining garbages.
-constexpr size_t kGarbageBufferSize = MEMORY_MANAGER_GARBAGE_BUFFER_SIZE;
+/// The page size of virtual memory addresses.
+constexpr size_t kVMPageSize = 4096;
 
-/// The expected number of worker threads.
-constexpr size_t kExpectedThreadNum = MEMORY_MANAGER_EXPECTED_THREAD_NUM;
+/// The size of words.
+constexpr size_t kWordSize = 8;
 
 /// The expected cache-line size.
 constexpr size_t kCashLineSize = 64;
