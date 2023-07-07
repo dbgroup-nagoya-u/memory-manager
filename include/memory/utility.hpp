@@ -42,6 +42,9 @@ constexpr size_t kDefaultGCThreadNum = 1;
 /// The page size of virtual memory addresses.
 constexpr size_t kVMPageSize = 4096;
 
+/// In PMDK, the memblock header use 16 bytes
+constexpr size_t kPmemPageSize = kVMPageSize - 16;
+
 /// The size of words.
 constexpr size_t kWordSize = 8;
 

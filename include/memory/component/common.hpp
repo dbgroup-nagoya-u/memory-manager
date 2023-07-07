@@ -25,12 +25,8 @@
 
 namespace dbgroup::memory
 {
-/*######################################################################################
- * Global constants
- *####################################################################################*/
-
-/// The size of buffers for retaining garbages.
-constexpr size_t kBufferSize = (kVMPageSize - 4 * kWordSize) / (2 * kWordSize);
+/// We do not use type checks in PMDK.
+constexpr uint64_t kDefaultPMDKType = 0;
 
 }  // namespace dbgroup::memory
 

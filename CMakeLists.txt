@@ -53,16 +53,19 @@ if(NOT TARGET dbgroup::${PROJECT_NAME})
 
   if(${MEMORY_MANAGER_USE_PERSISTENT_MEMORY})
     find_package(PkgConfig)
-    pkg_check_modules(LIBPMEMOBJ++ REQUIRED libpmemobj++)
+    pkg_check_modules(LIBPMEM REQUIRED libpmem)
+    pkg_check_modules(LIBPMEMOBJ REQUIRED libpmemobj)
 
     target_compile_definitions(${PROJECT_NAME} INTERFACE
       MEMORY_MANAGER_USE_PERSISTENT_MEMORY=${MEMORY_MANAGER_USE_PERSISTENT_MEMORY}
     )
     target_include_directories(${PROJECT_NAME} INTERFACE
-      "${LIBPMEMOBJ++_INCLUDE_DIRS}"
+      "${LIBPMEM_INCLUDE_DIRS}"
+      "${LIBPMEMOBJ_INCLUDE_DIRS}"
     )
     target_link_libraries(${PROJECT_NAME} INTERFACE
-      ${LIBPMEMOBJ++_LIBRARIES}
+      ${LIBPMEM_LIBRARIES}
+      ${LIBPMEMOBJ_LIBRARIES}
     )
   endif()
 endif()

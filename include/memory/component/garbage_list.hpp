@@ -34,7 +34,6 @@
 
 namespace dbgroup::memory::component
 {
-
 /**
  * @brief A class for representing garbage lists.
  *
@@ -44,6 +43,13 @@ template <class Target>
 class alignas(kCashLineSize) GarbageList
 {
  public:
+  /*####################################################################################
+   * Public global constants
+   *##################################################################################*/
+
+  /// The size of buffers for retaining garbages.
+  static constexpr size_t kBufferSize = (kVMPageSize - 4 * kWordSize) / (2 * kWordSize);
+
   /*####################################################################################
    * Type aliases
    *##################################################################################*/
@@ -211,12 +217,10 @@ class alignas(kCashLineSize) GarbageList
     Empty() const  //
         -> bool
     {
-      const auto pos = end_pos_.load(std::memory_order_acquire);
-      const auto size = pos - mid_pos_.load(std::memory_order_relaxed);
+      const auto end_pos = end_pos_.load(std::memory_order_acquire);
+      const auto size = end_pos - begin_pos_.load(std::memory_order_relaxed);
 
-      if (size > 0) return false;
-      if (pos < kBufferSize) return true;
-      return next_->Empty();
+      return (size == 0) && (end_pos < kBufferSize);
     }
 
     /*##################################################################################

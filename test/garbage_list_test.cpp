@@ -114,8 +114,8 @@ class GarbageListFixture : public ::testing::Test
    * Internal constants
    *##################################################################################*/
 
-  static constexpr size_t kSmallNum = kBufferSize / 2;
-  static constexpr size_t kLargeNum = kBufferSize * 4;
+  static constexpr size_t kSmallNum = GarbageList_t::kBufferSize / 2;
+  static constexpr size_t kLargeNum = GarbageList_t::kBufferSize * 4;
   static constexpr size_t kMaxLong = std::numeric_limits<size_t>::max();
 
   /*####################################################################################
