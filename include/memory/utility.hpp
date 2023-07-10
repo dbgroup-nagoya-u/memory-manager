@@ -42,15 +42,24 @@ constexpr size_t kDefaultGCThreadNum = 1;
 /// The page size of virtual memory addresses.
 constexpr size_t kVMPageSize = 4096;
 
-/// In PMDK, the memblock header use 16 bytes
-constexpr size_t kPmemPageSize = kVMPageSize - 16;
-
 /// The size of words.
 constexpr size_t kWordSize = 8;
 
 /// The expected cache-line size.
 constexpr size_t kCashLineSize = 64;
 
+#ifdef MEMORY_MANAGER_USE_PERSISTENT_MEMORY
+/*######################################################################################
+ * Constants for persistent memory
+ *####################################################################################*/
+
+/// the layout name of pmemobj_pool for GC.
+const char *const layout_name = "gc_on_pmem";
+
+/// In PMDK, the memblock header use 16 bytes
+constexpr size_t kPmemPageSize = kVMPageSize - 16;
+
+#endif
 }  // namespace dbgroup::memory
 
 #endif  // MEMORY_UTILITY_HPP

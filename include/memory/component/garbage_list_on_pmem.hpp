@@ -67,6 +67,18 @@ AllocatePmem(  //
   }
 }
 
+/**
+ * @param oid a target PMEMoid.
+ * @retval true if the given OID is NULL.
+ * @retval false otherwise.
+ */
+inline auto
+OIDIsNull(const PMEMoid &oid)  //
+    -> bool
+{
+  return oid.pool_uuid_lo == 0 || oid.off == 0;
+}
+
 /*######################################################################################
  * Global classes
  *####################################################################################*/
@@ -106,14 +118,34 @@ struct TLSFields {
    * @retval false otherwise.
    */
   auto
-  HasSamePMEMoid(const PMEMoid &oid)
+  HasSamePMEMoid(const PMEMoid &oid)  //
+      -> bool
   {
     for (size_t i = 0; i < kTmpFieldNum; ++i) {
-      if (tmp_oids[i].pool_uuid_lo == oid.pool_uuid_lo && tmp_oids[i].off == oid.off) {
+      if (OID_EQUALS(tmp_oids[i], oid)) {
         return true;
       }
     }
     return false;
+  }
+
+  /**
+   * @retval the vector of PMEMoids if there are unreleased temporary regions.
+   * @retval an empty vector otherwise.
+   */
+  auto
+  GetRemainingFields()  //
+      -> std::vector<PMEMoid *>
+  {
+    std::vector<PMEMoid *> oids{};
+    oids.reserve(kTmpFieldNum);
+
+    for (size_t i = 0; i < kTmpFieldNum; ++i) {
+      if (OID_IS_NULL(tmp_oids[i])) continue;
+      oids.emplace_back(&(tmp_oids[i]));
+    }
+
+    return oids;
   }
 };
 
@@ -191,18 +223,25 @@ class PMEMoidBuffer
    *
    * NOTE: This function does not perform any destruction on the remaining garbage.
    *
-   * @param buf the head buffer.
    * @param tls the pointer to the thread-local fields.
    */
   static void
-  ReleaseAllGarbages(  //
-      PMEMoidBuffer *buf,
-      TLSFields *tls)
+  ReleaseAllGarbages(TLSFields *tls)
   {
+    // if there is no buffer in the current thread local storage, do nothing
+    if (OID_IS_NULL(tls->head)) return;
+
+    // if the failure occurred during head replacement, release a temporary one
+    if (!OIDIsNull(tls->tmp_head) && !OID_EQUALS(tls->tmp_head, tls->head)) {
+      pmemobj_free(&(tls->tmp_head));
+    }
+
+    // release all the garbage in the buffers
+    auto *buf = reinterpret_cast<PMEMoidBuffer *>(pmemobj_direct(tls->head));
     while (true) {
       for (size_t i = 0; i < kBufferSize; ++i) {
         auto &oid = buf->garbages_[i];
-        if (oid.pool_uuid_lo == 0 || oid.off == 0 || tls->HasSamePMEMoid(oid)) continue;
+        if (OIDIsNull(oid) || tls->HasSamePMEMoid(oid)) continue;
 
         pmemobj_free(&oid);
       }
@@ -210,6 +249,8 @@ class PMEMoidBuffer
       if (OID_IS_NULL(buf->next_)) break;
       buf = ExchangeHead(buf, &(tls->head), &(tls->tmp_head));
     }
+
+    pmemobj_free(&(tls->head));
   }
 
   /*####################################################################################
@@ -346,15 +387,8 @@ class alignas(kCashLineSize) GarbageListOnPMEM
   /**
    * @brief Construct a new GarbageListOnPMEM object.
    *
-   * @param pop a pmemobj_pool instance for allocation.
-   * @param tls_oid the pointer to a PMEMoid for thread-local fields.
    */
-  constexpr GarbageListOnPMEM(  //
-      PMEMobjpool *pop,
-      PMEMoid *tls_oid)
-      : pop_{pop}, tls_oid_{tls_oid}
-  {
-  }
+  constexpr GarbageListOnPMEM() = default;
 
   GarbageListOnPMEM(const GarbageListOnPMEM &) = delete;
   GarbageListOnPMEM(GarbageListOnPMEM &&) = delete;
@@ -386,6 +420,19 @@ class alignas(kCashLineSize) GarbageListOnPMEM
   /*####################################################################################
    * Public utility functions for worker threads
    *##################################################################################*/
+
+  /**
+   * @param pop a pmemobj_pool instance for allocation.
+   * @param tls_oid the pointer to a PMEMoid for thread-local fields.
+   */
+  void
+  SetPMEMInfo(  //
+      PMEMobjpool *pop,
+      PMEMoid *tls_oid)
+  {
+    pop_ = pop;
+    tls_oid_ = tls_oid;
+  }
 
   /**
    * @brief Get the temporary field for memory allocation.
@@ -718,13 +765,15 @@ class alignas(kCashLineSize) GarbageListOnPMEM
     if (!heartbeat_.expired()) return;
 
     std::lock_guard guard{mtx_};
-    if (tail_ == nullptr) {
+    if (OID_IS_NULL(*tls_oid_)) {
       AllocatePmem(pop_, tls_oid_, sizeof(TLSFields));
       tls_fields_ = reinterpret_cast<TLSFields *>(pmemobj_direct(*tls_oid_));
-
+    }
+    if (OID_IS_NULL(tls_fields_->head)) {
       AllocatePmem(pop_, &(tls_fields_->head), kPmemPageSize);
+    }
+    if (tail_ == nullptr) {
       auto *buf = reinterpret_cast<PMEMoidBuffer *>(pmemobj_direct(tls_fields_->head));
-
       tail_ = new GarbageBuffer{buf};
       mid_ = tail_;
       if constexpr (Target::kReusePages) {

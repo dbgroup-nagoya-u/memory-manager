@@ -91,7 +91,8 @@ class GarbageListOnPMEMFixture : public ::testing::Test
     pop_ = pmemobj_create(pool_path.c_str(), kLayout, kSize, kModeRW);
     auto *root_addr = pmemobj_direct(pmemobj_root(pop_, sizeof(PMEMoid)));
     auto *tls_oid = reinterpret_cast<PMEMoid *>(root_addr);
-    list_ = std::make_unique<GarbageList_t>(pop_, tls_oid);
+    list_ = std::make_unique<GarbageList_t>();
+    list_->SetPMEMInfo(pop_, tls_oid);
 
     // initialize members
     current_epoch_ = 1;
