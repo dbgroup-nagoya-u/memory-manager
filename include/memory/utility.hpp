@@ -39,15 +39,27 @@ constexpr size_t kDefaultGCThreadNum = 1;
  * Turning parameters
  *####################################################################################*/
 
-/// The size of buffers for retaining garbages.
-constexpr size_t kGarbageBufferSize = MEMORY_MANAGER_GARBAGE_BUFFER_SIZE;
+/// The page size of virtual memory addresses.
+constexpr size_t kVMPageSize = 4096;
 
-/// The expected number of worker threads.
-constexpr size_t kExpectedThreadNum = MEMORY_MANAGER_EXPECTED_THREAD_NUM;
+/// The size of words.
+constexpr size_t kWordSize = 8;
 
 /// The expected cache-line size.
 constexpr size_t kCashLineSize = 64;
 
+#ifdef MEMORY_MANAGER_USE_PERSISTENT_MEMORY
+/*######################################################################################
+ * Constants for persistent memory
+ *####################################################################################*/
+
+/// the layout name of pmemobj_pool for GC.
+const char *const layout_name = "gc_on_pmem";
+
+/// In PMDK, the memblock header use 16 bytes
+constexpr size_t kPmemPageSize = kVMPageSize - 16;
+
+#endif
 }  // namespace dbgroup::memory
 
 #endif  // MEMORY_UTILITY_HPP

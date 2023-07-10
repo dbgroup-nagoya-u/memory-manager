@@ -23,4 +23,11 @@
 // local sources
 #include "memory/utility.hpp"
 
+namespace dbgroup::memory
+{
+/// We do not use type checks in PMDK.
+constexpr uint64_t kDefaultPMDKType = 0;
+
+}  // namespace dbgroup::memory
+
 #endif  // MEMORY_COMPONENT_COMMON_HPP

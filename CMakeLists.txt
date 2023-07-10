@@ -18,18 +18,6 @@ if(NOT TARGET dbgroup::${PROJECT_NAME})
   # Turning parameters
   #------------------------------------------------------------------------------------#
 
-  set(
-    MEMORY_MANAGER_GARBAGE_BUFFER_SIZE
-    "1024" CACHE STRING
-    "the size of buffers for retaining garbages."
-  )
-
-  set(
-    MEMORY_MANAGER_EXPECTED_THREAD_NUM
-    "128" CACHE STRING
-    "the expected number of worker threads."
-  )
-
   option(
     MEMORY_MANAGER_USE_PERSISTENT_MEMORY
     "perform garbage collection for pages on persistent memory."
@@ -43,6 +31,9 @@ if(NOT TARGET dbgroup::${PROJECT_NAME})
   # this library uses multi-threads
   find_package(Threads)
 
+  # use our thread ID manager
+  add_subdirectory("external/cpp-utility")
+
   #------------------------------------------------------------------------------------#
   # Build targets
   #------------------------------------------------------------------------------------#
@@ -52,29 +43,29 @@ if(NOT TARGET dbgroup::${PROJECT_NAME})
   target_compile_features(${PROJECT_NAME} INTERFACE
     "cxx_std_17"
   )
-  target_compile_definitions(${PROJECT_NAME} INTERFACE
-    MEMORY_MANAGER_GARBAGE_BUFFER_SIZE=${MEMORY_MANAGER_GARBAGE_BUFFER_SIZE}
-    MEMORY_MANAGER_EXPECTED_THREAD_NUM=${MEMORY_MANAGER_EXPECTED_THREAD_NUM}
-  )
   target_include_directories(${PROJECT_NAME} INTERFACE
     "${CMAKE_CURRENT_SOURCE_DIR}/include"
   )
   target_link_libraries(${PROJECT_NAME} INTERFACE
     Threads::Threads
+    dbgroup::cpp_utility
   )
 
   if(${MEMORY_MANAGER_USE_PERSISTENT_MEMORY})
     find_package(PkgConfig)
-    pkg_check_modules(LIBPMEMOBJ++ REQUIRED libpmemobj++)
+    pkg_check_modules(LIBPMEM REQUIRED libpmem)
+    pkg_check_modules(LIBPMEMOBJ REQUIRED libpmemobj)
 
     target_compile_definitions(${PROJECT_NAME} INTERFACE
       MEMORY_MANAGER_USE_PERSISTENT_MEMORY=${MEMORY_MANAGER_USE_PERSISTENT_MEMORY}
     )
     target_include_directories(${PROJECT_NAME} INTERFACE
-      "${LIBPMEMOBJ++_INCLUDE_DIRS}"
+      "${LIBPMEM_INCLUDE_DIRS}"
+      "${LIBPMEMOBJ_INCLUDE_DIRS}"
     )
     target_link_libraries(${PROJECT_NAME} INTERFACE
-      ${LIBPMEMOBJ++_LIBRARIES}
+      ${LIBPMEM_LIBRARIES}
+      ${LIBPMEMOBJ_LIBRARIES}
     )
   endif()
 endif()

@@ -28,6 +28,7 @@
   // extra words for spell checking
   "cSpell.words": [
     "alignas",
+    "alloc",
     "cerr",
     "cout",
     "ctest",
@@ -43,16 +44,19 @@
     "JPNP",
     "KAKENHI",
     "libjemalloc",
+    "libpmem",
     "LIBPMEMOBJ",
     "MIMALLOC",
     "NOLINT",
     "nullptr",
+    "PMDK",
     "pmem",
     "PMEMOBJ",
     "pthread",
     "STREQ",
     "struct",
-    "Wextra"
+    "Wextra",
+    "zalloc"
   ],
   "files.associations": {
     "fstream": "cpp",

@@ -59,7 +59,6 @@ class GarbageListFixture : public ::testing::Test
    *##################################################################################*/
 
   using GarbageList_t = GarbageList<SharedPtrTarget>;
-  using GarbageNode_t = GarbageNode<SharedPtrTarget>;
 
   /*####################################################################################
    * Test setup/teardown
@@ -69,16 +68,14 @@ class GarbageListFixture : public ::testing::Test
   SetUp() override
   {
     current_epoch_ = 1;
-    tail_ = new GarbageList_t{};
-    garbage_node_ = new GarbageNode_t{tail_, nullptr};
+    list_ = std::make_unique<GarbageList_t>();
   }
 
   void
   TearDown() override
   {
-    ClearGarbage(kMaxLong);
-    delete garbage_node_;
-    delete tail_;
+    list_->ClearGarbage(kMaxLong);
+    list_.reset();
   }
 
   /*####################################################################################
@@ -90,24 +87,16 @@ class GarbageListFixture : public ::testing::Test
   {
     for (size_t i = 0; i < n; ++i) {
       auto *target = new Target{0};
-      auto *page = garbage_node_->GetPageIfPossible();
 
-      std::shared_ptr<Target> *garbage{};
+      auto *page = list_->GetPageIfPossible();
       if (page == nullptr) {
-        garbage = new std::shared_ptr<Target>{target};
-      } else {
-        garbage = new (page) std::shared_ptr<Target>{target};
+        page = ::operator new(sizeof(std::shared_ptr<Target>));
       }
+      auto *garbage = new (page) std::shared_ptr<Target>{target};
 
-      tail_ = GarbageList_t::AddGarbage(tail_, current_epoch_.load(), garbage);
+      list_->AddGarbage(current_epoch_.load(), garbage);
       references_.emplace_back(*garbage);
     }
-  }
-
-  void
-  ClearGarbage(const size_t epoch_value)
-  {
-    GarbageNode_t::ClearGarbage(epoch_value, &node_mtx_, &garbage_node_);
   }
 
   void
@@ -125,8 +114,8 @@ class GarbageListFixture : public ::testing::Test
    * Internal constants
    *##################################################################################*/
 
-  static constexpr size_t kSmallNum = kGarbageBufferSize / 2;
-  static constexpr size_t kLargeNum = kGarbageBufferSize * 2;
+  static constexpr size_t kSmallNum = GarbageList_t::kBufferSize / 2;
+  static constexpr size_t kLargeNum = GarbageList_t::kBufferSize * 4;
   static constexpr size_t kMaxLong = std::numeric_limits<size_t>::max();
 
   /*####################################################################################
@@ -137,11 +126,7 @@ class GarbageListFixture : public ::testing::Test
 
   std::vector<std::weak_ptr<Target>> references_{};
 
-  GarbageList_t *tail_{nullptr};
-
-  std::mutex node_mtx_{};
-
-  GarbageNode_t *garbage_node_{nullptr};
+  std::unique_ptr<GarbageList_t> list_{};
 };
 
 /*######################################################################################
@@ -151,7 +136,7 @@ class GarbageListFixture : public ::testing::Test
 TEST_F(GarbageListFixture, ClearGarbageWithoutProtectedEpochReleaseAllGarbage)
 {
   AddGarbage(kLargeNum);
-  ClearGarbage(kMaxLong);
+  list_->ClearGarbage(kMaxLong);
 
   CheckGarbage(kLargeNum);
 }
@@ -163,14 +148,14 @@ TEST_F(GarbageListFixture, ClearGarbageWithProtectedEpochKeepProtectedGarbage)
   AddGarbage(kLargeNum);
   current_epoch_ = protected_epoch;
   AddGarbage(kLargeNum);
-  ClearGarbage(protected_epoch);
+  list_->ClearGarbage(protected_epoch);
 
   CheckGarbage(kLargeNum);
 }
 
 TEST_F(GarbageListFixture, GetPageIfPossibleWithoutPagesReturnNullptr)
 {
-  auto *page = garbage_node_->GetPageIfPossible();
+  auto *page = list_->GetPageIfPossible();
 
   EXPECT_EQ(nullptr, page);
 }
@@ -178,14 +163,14 @@ TEST_F(GarbageListFixture, GetPageIfPossibleWithoutPagesReturnNullptr)
 TEST_F(GarbageListFixture, GetPageIfPossibleWithPagesReturnReusablePage)
 {
   AddGarbage(kLargeNum);
-  ClearGarbage(kMaxLong);
+  list_->ClearGarbage(kMaxLong);
 
   for (size_t i = 0; i < kLargeNum; ++i) {
-    auto *page = garbage_node_->GetPageIfPossible();
+    auto *page = list_->GetPageIfPossible();
     EXPECT_NE(nullptr, page);
     ::operator delete(page);
   }
-  EXPECT_EQ(nullptr, garbage_node_->GetPageIfPossible());
+  EXPECT_EQ(nullptr, list_->GetPageIfPossible());
 }
 
 TEST_F(GarbageListFixture, AddAndClearGarbageWithMultiThreadsReleaseAllGarbage)
@@ -198,16 +183,13 @@ TEST_F(GarbageListFixture, AddAndClearGarbageWithMultiThreadsReleaseAllGarbage)
       AddGarbage(1);
       current_epoch_.fetch_add(1);
     }
-    garbage_node_->Expire();
   }};
 
   std::thread cleaner{[&]() {
     while (is_running.load()) {
-      ClearGarbage(current_epoch_.load() - 1);
+      list_->ClearGarbage(current_epoch_.load() - 1);
     }
-    do {
-      ClearGarbage(kMaxLong);
-    } while (garbage_node_ != nullptr);
+    list_->ClearGarbage(kMaxLong);
   }};
 
   loader.join();
@@ -215,7 +197,6 @@ TEST_F(GarbageListFixture, AddAndClearGarbageWithMultiThreadsReleaseAllGarbage)
   cleaner.join();
 
   CheckGarbage(kLoopNum);
-  tail_ = nullptr;
 }
 
 }  // namespace dbgroup::memory::component::test

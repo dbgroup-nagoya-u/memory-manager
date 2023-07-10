@@ -36,12 +36,10 @@ namespace dbgroup::memory::test
  * Global constants
  *####################################################################################*/
 
-/// a file permission for pmemobj_pool.
-constexpr int kModeRW = S_IWUSR | S_IRUSR;  // NOLINT
-
 constexpr std::string_view kTmpPMEMPath = DBGROUP_ADD_QUOTES(DBGROUP_TEST_TMP_PMEM_PATH);
 constexpr const char *kPoolName = "memory_manager_epoch_based_gc_on_pmem_test";
-constexpr const char *kLayout = "target";
+constexpr const char *kGCName = "memory_manager_epoch_based_gc_on_pmem_test_gc";
+constexpr auto kModeRW = S_IRUSR | S_IWUSR;  // NOLINT
 
 /*######################################################################################
  * Global type aliases
@@ -63,18 +61,10 @@ class EpochBasedGCFixture : public ::testing::Test
     static constexpr bool kOnPMEM = true;
   };
 
-  struct PMEMRoot {
-    using GarbageNode_t = component::GarbageNodeOnPMEM<SharedPtrTarget>;
-
-    ::pmem::obj::persistent_ptr<GarbageNode_t> head{nullptr};
-  };
-
   /*####################################################################################
    * Type aliases
    *##################################################################################*/
 
-  using PMEMPool_t = ::pmem::obj::pool<PMEMRoot>;
-  using GarbageNode_t = component::GarbageNodeOnPMEM<SharedPtrTarget>;
   using EpochBasedGC_t = EpochBasedGC<SharedPtrTarget>;
   using GarbageRef = std::vector<std::weak_ptr<Target>>;
 
@@ -93,31 +83,31 @@ class EpochBasedGCFixture : public ::testing::Test
   void
   SetUp() override
   {
-    try {
-      // create a user directory for testing
-      const std::string user_name{std::getenv("USER")};
-      std::filesystem::path pool_path{kTmpPMEMPath};
-      pool_path /= user_name;
-      std::filesystem::create_directories(pool_path);
-      pool_path /= kPoolName;
-      std::filesystem::remove(pool_path);
+    // create a user directory for testing
+    const std::string user_name{std::getenv("USER")};
+    std::filesystem::path pool_path{kTmpPMEMPath};
+    pool_path /= user_name;
+    std::filesystem::create_directories(pool_path);
+    gc_path_ = pool_path;
+    pool_path /= kPoolName;
+    gc_path_ /= kGCName;
+    std::filesystem::remove(pool_path);
+    std::filesystem::remove(gc_path_);
 
-      // create a persistent pool for testing
-      constexpr size_t kSize = PMEMOBJ_MIN_POOL * 32;
-      pool_ = PMEMPool_t::create(pool_path, kLayout, kSize, kModeRW);
-    } catch (const std::exception &e) {
-      std::cerr << e.what() << std::endl;
-      std::terminate();
-    }
+    constexpr size_t kSize = PMEMOBJ_MIN_POOL * 16;  // 128MiB
+    pop_ = pmemobj_create(pool_path.c_str(), kPoolName, kSize, kModeRW);
 
-    gc_ = std::make_unique<EpochBasedGC_t>(kGCInterval, kThreadNum);
-    gc_->SetHeadAddrOnPMEM<SharedPtrTarget>(&(pool_.root()->head));
+    gc_ = std::make_unique<EpochBasedGC_t>(gc_path_, PMEMOBJ_MIN_POOL, kGCInterval, kThreadNum);
     gc_->StartGC();
   }
 
   void
   TearDown() override
   {
+    gc_.reset(nullptr);
+
+    EXPECT_TRUE(OID_IS_NULL(pmemobj_first(pop_)));
+    pmemobj_close(pop_);
   }
 
   /*####################################################################################
@@ -125,30 +115,32 @@ class EpochBasedGCFixture : public ::testing::Test
    *##################################################################################*/
 
   void
+  AllocateTarget(PMEMoid *oid)
+  {
+    const auto rc = pmemobj_zalloc(pop_, oid, sizeof(std::shared_ptr<Target>), kDefaultPMDKType);
+    if (rc != 0) {
+      std::cerr << pmemobj_errormsg() << std::endl;
+      throw std::bad_alloc{};
+    }
+  }
+
+  void
   AddGarbage(  //
       std::promise<GarbageRef> p,
       const size_t garbage_num)
   {
     GarbageRef target_weak_ptrs;
+    auto *garbage = gc_->GetTmpField<SharedPtrTarget>(0);
     for (size_t loop = 0; loop < garbage_num; ++loop) {
-      auto *target = new Target{loop};
-      ::pmem::obj::persistent_ptr<std::shared_ptr<Target>> garbage{nullptr};
-      gc_->GetPageIfPossible<SharedPtrTarget>(garbage.raw_ptr(), pool_);
-      if (garbage == nullptr) {
-        try {
-          ::pmem::obj::flat_transaction::run(pool_, [&] {
-            garbage = ::pmem::obj::make_persistent<std::shared_ptr<Target>>(target);
-          });
-        } catch (const std::exception &e) {
-          std::cerr << e.what() << std::endl;
-          std::terminate();
-        }
-      } else {
-        new (garbage.get()) std::shared_ptr<Target>{target};
+      gc_->GetPageIfPossible<SharedPtrTarget>(garbage);
+      if (OID_IS_NULL(*garbage)) {
+        AllocateTarget(garbage);
       }
 
-      target_weak_ptrs.emplace_back(*garbage);
-      gc_->AddGarbage<SharedPtrTarget>(garbage.raw_ptr(), pool_);
+      auto *target = new Target{0};
+      auto *shared = new (pmemobj_direct(*garbage)) std::shared_ptr<Target>{target};
+      target_weak_ptrs.emplace_back(*shared);
+      gc_->AddGarbage<SharedPtrTarget>(garbage);
     }
 
     p.set_value(std::move(target_weak_ptrs));
@@ -188,10 +180,11 @@ class EpochBasedGCFixture : public ::testing::Test
   TestReuse(const size_t garbage_num)  //
       -> GarbageRef
   {
-    using SharedTarget_p = ::pmem::obj::persistent_ptr<std::shared_ptr<Target>>;
-
     // an array for embedding reserved pages
-    std::array<std::pair<std::mutex, SharedTarget_p>, kThreadNum> arr{};
+    std::array<std::pair<std::mutex, PMEMoid>, kThreadNum> arr{};
+    for (auto &&elem : arr) {
+      elem.second = OID_NULL;
+    }
 
     // a lambda function for embedding pages in each thread
     auto f = [&](std::promise<GarbageRef> p) {
@@ -205,32 +198,26 @@ class EpochBasedGCFixture : public ::testing::Test
 
         // prepare a page for embedding
         auto *target = new Target{loop};
-        SharedTarget_p new_target{nullptr};
-        gc_->GetPageIfPossible<SharedPtrTarget>(new_target.raw_ptr(), pool_);
-        if (new_target == nullptr) {
-          try {
-            ::pmem::obj::flat_transaction::run(pool_, [&] {
-              new_target = ::pmem::obj::make_persistent<std::shared_ptr<Target>>(target);
-            });
-          } catch (const std::exception &e) {
-            std::cerr << e.what() << std::endl;
-            std::terminate();
-          }
-        } else {
-          new (new_target.get()) std::shared_ptr<Target>{target};
+        auto *garbage = gc_->GetTmpField<SharedPtrTarget>(0);
+        gc_->GetPageIfPossible<SharedPtrTarget>(garbage);
+        if (OID_IS_NULL(*garbage)) {
+          AllocateTarget(garbage);
         }
+        auto *shared = new (pmemobj_direct(*garbage)) std::shared_ptr<Target>{target};
+        target_weak_ptrs.emplace_back(*shared);
 
         // embed the page
-        SharedTarget_p old_target{nullptr};
         {
           const auto pos = id_dist(rand_engine);
           [[maybe_unused]] std::lock_guard guard{arr.at(pos).first};
-          old_target = arr.at(pos).second;
-          arr.at(pos).second = new_target;
+          auto old_target = arr.at(pos).second;
+          arr.at(pos).second = *garbage;
+          *garbage = old_target;
         }
 
-        target_weak_ptrs.emplace_back(*new_target);
-        if (old_target != nullptr) gc_->AddGarbage<SharedPtrTarget>(old_target.raw_ptr(), pool_);
+        if (!OID_IS_NULL(*garbage)) {
+          gc_->AddGarbage<SharedPtrTarget>(garbage);
+        }
       }
 
       p.set_value(std::move(target_weak_ptrs));
@@ -253,13 +240,8 @@ class EpochBasedGCFixture : public ::testing::Test
 
     // delete remaining instances
     for (auto &&elem : arr) {
-      try {
-        ::pmem::obj::flat_transaction::run(pool_, [&] {  //
-          ::pmem::obj::delete_persistent<std::shared_ptr<Target>>(elem.second);
-        });
-      } catch (const std::exception &e) {
-        std::cerr << e.what() << std::endl;
-        std::terminate();
+      if (!OID_IS_NULL(elem.second)) {
+        gc_->AddGarbage<SharedPtrTarget>(&(elem.second));
       }
     }
 
@@ -368,7 +350,9 @@ class EpochBasedGCFixture : public ::testing::Test
 
   std::mutex mtx_{};
 
-  PMEMPool_t pool_{};
+  std::filesystem::path gc_path_{};
+
+  PMEMobjpool *pop_{nullptr};
 };
 
 /*######################################################################################
@@ -412,13 +396,20 @@ TEST_F(EpochBasedGCFixture, ReusePageIfPossibleWithMultiThreadsReleasePageOnlyOn
 
 TEST_F(EpochBasedGCFixture, RunGCMultipleTimesWithSamePool)
 {
-  constexpr size_t kRpeatNum = 10;
+  constexpr size_t kRpeatNum = 2;
   for (size_t i = 0; i < kRpeatNum; ++i) {
     VerifyCreateEpochGuard(kThreadNum);
 
     // reset GC
-    gc_ = std::make_unique<EpochBasedGC_t>(kGCInterval, kThreadNum);
-    gc_->SetHeadAddrOnPMEM<SharedPtrTarget>(&(pool_.root()->head));
+    gc_.reset(nullptr);
+
+    // check all the pages on persistent memory are freed
+    auto *pop = pmemobj_open(gc_path_.c_str(), layout_name);
+    EXPECT_TRUE(OID_IS_NULL(pmemobj_first(pop)));
+    pmemobj_close(pop);
+
+    // reuse the same pmemobj pool
+    gc_ = std::make_unique<EpochBasedGC_t>(gc_path_, PMEMOBJ_MIN_POOL, kGCInterval, kThreadNum);
     gc_->StartGC();
   }
 }

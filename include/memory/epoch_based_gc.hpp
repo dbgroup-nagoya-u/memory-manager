@@ -17,9 +17,13 @@
 #ifndef MEMORY_EPOCH_BASED_GC_HPP
 #define MEMORY_EPOCH_BASED_GC_HPP
 
+// system headers
+#include <sys/stat.h>
+
 // C++ standard libraries
 #include <atomic>
 #include <chrono>
+#include <filesystem>
 #include <functional>
 #include <limits>
 #include <memory>
@@ -29,22 +33,42 @@
 #include <utility>
 #include <vector>
 
+// external sources
+#include "thread/id_manager.hpp"
+
 // local sources
-#include "component/epoch_guard.hpp"
-#include "component/garbage_list.hpp"
-#include "epoch_manager.hpp"
-#include "utility.hpp"
+#include "memory/component/epoch_guard.hpp"
+#include "memory/component/garbage_list.hpp"
+#include "memory/epoch_manager.hpp"
+#include "memory/utility.hpp"
 
 #ifdef MEMORY_MANAGER_USE_PERSISTENT_MEMORY
-#include "component/garbage_list_on_pmem.hpp"
+#include "memory/component/garbage_list_on_pmem.hpp"
 #endif
 
 namespace dbgroup::memory
 {
+/**
+ * @brief A default GC information.
+ *
+ */
+struct DefaultTarget {
+  /// Use the void type and do not perform destructors.
+  using T = void;
+
+  /// Do not reuse pages after GC (release immediately).
+  static constexpr bool kReusePages = false;
+
 #ifdef MEMORY_MANAGER_USE_PERSISTENT_MEMORY
-template <class Target>
-using GarbageNodeOnPMEM = component::GarbageNodeOnPMEM<Target>;
+  /// Default targets are on volatile memory.
+  static constexpr bool kOnPMEM = false;
 #endif
+
+  /// Use the standard delete function to release pages.
+  static const inline std::function<void(void *)> deleter = [](void *ptr) {
+    ::operator delete(ptr);
+  };
+};
 
 /**
  * @brief A class to manage garbage collection.
@@ -58,22 +82,19 @@ class EpochBasedGC
    * Type aliases
    *##################################################################################*/
 
-  // forward declaration for default parameters.
-  struct DefaultTarget;
-
+  using IDManager = ::dbgroup::thread::IDManager;
   using Epoch = component::Epoch;
   using EpochGuard = component::EpochGuard;
   using Clock_t = ::std::chrono::high_resolution_clock;
 
-  template <class T>
-  using GarbageList = component::GarbageList<T>;
-
+#ifndef MEMORY_MANAGER_USE_PERSISTENT_MEMORY
   template <class Target>
-  using GarbageNode = component::GarbageNode<Target>;
-
-#ifdef MEMORY_MANAGER_USE_PERSISTENT_MEMORY
-  template <class T>
-  using GarbageListOnPMEM = component::GarbageListOnPMEM<T>;
+  using GarbageList = component::GarbageList<Target>;
+#else
+  template <class Target>
+  using GarbageList = std::conditional_t<Target::kOnPMEM,  //
+                                         component::GarbageListOnPMEM<Target>,
+                                         component::GarbageList<Target>>;
 #endif
 
  public:
@@ -92,8 +113,46 @@ class EpochBasedGC
       const size_t gc_thread_num = kDefaultGCThreadNum)
       : gc_interval_{gc_interval_micro_sec}, gc_thread_num_{gc_thread_num}
   {
+    InitializeGarbageLists<DefaultTarget, GCTargets...>();
     cleaner_threads_.reserve(gc_thread_num_);
   }
+
+#ifdef MEMORY_MANAGER_USE_PERSISTENT_MEMORY
+  /**
+   * @brief Construct a new instance.
+   *
+   * @param pmem_path the path to a pmemobj pool for GC.
+   * @param size_per_thread the memory capacity per thread.
+   * @param gc_interval_micro_sec the duration of interval for GC.
+   * @param gc_thread_num the maximum number of threads to perform GC.
+   */
+  explicit EpochBasedGC(  //
+      const std::string &pmem_path,
+      const size_t size_per_thread = PMEMOBJ_MIN_POOL,
+      const size_t gc_interval_micro_sec = kDefaultGCTime,
+      const size_t gc_thread_num = kDefaultGCThreadNum)
+      : gc_interval_{gc_interval_micro_sec}, gc_thread_num_{gc_thread_num}
+  {
+    const auto *path = pmem_path.c_str();
+    if (std::filesystem::exists(pmem_path)) {
+      pop_ = pmemobj_open(path, layout_name);
+    } else {
+      constexpr auto kModeRW = S_IRUSR | S_IWUSR;  // NOLINT
+      const size_t size = size_per_thread * kMaxThreadNum + PMEMOBJ_MIN_POOL;
+      pop_ = pmemobj_create(path, layout_name, size, kModeRW);
+    }
+    if (pop_ == nullptr) {
+      std::cerr << pmemobj_errormsg() << std::endl;
+      throw std::exception{};
+    }
+
+    auto &&root = pmemobj_root(pop_, sizeof(PMEMoid) * GetTargetNumOnPMEM<GCTargets...>());
+    root_ = reinterpret_cast<PMEMoid *>(pmemobj_direct(root));
+
+    InitializeGarbageLists<DefaultTarget, GCTargets...>();
+    cleaner_threads_.reserve(gc_thread_num_);
+  }
+#endif
 
   EpochBasedGC(const EpochBasedGC &) = delete;
   EpochBasedGC(EpochBasedGC &&) = delete;
@@ -114,6 +173,12 @@ class EpochBasedGC
   {
     // stop garbage collection
     StopGC();
+
+#ifdef MEMORY_MANAGER_USE_PERSISTENT_MEMORY
+    if (pop_ != nullptr) {
+      pmemobj_close(pop_);
+    }
+#endif
   }
 
   /*####################################################################################
@@ -143,29 +208,8 @@ class EpochBasedGC
   void
   AddGarbage(const void *garbage_ptr)
   {
-    using T = typename Target::T;
-    using GarbageNode_t = GarbageNode<Target>;
-    using TLSList_t = TLSList<GarbageNode_t>;
-    using TLSNode_t = TLSNode<GarbageNode_t>;
-
-    auto *tls_list = GetTLSGarbageList<Target, GCTargets...>();
-    if (tls_list->use_count() <= 1) {
-      // register the garbage list with GC
-      auto *garbage_list = new GarbageList<Target>{};
-      auto [garbage_head, mtx_p] = GetGarbageNodeHead<Target>();
-      mtx_p->lock();
-      auto *garbage_node = new GarbageNode_t{garbage_list, *garbage_head};
-      *garbage_head = garbage_node;
-      mtx_p->unlock();
-
-      // register the TLS information with GC
-      *tls_list = std::make_shared<TLSList_t>(garbage_list, garbage_node);
-      TLSNode_t::AddNewNode(tls_list, GetTLSNodeHead<Target>());
-    }
-
-    // the current thread has already joined GC
-    auto *ptr = static_cast<T *>(const_cast<void *>(garbage_ptr));
-    (*tls_list)->AddGarbage(epoch_manager_.GetCurrentEpoch(), ptr);
+    auto *ptr = static_cast<typename Target::T *>(const_cast<void *>(garbage_ptr));
+    GetGarbageList<Target>()->AddGarbage(epoch_manager_.GetCurrentEpoch(), ptr);
   }
 
   /**
@@ -180,10 +224,7 @@ class EpochBasedGC
   GetPageIfPossible()  //
       -> void *
   {
-    auto *tls_list = GetTLSGarbageList<Target, GCTargets...>();
-
-    if (tls_list->use_count() <= 1) return nullptr;
-    return (*tls_list)->GetPageIfPossible();
+    return GetGarbageList<Target>()->GetPageIfPossible();
   }
 
 #ifdef MEMORY_MANAGER_USE_PERSISTENT_MEMORY
@@ -191,79 +232,61 @@ class EpochBasedGC
    * Public utility functions for persistent memory
    *##################################################################################*/
 
+  /**
+   * @brief Get the temporary field for memory allocation.
+   *
+   * @tparam Target a class for representing target garbage.
+   * @param i the position of fields (0 <= i <= 13).
+   * @return the address of the specified temporary field.
+   */
   template <class Target>
-  void
-  SetHeadAddrOnPMEM(::pmem::obj::persistent_ptr<GarbageNodeOnPMEM<Target>> *head_addr)
+  auto
+  GetTmpField(const size_t i)  //
+      -> PMEMoid *
   {
-    static_assert(Target::kOnPMEM);
-    std::get<GarbageHead<Target>>(garbage_heads_).SetHead(head_addr);
+    return GetGarbageList<Target>()->GetTmpField(i);
+  }
+
+  /**
+   * @brief Get the unreleased temporary fields of each thread.
+   *
+   * @tparam Target a class for representing target garbage.
+   * @return unreleased temporary fields if exist.
+   */
+  template <class Target>
+  auto
+  GetUnreleasedFields()  //
+      -> std::vector<std::vector<PMEMoid *>>
+  {
+    return GetRemainingPMEMoids<Target, GCTargets...>();
   }
 
   /**
    * @brief Add a new garbage instance.
    *
+   * @tparam Target a class for representing target garbage.
    * @param garbage_ptr a pointer to a target garbage.
    */
-  template <class Target, class PMEMPool>
+  template <class Target>
   void
-  AddGarbage(  //
-      PMEMoid *garbage_ptr,
-      PMEMPool &pool)
+  AddGarbage(PMEMoid *ptr)
   {
     static_assert(Target::kOnPMEM);
 
-    using GarbageNode_t = GarbageNodeOnPMEM<Target>;
-    using GarbageList_t = typename GarbageNode_t::GarbageList_t;
-    using GarbageList_p = typename GarbageNode_t::GarbageList_p;
-    using GarbageNode_p = typename GarbageNode_t::GarbageNode_p;
-    using TLSList_t = TLSList<GarbageNode_t>;
-    using TLSNode_t = TLSNode<GarbageNode_t>;
-
-    auto *tls_list = GetTLSGarbageList<Target, GCTargets...>();
-    if (tls_list->use_count() <= 1) {
-      GarbageList_p garb_list{nullptr};
-      GarbageNode_p garb_node{nullptr};
-
-      // register the garbage list with GC
-      try {
-        ::pmem::obj::transaction::run(pool, [&] {
-          auto [garb_head, mtx_p] = GetGarbageNodeHead<Target>();
-          garb_list = ::pmem::obj::make_persistent<GarbageList_t>();
-          mtx_p->lock();
-          garb_node = ::pmem::obj::make_persistent<GarbageNode_t>(garb_list, *garb_head);
-          *garb_head = std::move(garb_node);
-          mtx_p->unlock();
-        });
-      } catch (const std::exception &e) {
-        std::cerr << e.what() << std::endl;
-        std::terminate();
-      }
-
-      // register the TLS information with GC
-      *tls_list = std::make_shared<TLSList_t>(garb_list, garb_node);
-      TLSNode_t::AddNewNode(tls_list, GetTLSNodeHead<Target>());
-    }
-
-    // the current thread has already joined GC
-    (*tls_list)->AddGarbage(epoch_manager_.GetCurrentEpoch(), garbage_ptr, pool);
+    GetGarbageList<Target>()->AddGarbage(epoch_manager_.GetCurrentEpoch(), ptr);
   }
 
   /**
    * @brief Reuse a released memory page if it exists.
    *
+   * @tparam Target a class for representing target garbage.
    * @param out_oid an address to be stored a reusable page.
-   * @param pool a pool object for managing persistent memory.
    */
-  template <class Target, class PMEMPool>
+  template <class Target>
   void
-  GetPageIfPossible(  //
-      PMEMoid *out_oid,
-      PMEMPool &pool)
+  GetPageIfPossible(PMEMoid *out_oid)
   {
-    auto *tls_list = GetTLSGarbageList<Target, GCTargets...>();
-
-    if (tls_list->use_count() <= 1) return;
-    (*tls_list)->GetPageIfPossible(out_oid, pool);
+    GetGarbageList<Target>()->GetPageIfPossible(out_oid);
   }
 #endif
 
@@ -302,512 +325,205 @@ class EpochBasedGC
 
     gc_is_running_.store(false, std::memory_order_relaxed);
     gc_thread_.join();
+
+    DestroyGarbageLists<DefaultTarget, GCTargets...>();
     return true;
   }
 
  private:
   /*####################################################################################
-   * Internal utility functions for type aliases
+   * Internal constants
+   *##################################################################################*/
+
+  /// The expected maximum number of threads.
+  static constexpr size_t kMaxThreadNum = ::dbgroup::thread::kMaxThreadNum;
+
+  /*####################################################################################
+   * Internal utilities for initialization and finalization
    *##################################################################################*/
 
   /**
    * @brief A dummy function for creating type aliases.
    *
    */
-  template <class Target>
+  template <class Target, class... Tails>
   static auto
-  ConvToNodeT()
+  ConvToTuple()
   {
-#ifndef MEMORY_MANAGER_USE_PERSISTENT_MEMORY
-    using GarbageNode_t = GarbageNode<Target>;
-#else
-    using GarbageNode_t =
-        std::conditional_t<Target::kOnPMEM, GarbageNodeOnPMEM<Target>, GarbageNode<Target>>;
-#endif
-    GarbageNode_t *dummy{nullptr};
-    return dummy;
+    using ListsPtr = std::unique_ptr<GarbageList<Target>[]>;
+
+    if constexpr (sizeof...(Tails) > 0) {
+      return std::tuple_cat(std::tuple<ListsPtr>{}, ConvToTuple<Tails...>());
+    } else {
+      return std::tuple<ListsPtr>{};
+    }
   }
 
-  /*####################################################################################
-   * Internal classes
-   *##################################################################################*/
-
   /**
-   * @brief A default GC information.
+   * @brief Create the space for garbage lists for all the target garbage.
    *
+   * @tparam Target the current class in garbage targets.
+   * @tparam Tails the remaining classes in garbage targets.
    */
-  struct DefaultTarget {
-    /// Use the void type and do not perform destructors.
-    using T = void;
+  template <class Target, class... Tails>
+  void
+  InitializeGarbageLists()
+  {
+    using ListsPtr = std::unique_ptr<GarbageList<Target>[]>;
 
-    /// Do not reuse pages after GC (release immediately).
-    static constexpr bool kReusePages = false;
+    auto &lists = std::get<ListsPtr>(garbage_lists_);
+    lists.reset(new GarbageList<Target>[kMaxThreadNum]);
 
 #ifdef MEMORY_MANAGER_USE_PERSISTENT_MEMORY
-    /// Default targets are on volatile memory.
-    static constexpr bool kOnPMEM = false;
-#endif
+    if constexpr (Target::kOnPMEM) {
+      constexpr size_t kPos = GetPositionOnPMEM<Target, GCTargets...>();
+      auto *oid = &(root_[kPos]);  // NOLINT
+      if (OID_IS_NULL(*oid)) {
+        component::AllocatePmem(pop_, oid, sizeof(PMEMoid) * kMaxThreadNum);
+      }
 
-    /// Use the standard delete function to release pages.
-    static const inline std::function<void(void *)> deleter = [](void *ptr) {
-      ::operator delete(ptr);
-    };
-  };
-
-  /**
-   * @brief A class for retaining thread-local garbage lists.
-   *
-   * @tparam DataNode a class for representing garbage nodes to be contained.
-   */
-  template <class DataNode>
-  class TLSList
-  {
-   public:
-    /*##################################################################################
-     * Type aliases
-     *################################################################################*/
-
-    using GarbageList_t = typename DataNode::GarbageList_t;
-    using GarbageList_p = typename DataNode::GarbageList_p;
-    using GarbageNode_p = typename DataNode::GarbageNode_p;
-    using T = typename DataNode::GarbageList_t::T;
-
-    /*##################################################################################
-     * Public constructors and assignment operators
-     *################################################################################*/
-
-    /**
-     * @brief Construct a new TLSList object.
-     *
-     * @param list an initial garbage list.
-     * @param node the corresponding garbage node.
-     */
-    TLSList(  //
-        GarbageList_p list,
-        GarbageNode_p node)
-        : tail_{std::move(list)}, data_node_{std::move(node)}
-    {
-    }
-
-    TLSList(const TLSList &) = delete;
-    TLSList(TLSList &&) = delete;
-
-    auto operator=(const TLSList &) -> TLSList & = delete;
-    auto operator=(TLSList &&) -> TLSList & = delete;
-
-    /*##################################################################################
-     * Public destructors
-     *################################################################################*/
-
-    ~TLSList() = default;
-
-    /*##################################################################################
-     * Public utilities for worker threads
-     *################################################################################*/
-
-    /**
-     * @brief Add a new garbage instance.
-     *
-     * @param epoch an epoch value when a garbage is added.
-     * @param garbage_ptr a pointer to a target garbage.
-     */
-    void
-    AddGarbage(  //
-        const size_t epoch,
-        T *garbage_ptr)
-    {
-      tail_ = GarbageList_t::AddGarbage(tail_, epoch, garbage_ptr);
-    }
-
-    /**
-     * @brief Reuse a released memory page if it exists in the list.
-     *
-     * @retval nullptr if the list does not have reusable pages.
-     * @retval a memory page.
-     */
-    auto
-    GetPageIfPossible()  //
-        -> void *
-    {
-      return data_node_->GetPageIfPossible();
-    }
-
-#ifdef MEMORY_MANAGER_USE_PERSISTENT_MEMORY
-    /**
-     * @brief Add a new garbage instance.
-     *
-     * @param epoch an epoch value when a garbage is added.
-     * @param garbage_ptr a pointer to a target garbage.
-     */
-    template <class PMEMPool>
-    void
-    AddGarbage(  //
-        const size_t epoch,
-        PMEMoid *garbage_ptr,
-        PMEMPool &pool)
-    {
-      tail_ = GarbageList_t::AddGarbage(tail_, epoch, garbage_ptr, pool);
-    }
-
-    /**
-     * @brief Reuse a released memory page if it exists in the list.
-     *
-     * @param out_oid an address to be stored a reusable page.
-     * @param pool a pool object for managing persistent memory.
-     */
-    template <class PMEMPool>
-    void
-    GetPageIfPossible(  //
-        PMEMoid *out_oid,
-        PMEMPool &pool)
-    {
-      return data_node_->GetPageIfPossible(out_oid, pool);
-    }
-#endif
-
-    /*##################################################################################
-     * Public utilities for a GC thread
-     *################################################################################*/
-
-    /**
-     * @brief Expire the corresponding garbage node for destruction.
-     *
-     */
-    void
-    Expire()
-    {
-      data_node_->Expire();
-    }
-
-   private:
-    /*##################################################################################
-     * Internal member variables
-     *################################################################################*/
-
-    /// A garbage list to be added new garbage.
-    GarbageList_p tail_{nullptr};
-
-    /// The corresponding garbage node.
-    GarbageNode_p data_node_{nullptr};
-  };
-
-  /**
-   * @brief A class for representing linked-list nodes.
-   *
-   * @tparam DataNode a class for representing garbage nodes to be contained.
-   */
-  template <class DataNode>
-  class TLSNode
-  {
-   public:
-    /*##################################################################################
-     * Type aliases
-     *################################################################################*/
-
-    using TLSList_t = TLSList<DataNode>;
-
-    /*##################################################################################
-     * Public constructors and assignment operators
-     *################################################################################*/
-
-    /**
-     * @brief Construct a new TLSNode object.
-     *
-     * @param list the corresponding thread-local garbage list.
-     */
-    explicit TLSNode(std::shared_ptr<TLSList_t> list) : list_{std::move(list)} {}
-
-    TLSNode(const TLSNode &) = delete;
-    TLSNode(TLSNode &&) = delete;
-
-    auto operator=(const TLSNode &) -> TLSNode & = delete;
-    auto operator=(TLSNode &&) -> TLSNode & = delete;
-
-    /*##################################################################################
-     * Public destructors
-     *################################################################################*/
-
-    ~TLSNode() = default;
-
-    /*##################################################################################
-     * Public utilities for worker threads
-     *################################################################################*/
-
-    /**
-     * @brief Add a new node to a given linked list atomically.
-     *
-     * @param list a garbage list to be added.
-     * @param head the head of a linked list.
-     */
-    static void
-    AddNewNode(  //
-        const std::shared_ptr<TLSList_t> *list,
-        std::atomic<TLSNode *> *head)
-    {
-      auto *node = new TLSNode{*list};
-      auto *next = head->load(std::memory_order_relaxed);
-      do {
-        node->next_ = next;
-      } while (!head->compare_exchange_weak(next, node, std::memory_order_release));
-    }
-
-    /*##################################################################################
-     * Public utilities for a GC thread
-     *################################################################################*/
-
-    /**
-     * @brief Remove expired nodes from a linked list.
-     *
-     * @param node_p the address of the head pointer.
-     * @param force_expire expire all the nodes forcefully if true.
-     * @retval true if all the node are removed.
-     * @retval false otherwise.
-     */
-    static auto
-    RemoveExpiredNodes(  //
-        std::atomic<TLSNode *> *node_p,
-        const bool force_expire)  //
-        -> bool
-    {
-      auto *node = node_p->load(std::memory_order_acquire);
-      if (node == nullptr) return true;
-
-      while (node != nullptr) {
-        if (!force_expire && node->list_.use_count() > 1) {
-          // go to the next node
-          node_p = &(node->next_);
-          node = node_p->load(std::memory_order_relaxed);
-          continue;
+      auto *oids = reinterpret_cast<PMEMoid *>(pmemobj_direct(*oid));
+      for (size_t i = 0; i < kMaxThreadNum; ++i) {
+        oid = &(oids[i]);  // NOLINT
+        if (!OID_IS_NULL(*oid)) {
+          auto *tls_fields = reinterpret_cast<component::TLSFields *>(pmemobj_direct(*oid));
+          component::PMEMoidBuffer::ReleaseAllGarbages(tls_fields);
         }
-
-        // this node can be removed
-        auto *next = node->next_.load(std::memory_order_relaxed);
-        if (node_p->compare_exchange_strong(node, next, std::memory_order_acquire)) {
-          node->list_->Expire();
-          delete node;
-          node = next;
-        }
+        lists[i].SetPMEMInfo(pop_, oid);
       }
-
-      return false;
     }
+#endif
 
-   private:
-    /*##################################################################################
-     * Internal member variables
-     *################################################################################*/
-
-    /// The corresponding thread-local garbage list.
-    std::shared_ptr<TLSList_t> list_{nullptr};
-
-    /// The next node in a linked list.
-    std::atomic<TLSNode *> next_{nullptr};
-  };
+    if constexpr (sizeof...(Tails) > 0) {
+      InitializeGarbageLists<Tails...>();
+    }
+  }
 
   /**
-   * @brief A class for representing the heads of garbage lists.
+   * @brief Destroy all the garbage lists for destruction.
    *
-   * @tparam Target a class for representing target garbage.
+   * @tparam Target the current class in garbage targets.
+   * @tparam Tails the remaining classes in garbage targets.
    */
-  template <class Target>
-  class GarbageHead
+  template <class Target, class... Tails>
+  void
+  DestroyGarbageLists()
   {
-   public:
-    /*##################################################################################
-     * Type aliases
-     *################################################################################*/
+    using ListsPtr = std::unique_ptr<GarbageList<Target>[]>;
 
-    using GarbageNode_t = std::remove_pointer_t<decltype(ConvToNodeT<Target>())>;
-    using GarbageNode_p = typename GarbageNode_t::GarbageNode_p;
-
-    /*##################################################################################
-     * Public constructors and assignment operators
-     *################################################################################*/
-
-    /**
-     * @brief Construct a new GarbageHead object.
-     *
-     */
-    GarbageHead()
-    {
-#ifndef MEMORY_MANAGER_USE_PERSISTENT_MEMORY
-      head_ = new GarbageNode_p{nullptr};
-#else
-      if constexpr (!Target::kOnPMEM) {
-        head_ = new GarbageNode_p{nullptr};
-      }
-#endif
-    }
-
-    GarbageHead(GarbageHead &&obj) noexcept
-    {
-      head_ = obj.head_;
-      obj.head_ = nullptr;
-    }
-
-    auto
-    operator=(GarbageHead &&obj) noexcept -> GarbageHead &
-    {
-      head_ = obj.head_;
-      obj.head_ = nullptr;
-      return *this;
-    }
-
-    // copies are deleted
-    GarbageHead(const GarbageHead &) = delete;
-    auto operator=(const GarbageHead &) -> GarbageHead & = delete;
-
-    /*##################################################################################
-     * Public destructors
-     *################################################################################*/
-
-    ~GarbageHead()
-    {
-#ifndef MEMORY_MANAGER_USE_PERSISTENT_MEMORY
-      delete head_;
-#else
-      if constexpr (!Target::kOnPMEM) {
-        delete head_;
-      }
-#endif
-    }
-
-    /*##################################################################################
-     * Public getters/setters
-     *################################################################################*/
-
-    /**
-     * @retval 1st: the head pointer.
-     * @retval 2nd: the corresponding mutex.
-     */
-    auto
-    GetHead()  //
-        -> std::pair<GarbageNode_p *, std::mutex *>
-    {
-      return {head_, mtx_.get()};
-    }
+    auto &lists = std::get<ListsPtr>(garbage_lists_);
+    lists.reset(nullptr);
 
 #ifdef MEMORY_MANAGER_USE_PERSISTENT_MEMORY
-    /**
-     * @brief Set the persistent memory region of a head pointer.
-     *
-     * If the given address has a certain head pointer due to power failure, this
-     * function releases the remaining garbage for recovery.
-     *
-     * @param addr the address of a head pointer.
-     */
-    void
-    SetHead(GarbageNode_p *addr)
-    {
-      head_ = addr;
-      GarbageNode_t::ReleaseAllGarbage(head_);
+    if constexpr (Target::kOnPMEM) {
+      constexpr size_t kPos = GetPositionOnPMEM<Target, GCTargets...>();
+      auto &list_oid = root_[kPos];  // NOLINT
+      auto *oids = reinterpret_cast<PMEMoid *>(pmemobj_direct(list_oid));
+      for (size_t i = 0; i < kMaxThreadNum; ++i) {
+        auto *oid = &(oids[i]);  // NOLINT
+        if (!OID_IS_NULL(*oid)) {
+          auto *tls_fields = reinterpret_cast<component::TLSFields *>(pmemobj_direct(*oid));
+          component::PMEMoidBuffer::ReleaseAllGarbages(tls_fields);
+        }
+        pmemobj_free(oid);
+      }
+      pmemobj_free(&list_oid);
     }
 #endif
 
-   private:
-    /*##################################################################################
-     * Internal member variables
-     *################################################################################*/
+    if constexpr (sizeof...(Tails) > 0) {
+      DestroyGarbageLists<Tails...>();
+    }
+  }
 
-    /// The head of a linked list.
-    GarbageNode_p *head_{nullptr};
-
-    /// A mutex object for modifying the head pointer.
-    std::unique_ptr<std::mutex> mtx_ = std::make_unique<std::mutex>();
-  };
-
-  /**
-   * @brief A class for representing the heads of TLS lists.
-   *
-   * @tparam Target a class for representing target garbage.
-   */
-  template <class Target>
-  struct TLSHead {
-    /*##################################################################################
-     * Type aliases
-     *################################################################################*/
-
-    using GarbageNode_t = typename GarbageHead<Target>::GarbageNode_t;
-    using TLSNode_t = std::atomic<TLSNode<GarbageNode_t> *>;
-
-    /*##################################################################################
-     * Public member variables
-     *################################################################################*/
-
-    /// The head of a linked list.
-    std::unique_ptr<TLSNode_t> head = std::make_unique<TLSNode_t>(nullptr);
-  };
-
+#ifdef MEMORY_MANAGER_USE_PERSISTENT_MEMORY
   /*####################################################################################
-   * Recursive functions for converting parameter packs
+   * Additional utilities for persistent memory
    *##################################################################################*/
 
   /**
-   * @brief A dummy function for creating type aliases.
-   *
+   * @tparam Target the current class in garbage targets.
+   * @tparam Tails the remaining classes in garbage targets.
+   * @return the number of target classes on persistent memory.
    */
-  template <template <class T> class OutT, class InT, class... Tails>
-  static auto
-  ConvToHeads()
+  template <class Target, class... Tails>
+  static constexpr auto
+  GetTargetNumOnPMEM()  //
+      -> size_t
   {
-    using OutT_t = OutT<InT>;
-    return std::tuple_cat(std::tuple<OutT_t>{}, ConvToHeads<OutT, Tails...>());
+    if constexpr (sizeof...(Tails) > 0) {
+      if constexpr (Target::kOnPMEM) {
+        return 1 + GetTargetNumOnPMEM<Tails...>();
+      } else {
+        return GetTargetNumOnPMEM<Tails...>();
+      }
+    } else {
+      if constexpr (Target::kOnPMEM) {
+        return 1;
+      } else {
+        return 0;
+      }
+    }
   }
 
   /**
-   * @brief A dummy function for creating type aliases.
-   *
-   */
-  template <template <class T> class OutT>
-  static auto
-  ConvToHeads()
-  {
-    using OutT_t = OutT<DefaultTarget>;
-    return std::tuple<OutT_t>{};
-  }
-
-  using GarbageHeads_t = decltype(ConvToHeads<GarbageHead, GCTargets...>());
-  using TLSHeads_t = decltype(ConvToHeads<TLSHead, GCTargets...>());
-
-  /*####################################################################################
-   * Recursive functions for managing thread_local variables
-   *##################################################################################*/
-
-  /**
-   * @tparam Target a class for representing target garbage.
+   * @tparam Target a class for representing a target garbage.
    * @tparam Head the current class in garbage targets.
    * @tparam Tails the remaining classes in garbage targets.
-   * @return a garbage list for each thread.
+   * @param pos the current position.
+   * @return the position of a target class.
    */
   template <class Target, class Head, class... Tails>
-  [[nodiscard]] auto
-  GetTLSGarbageList() const
+  static constexpr auto
+  GetPositionOnPMEM(const size_t pos = 0)  //
+      -> size_t
   {
-    using GarbageNode_t = std::remove_pointer_t<decltype(ConvToNodeT<Target>())>;
-    using TLSList_t = TLSList<GarbageNode_t>;
-
-    if constexpr (std::is_same_v<Head, Target>) {
-      thread_local std::shared_ptr<TLSList_t> garbage_list{nullptr};
-      return &garbage_list;
+    if constexpr (std::is_same_v<Target, Head>) {
+      static_assert(Target::kOnPMEM);
+      return pos;
+    } else if constexpr (Target::kOnPMEM) {
+      return GetPositionOnPMEM<Target, Tails...>(pos + 1);
     } else {
-      return GetTLSGarbageList<Target, Tails...>();
+      return GetPositionOnPMEM<Target, Tails...>(pos);
     }
   }
 
   /**
-   * @tparam Target a class for representing target garbage.
-   * @return a garbage list for each thread.
+   * @tparam Target a class for representing a target garbage.
+   * @tparam Head the current class in garbage targets.
+   * @tparam Tails the remaining classes in garbage targets.
+   * @return unreleased temporary fields if exist.
    */
-  template <class Target>
-  [[nodiscard]] auto
-  GetTLSGarbageList() const
+  template <class Target, class Head, class... Tails>
+  auto
+  GetRemainingPMEMoids()  //
+      -> std::vector<std::vector<PMEMoid *>>
   {
-    static_assert(std::is_same_v<Target, DefaultTarget>);
-    using TLSList_t = TLSList<GarbageNode<DefaultTarget>>;
+    if constexpr (std::is_same_v<Target, Head>) {
+      static_assert(Target::kOnPMEM);
+      constexpr size_t kPos = GetPositionOnPMEM<Target, GCTargets...>();
 
-    thread_local std::shared_ptr<TLSList_t> garbage_list{nullptr};
-    return &garbage_list;
+      std::vector<std::vector<PMEMoid *>> list_vec{};
+      list_vec.reserve(kMaxThreadNum);
+
+      auto *oids = reinterpret_cast<PMEMoid *>(pmemobj_direct(root_[kPos]));  // NOLINT
+      for (size_t i = 0; i < kMaxThreadNum; ++i) {
+        auto &oid = oids[i];  // NOLINT
+        if (OID_IS_NULL(oid)) continue;
+
+        auto *tls = reinterpret_cast<component::TLSFields *>(pmemobj_direct(oid));
+        auto &&vec = tls->GetRemainingFields();
+        if (vec.empty()) continue;
+
+        list_vec.emplace_back(std::move(vec));
+      }
+
+      return list_vec;
+    } else {
+      return GetPositionOnPMEM<Target, Tails...>();
+    }
   }
+#endif
 
   /*####################################################################################
    * Internal utility functions
@@ -815,78 +531,38 @@ class EpochBasedGC
 
   /**
    * @tparam Target a class for representing target garbage.
-   * @return the head of a linked list of TLS nodes.
-   */
-  template <class Target>
-  [[nodiscard]] auto
-  GetTLSNodeHead()
-  {
-    auto &target = std::get<TLSHead<Target>>(tls_heads_);
-    return target.head.get();
-  }
-
-  /**
-   * @tparam Target a class for representing target garbage.
    * @return the head of a linked list of garbage nodes and its mutex object.
    */
   template <class Target>
   [[nodiscard]] auto
-  GetGarbageNodeHead()
+  GetGarbageList()
   {
-    return std::get<GarbageHead<Target>>(garbage_heads_).GetHead();
-  }
+    using ListsPtr = std::unique_ptr<GarbageList<Target>[]>;
 
-  /**
-   * @brief Remove expired TLS nodes from garbage collection.
-   *
-   * @tparam Head the current class in garbage targets.
-   * @tparam Tails the remaining classes in garbage targets.
-   * @param force_expire expire all the nodes forcefully if true.
-   * @retval true if all the node are removed for every target garbage.
-   * @retval false otherwise.
-   */
-  template <class Head, class... Tails>
-  auto
-  RemoveExpiredNodes(const bool force_expire)  //
-      -> bool
-  {
-    using GarbageNode_t = std::remove_pointer_t<decltype(ConvToNodeT<Head>())>;
-    using TLSNode_t = TLSNode<GarbageNode_t>;
-
-    auto *head = GetTLSNodeHead<Head>();
-    auto all_node_expired = TLSNode_t::RemoveExpiredNodes(head, force_expire);
-
-    if constexpr (sizeof...(Tails) > 0) {
-      all_node_expired &= RemoveExpiredNodes<Tails...>(force_expire);
-    }
-
-    return all_node_expired;
+    return &(std::get<ListsPtr>(garbage_lists_)[IDManager::GetThreadID()]);
   }
 
   /**
    * @brief Clear registered garbage if possible.
    *
-   * @tparam Head the current class in garbage targets.
+   * @tparam Target the current class in garbage targets.
    * @tparam Tails the remaining classes in garbage targets.
    * @param protected_epoch an epoch value to be protected.
-   * @retval true if all the garbage is released for every target type.
-   * @retval false otherwise.
    */
-  template <class Head, class... Tails>
-  auto
-  ClearGarbage(const size_t protected_epoch)  //
-      -> bool
+  template <class Target, class... Tails>
+  void
+  ClearGarbage(const size_t protected_epoch)
   {
-    using GarbageNode_t = std::remove_pointer_t<decltype(ConvToNodeT<Head>())>;
+    using ListsPtr = std::unique_ptr<GarbageList<Target>[]>;
 
-    auto [head, mtx_p] = GetGarbageNodeHead<Head>();
-    auto all_garbage_released = GarbageNode_t::ClearGarbage(protected_epoch, mtx_p, head);
-
-    if constexpr (sizeof...(Tails) > 0) {
-      all_garbage_released &= ClearGarbage<Tails...>(protected_epoch);
+    auto &lists = std::get<ListsPtr>(garbage_lists_);
+    for (size_t i = 0; i < kMaxThreadNum; ++i) {
+      lists[i].ClearGarbage(protected_epoch);
     }
 
-    return all_garbage_released;
+    if constexpr (sizeof...(Tails) > 0) {
+      ClearGarbage<Tails...>(protected_epoch);
+    }
   }
 
   /**
@@ -899,11 +575,12 @@ class EpochBasedGC
     // create cleaner threads
     for (size_t i = 0; i < gc_thread_num_; ++i) {
       cleaner_threads_.emplace_back([&]() {
-        for (auto wake_time = Clock_t::now() + gc_interval_; true; wake_time += gc_interval_) {
+        for (auto wake_time = Clock_t::now() + gc_interval_;  //
+             gc_is_running_.load(std::memory_order_relaxed);  //
+             wake_time += gc_interval_)                       //
+        {
           // release unprotected garbage
-          auto released = ClearGarbage<DefaultTarget, GCTargets...>(epoch_manager_.GetMinEpoch());
-          auto is_running = gc_is_running_.load(std::memory_order_relaxed);
-          if (!is_running && released) break;
+          ClearGarbage<DefaultTarget, GCTargets...>(epoch_manager_.GetMinEpoch());
 
           // wait until the next epoch
           std::this_thread::sleep_until(wake_time);
@@ -912,15 +589,13 @@ class EpochBasedGC
     }
 
     // manage the global epoch
-    for (auto wake_time = Clock_t::now() + gc_interval_; true; wake_time += gc_interval_) {
-      // remove expired TLS nodes
-      auto is_running = gc_is_running_.load(std::memory_order_relaxed);
-      auto expired = RemoveExpiredNodes<DefaultTarget, GCTargets...>(!is_running);
-
+    for (auto wake_time = Clock_t::now() + gc_interval_;  //
+         gc_is_running_.load(std::memory_order_relaxed);  //
+         wake_time += gc_interval_)                       //
+    {
       // wait until the next epoch
       std::this_thread::sleep_until(wake_time);
       epoch_manager_.ForwardGlobalEpoch();
-      if (!is_running && expired) break;
     }
 
     // wait all the cleaner threads return
@@ -956,10 +631,16 @@ class EpochBasedGC
   std::atomic_bool gc_is_running_{false};
 
   /// The heads of linked lists for each GC target.
-  GarbageHeads_t garbage_heads_ = ConvToHeads<GarbageHead, GCTargets...>();
+  decltype(ConvToTuple<DefaultTarget, GCTargets...>()) garbage_lists_ =
+      ConvToTuple<DefaultTarget, GCTargets...>();
 
-  /// The heads of linked lists for each TLS watcher.
-  TLSHeads_t tls_heads_ = ConvToHeads<TLSHead, GCTargets...>();
+#ifdef MEMORY_MANAGER_USE_PERSISTENT_MEMORY
+  /// The pmemobj_pool for holding garbage lists.
+  PMEMobjpool *pop_{nullptr};
+
+  /// The root object for accessing each garbage list.
+  PMEMoid *root_{nullptr};
+#endif
 };
 
 }  // namespace dbgroup::memory
