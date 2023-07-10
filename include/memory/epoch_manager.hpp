@@ -27,6 +27,9 @@
 #include <utility>
 #include <vector>
 
+// external sources
+#include "thread/id_manager.hpp"
+
 // local sources
 #include "component/epoch_guard.hpp"
 
@@ -43,6 +46,7 @@ class EpochManager
    * Type aliases
    *##################################################################################*/
 
+  using IDManager = ::dbgroup::thread::IDManager;
   using Epoch = component::Epoch;
   using EpochGuard = component::EpochGuard;
 
@@ -88,14 +92,6 @@ class EpochManager
    */
   ~EpochManager()
   {
-    // remove the registered epochs
-    auto *epoch_next = epochs_.load(std::memory_order_acquire);
-    while (epoch_next != nullptr) {
-      auto *current = epoch_next;
-      epoch_next = current->next;
-      delete current;
-    }
-
     // remove the retained protected epochs
     [[maybe_unused]] const auto dummy = global_epoch_.load(std::memory_order_acquire);
     auto *pro_next = protected_lists_;
@@ -163,19 +159,13 @@ class EpochManager
   CreateEpochGuard()  //
       -> EpochGuard
   {
-    thread_local std::shared_ptr<Epoch> epoch = std::make_shared<Epoch>();
-
-    if (epoch.use_count() <= 1) {
-      epoch->SetGrobalEpoch(&global_epoch_);
-
-      // insert a new epoch node into the epoch list
-      auto *node = new EpochNode{epoch, epochs_.load(std::memory_order_relaxed)};
-      while (!epochs_.compare_exchange_weak(node->next, node, std::memory_order_release)) {
-        // continue until inserting succeeds
-      }
+    auto &tls = tls_fields_[IDManager::GetThreadID()];
+    if (tls.heartbeat.expired()) {
+      tls.epoch.SetGrobalEpoch(&global_epoch_);
+      tls.heartbeat = IDManager::GetHeartBeat();
     }
 
-    return EpochGuard{epoch.get()};
+    return EpochGuard{&(tls.epoch)};
   }
 
   /**
@@ -210,83 +200,15 @@ class EpochManager
    *##################################################################################*/
 
   /**
-   * @brief A class of nodes for composing a linked list of epochs in each thread.
+   * @brief A class for representing thread local epoch storages.
    *
    */
-  class EpochNode
-  {
-   public:
-    /*##################################################################################
-     * Public constructors and assignment operators
-     *################################################################################*/
+  struct alignas(kCashLineSize) TLSEpoch {
+    /// An epoch object for each thread.
+    Epoch epoch{};
 
-    /**
-     * @brief Construct a new instance.
-     *
-     * @param epoch a pointer to a target epoch.
-     * @param next a pointer to a next node.
-     */
-    EpochNode(  //
-        std::shared_ptr<Epoch> epoch,
-        EpochNode *next)
-        : next{next}, epoch_{std::move(epoch)}
-    {
-    }
-
-    EpochNode(const EpochNode &) = delete;
-    auto operator=(const EpochNode &) -> EpochNode & = delete;
-    EpochNode(EpochNode &&) = delete;
-    auto operator=(EpochNode &&) -> EpochNode & = delete;
-
-    /*##################################################################################
-     * Public destructors
-     *################################################################################*/
-
-    /**
-     * @brief Destroy the instance.
-     *
-     */
-    ~EpochNode() = default;
-
-    /*##################################################################################
-     * Public utility functions
-     *################################################################################*/
-
-    /**
-     * @retval true if the registered thread is still active.
-     * @retval false if the registered thread has already left.
-     */
-    [[nodiscard]] auto
-    IsAlive() const  //
-        -> bool
-    {
-      return epoch_.use_count() > 1;
-    }
-
-    /**
-     * @return the protected epoch value.
-     */
-    [[nodiscard]] auto
-    GetProtectedEpoch() const  //
-        -> size_t
-    {
-      return epoch_->GetProtectedEpoch();
-    }
-
-    /*##################################################################################
-     * Public member variables
-     *################################################################################*/
-
-    /// A pointer to the next node.
-    EpochNode *next{nullptr};
-
-   private:
-    /*##################################################################################
-     * Internal member variables
-     *################################################################################*/
-
-    /// A shared pointer for monitoring the lifetime of a target epoch.
-    const std::shared_ptr<Epoch> epoch_{};
+    /// A flag for indicating the corresponding thread has exited.
+    std::weak_ptr<size_t> heartbeat{};
   };
 
   /**
@@ -387,6 +309,9 @@ class EpochManager
    * Internal constants
    *##################################################################################*/
 
+  /// The expected maximum number of threads.
+  static constexpr size_t kMaxThreadNum = ::dbgroup::thread::kMaxThreadNum;
+
   /// A bitmask for extracting lower bits from epochs.
   static constexpr size_t kLowerMask = kCapacity - 1UL;
 
@@ -410,36 +335,17 @@ class EpochManager
       const size_t cur_epoch,
       std::vector<size_t> &protected_epochs)
   {
-    protected_epochs.reserve(kExpectedThreadNum);
+    protected_epochs.reserve(kMaxThreadNum);
     protected_epochs.emplace_back(cur_epoch + 1);  // reserve the next epoch
     protected_epochs.emplace_back(cur_epoch);
 
-    // check the head node of the epoch list
-    auto *previous = epochs_.load(std::memory_order_acquire);
-    if (previous == nullptr) return;
-    if (previous->IsAlive()) {
-      const auto protected_epoch = previous->GetProtectedEpoch();
+    for (size_t i = 0; i < kMaxThreadNum; ++i) {
+      auto &tls = tls_fields_[i];
+      if (tls.heartbeat.expired()) continue;
+
+      const auto protected_epoch = tls.epoch.GetProtectedEpoch();
       if (protected_epoch < std::numeric_limits<size_t>::max()) {
         protected_epochs.emplace_back(protected_epoch);
-      }
-    }
-
-    // check the tail nodes of the epoch list
-    auto *current = previous->next;
-    while (current != nullptr) {
-      if (current->IsAlive()) {
-        // if the epoch is alive, get the protected epoch value
-        const auto protected_epoch = current->GetProtectedEpoch();
-        if (protected_epoch < std::numeric_limits<size_t>::max()) {
-          protected_epochs.emplace_back(protected_epoch);
-        }
-        previous = current;
-        current = current->next;
-      } else {
-        // if the epoch is dead, delete this node from the list
-        previous->next = current->next;
-        delete current;
-        current = previous->next;
       }
     }
 
@@ -500,10 +406,10 @@ class EpochManager
   std::atomic_size_t min_epoch_{kInitialEpoch};
 
   /// The head pointer of a linked list of epochs.
-  std::atomic<EpochNode *> epochs_{nullptr};
-
-  /// The head pointer of a linked list of epochs.
   ProtectedNode *protected_lists_{new ProtectedNode{kInitialEpoch, nullptr}};
+
+  /// The array of epochs to use as thread local storages.
+  TLSEpoch tls_fields_[kMaxThreadNum]{};
 };
 
 }  // namespace dbgroup::memory
