@@ -23,7 +23,7 @@
 #include <optional>
 
 // local sources
-#include "common.hpp"
+#include "memory/component/common.hpp"
 
 namespace dbgroup::memory::component
 {

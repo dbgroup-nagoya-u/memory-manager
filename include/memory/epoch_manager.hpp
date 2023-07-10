@@ -31,7 +31,7 @@
 #include "thread/id_manager.hpp"
 
 // local sources
-#include "component/epoch_guard.hpp"
+#include "memory/component/epoch_guard.hpp"
 
 namespace dbgroup::memory
 {

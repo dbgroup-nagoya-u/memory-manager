@@ -30,7 +30,7 @@
 #include "thread/id_manager.hpp"
 
 // local sources
-#include "common.hpp"
+#include "memory/component/common.hpp"
 
 namespace dbgroup::memory::component
 {

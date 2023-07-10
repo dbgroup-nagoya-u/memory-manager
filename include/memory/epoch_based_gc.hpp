@@ -37,13 +37,13 @@
 #include "thread/id_manager.hpp"
 
 // local sources
-#include "component/epoch_guard.hpp"
-#include "component/garbage_list.hpp"
-#include "epoch_manager.hpp"
-#include "utility.hpp"
+#include "memory/component/epoch_guard.hpp"
+#include "memory/component/garbage_list.hpp"
+#include "memory/epoch_manager.hpp"
+#include "memory/utility.hpp"
 
 #ifdef MEMORY_MANAGER_USE_PERSISTENT_MEMORY
-#include "component/garbage_list_on_pmem.hpp"
+#include "memory/component/garbage_list_on_pmem.hpp"
 #endif
 
 namespace dbgroup::memory

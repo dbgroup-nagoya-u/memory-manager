@@ -46,6 +46,7 @@ sudo apt update && sudo apt install -y libpmemobj-cpp-dev
 
 - `MEMORY_MANAGER_BUILD_TESTS`: build unit tests for this repository if `ON` (default `OFF`).
 - `DBGROUP_TEST_THREAD_NUM`: the number of threads to run unit tests (default `8`).
+- `DBGROUP_TEST_TMP_PMEM_PATH`: the path to a durable storage (default: `/tmp`). We expect this option to be used with persistent memory.
 
 ### Build and Run Unit Tests
 
