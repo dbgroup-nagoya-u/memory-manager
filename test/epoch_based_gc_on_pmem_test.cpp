@@ -104,6 +104,10 @@ class EpochBasedGCFixture : public ::testing::Test
   void
   TearDown() override
   {
+    gc_.reset(nullptr);
+
+    EXPECT_TRUE(OID_IS_NULL(pmemobj_first(pop_)));
+    pmemobj_close(pop_);
   }
 
   /*####################################################################################

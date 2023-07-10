@@ -320,6 +320,8 @@ main(  //
 
 You can use our GC with peristent memory. Although the usage is roughly the same as for volatile memory, note that some APIs are slightly different.
 
+Note that you can call a garbage destructor only in normal GC processes. In a recovery process after failures, our GC releases garbage without destruction.
+
 ```cpp
 // C++ standard libraries
 #include <chrono>
@@ -349,12 +351,7 @@ struct PMEMTarget {
   // };
 };
 
-// a root region of your pool must have a head of garbage lists for recovery
-struct PMEMRoot {
-  using GarbageNode_t = ::dbgroup::memory::GarbageNodeOnPMEM<PMEMTarget>;
-
-  ::pmem::obj::persistent_ptr<GarbageNode_t> head{nullptr};
-};
+using GC_t = ::dbgroup::memory::EpochBasedGC<PMEMTarget>;
 
 auto
 main(  //
@@ -364,16 +361,18 @@ main(  //
 {
   constexpr size_t kGCInterval = 1E3;
   constexpr size_t kThreadNum = 1;
+  constexpr size_t kPMDKTypeID = 0;
   std::mutex lock{};
 
-  // prepare a pool on persistent memory before creating a GC instance
-  constexpr size_t kSize = PMEMOBJ_MIN_POOL * 32;
+  // prepare a pool on persistent memory for your objects
+  constexpr size_t kSizeForPool = PMEMOBJ_MIN_POOL * 32;  // 256MiB
   constexpr int kModeRW = S_IWUSR | S_IRUSR;
-  auto &&pool = ::pmem::obj::pool<PMEMRoot>::create("/pmem_tmp/test", "test", kSize, kModeRW);
+  auto *pop = pmemobj_create("/pmem_tmp/test", "test", kSizeForPool, kModeRW);
 
   // create a garbage collector
-  ::dbgroup::memory::EpochBasedGC<PMEMTarget> gc{kGCInterval, kThreadNum};
-  gc.SetHeadAddrOnPMEM<PMEMTarget>(&(pool.root()->head));  // set the corresponding head
+  const auto *path_to_gc = "/pmem_tmp/gc";
+  constexpr size_t kSizePerThread = PMEMOBJ_MIN_POOL;  // wer prepare buffers per thread
+  GC_t gc{path_to_gc, kSizePerThread, kGCInterval, kThreadNum};
   gc.StartGC();
 
   // prepare a sample worker procedure
@@ -382,30 +381,28 @@ main(  //
       {
         const auto &guard = gc.CreateEpochGuard();
 
-        // get a page if exist
-        ::pmem::obj::persistent_ptr<size_t> garbage{nullptr};
+        /* You can use temporary fields (up to thirteen) for recovery purposes. Because
+         * the temporary fields are retained after power failures, you can use them by
+         * calling `GetUnreleasedFields` to perform your recovery procedures. */
+        auto *tmp_oid = gc.GetTmpField<PMEMTarget>(0);
 
-        // this function get a reusable page atomically, so `garbage` variable should
-        // be allocated on persistent memory in practical to prevent memory leak.
-        gc.GetPageIfPossible<PMEMTarget>(garbage.raw_ptr(), pool);
-        if (garbage == nullptr) {
-          // allocate a page dynamically
-          try {
-            ::pmem::obj::flat_transaction::run(
-                pool, [&] { garbage = ::pmem::obj::make_persistent<size_t>(loop); });
-          } catch (const std::exception &e) {
-            std::cerr << e.what() << std::endl;
-            std::terminate();
-          }
-        } else {
-          // reuse the allocated page
-          new (garbage.get()) size_t{loop};
+        // check pages can be reused
+        gc.GetPageIfPossible<PMEMTarget>(tmp_oid);
+        if (!OID_IS_NULL(*tmp_oid)) {
+          // reused
           const auto &lock_guard = std::lock_guard{lock};
           std::cout << "Page Reused." << std::endl;
+        } else {
+          // allocate a page dynamically
+          if (pmemobj_zalloc(pop, tmp_oid, sizeof(size_t), kPMDKTypeID) != 0) {
+            std::cerr << pmemobj_errormsg() << std::endl;
+            break;
+          }
         }
 
-        // add garbage on persistent memory
-        gc.AddGarbage<PMEMTarget>(garbage.raw_ptr(), pool);
+        // initialize garbage and add it to GC
+        new (pmemobj_direct(*tmp_oid)) size_t{loop};
+        gc.AddGarbage<PMEMTarget>(tmp_oid);
       }
 
       std::this_thread::sleep_for(std::chrono::microseconds{100});  // dummy sleep
@@ -420,6 +417,13 @@ main(  //
     t.join();
   }
 
+  // check there is no allocated pages in the pool
+  gc.StopGC();
+  if (OID_IS_NULL(pmemobj_first(pop))) {
+    std::cout << "All the garbage is released by GC." << std::endl;
+  }
+
+  pmemobj_close(pop);
   return 0;
 }
 ```

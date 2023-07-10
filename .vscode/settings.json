@@ -28,6 +28,7 @@
   // extra words for spell checking
   "cSpell.words": [
     "alignas",
+    "alloc",
     "cerr",
     "cout",
     "ctest",
@@ -54,7 +55,8 @@
     "pthread",
     "STREQ",
     "struct",
-    "Wextra"
+    "Wextra",
+    "zalloc"
   ],
   "files.associations": {
     "fstream": "cpp",
