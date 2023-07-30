@@ -84,10 +84,7 @@ class alignas(kCashLineSize) GarbageList
    */
   ~GarbageList()
   {
-    auto *head = head_.load(std::memory_order_relaxed);
-    if (head == nullptr) {
-      head = mid_;
-    }
+    auto *head = Target::kReusePages ? head_.load(std::memory_order_relaxed) : mid_;
     if (head != nullptr) {
       GarbageBuffer::Clear(&head, std::numeric_limits<size_t>::max());
       delete head;
@@ -154,9 +151,9 @@ class alignas(kCashLineSize) GarbageList
       auto *head = head_.load(std::memory_order_relaxed);
       if (head != nullptr) {
         mid_ = head;
-        head_.store(nullptr, std::memory_order_relaxed);
       }
       GarbageBuffer::Clear(&mid_, protected_epoch);
+      head_.store(mid_, std::memory_order_relaxed);
     }
 
     // check this list is alive
@@ -164,6 +161,7 @@ class alignas(kCashLineSize) GarbageList
 
     // release buffers if the thread has exitted
     delete mid_;
+    head_.store(nullptr, std::memory_order_relaxed);
     mid_ = nullptr;
     tail_ = nullptr;
   }

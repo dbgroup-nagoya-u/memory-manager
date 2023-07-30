@@ -407,10 +407,7 @@ class alignas(kCashLineSize) GarbageListOnPMEM
    */
   ~GarbageListOnPMEM()
   {
-    auto *head = head_.load(std::memory_order_relaxed);
-    if (head == nullptr) {
-      head = mid_;
-    }
+    auto *head = Target::kReusePages ? head_.load(std::memory_order_relaxed) : mid_;
     if (head != nullptr) {
       GarbageBuffer::Clear(&head, std::numeric_limits<size_t>::max(), tls_fields_);
       delete head;
@@ -505,9 +502,9 @@ class alignas(kCashLineSize) GarbageListOnPMEM
       auto *head = head_.load(std::memory_order_relaxed);
       if (head != nullptr) {
         mid_ = head;
-        head_.store(nullptr, std::memory_order_relaxed);
       }
       GarbageBuffer::Clear(&mid_, protected_epoch, tls_fields_);
+      head_.store(mid_, std::memory_order_relaxed);
     }
 
     // check this list is alive
@@ -516,6 +513,7 @@ class alignas(kCashLineSize) GarbageListOnPMEM
     // release buffers if the thread has exitted
     pmemobj_free(&(tls_fields_->head));
     delete mid_;
+    head_.store(nullptr, std::memory_order_relaxed);
     mid_ = nullptr;
     tail_ = nullptr;
   }
