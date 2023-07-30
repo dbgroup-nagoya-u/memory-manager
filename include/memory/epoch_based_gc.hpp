@@ -224,6 +224,7 @@ class EpochBasedGC
   GetPageIfPossible()  //
       -> void *
   {
+    static_assert(Target::kReusePages);
     return GetGarbageList<Target>()->GetPageIfPossible();
   }
 
@@ -286,6 +287,7 @@ class EpochBasedGC
   void
   GetPageIfPossible(PMEMoid *out_oid)
   {
+    static_assert(Target::kReusePages);
     GetGarbageList<Target>()->GetPageIfPossible(out_oid);
   }
 #endif
