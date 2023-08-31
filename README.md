@@ -39,8 +39,8 @@ sudo apt update && sudo apt install -y libpmemobj-cpp-dev
 
 #### Tuning Parameters
 
-- `DBGROUP_MAX_THREAD_NUM`: the maximum number of worker threads (default `1024`).
 - `MEMORY_MANAGER_USE_PERSISTENT_MEMORY`: perform garbage collection for pages on persistent memory (default: `OFF`).
+- `DBGROUP_MAX_THREAD_NUM`: the maximum number of worker threads (please refer to [cpp-utility](https://github.com/dbgroup-nagoya-u/cpp-utility)).
 
 #### Parameters for Unit Testing
 
@@ -371,8 +371,8 @@ main(  //
 
   // create a garbage collector
   const auto *path_to_gc = "/pmem_tmp/gc";
-  constexpr size_t kSizePerThread = PMEMOBJ_MIN_POOL;  // wer prepare buffers per thread
-  GC_t gc{path_to_gc, kSizePerThread, kGCInterval, kThreadNum};
+  constexpr size_t kGCSize = PMEMOBJ_MIN_POOL;  // 8 MiB can manage about 0.5M garbage instances
+  GC_t gc{path_to_gc, kGCSize, kGCInterval, kThreadNum};
   gc.StartGC();
 
   // prepare a sample worker procedure

@@ -97,7 +97,7 @@ class EpochBasedGCFixture : public ::testing::Test
     constexpr size_t kSize = PMEMOBJ_MIN_POOL * 16;  // 128MiB
     pop_ = pmemobj_create(pool_path.c_str(), kPoolName, kSize, kModeRW);
 
-    gc_ = std::make_unique<EpochBasedGC_t>(gc_path_, PMEMOBJ_MIN_POOL, kGCInterval, kThreadNum);
+    gc_ = std::make_unique<EpochBasedGC_t>(gc_path_, kSize, kGCInterval, kThreadNum);
     gc_->StartGC();
   }
 

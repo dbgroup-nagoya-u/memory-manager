@@ -122,13 +122,13 @@ class EpochBasedGC
    * @brief Construct a new instance.
    *
    * @param pmem_path the path to a pmemobj pool for GC.
-   * @param size_per_thread the memory capacity per thread.
+   * @param gc_size the memory capacity for GC.
    * @param gc_interval_micro_sec the duration of interval for GC.
    * @param gc_thread_num the maximum number of threads to perform GC.
    */
   explicit EpochBasedGC(  //
       const std::string &pmem_path,
-      const size_t size_per_thread = PMEMOBJ_MIN_POOL,
+      const size_t gc_size = PMEMOBJ_MIN_POOL * 2 * 10,  // about 10M garbage instances
       const size_t gc_interval_micro_sec = kDefaultGCTime,
       const size_t gc_thread_num = kDefaultGCThreadNum)
       : gc_interval_{gc_interval_micro_sec}, gc_thread_num_{gc_thread_num}
@@ -138,8 +138,7 @@ class EpochBasedGC
       pop_ = pmemobj_open(path, layout_name);
     } else {
       constexpr auto kModeRW = S_IRUSR | S_IWUSR;  // NOLINT
-      const size_t size = size_per_thread * kMaxThreadNum + PMEMOBJ_MIN_POOL;
-      pop_ = pmemobj_create(path, layout_name, size, kModeRW);
+      pop_ = pmemobj_create(path, layout_name, gc_size + PMEMOBJ_MIN_POOL, kModeRW);
     }
     if (pop_ == nullptr) {
       std::cerr << pmemobj_errormsg() << std::endl;

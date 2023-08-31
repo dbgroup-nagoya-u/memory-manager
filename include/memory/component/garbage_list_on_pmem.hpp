@@ -99,14 +99,14 @@ struct TLSFields {
    * Public member variables
    *##################################################################################*/
 
+  /// Temporary fields to ensure fault tolerance of user-defined data structures.
+  PMEMoid tmp_oids[kTmpFieldNum]{};
+
   /// The head pointer of garbage buffers.
   PMEMoid head{};
 
   /// A temporary field for swapping buffer heads.
   PMEMoid tmp_head{};
-
-  /// Temporary fields to ensure fault tolerance of user-defined data structures.
-  PMEMoid tmp_oids[kTmpFieldNum]{};
 
   /*####################################################################################
    * Public utilities
