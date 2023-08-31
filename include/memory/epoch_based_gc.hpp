@@ -128,17 +128,19 @@ class EpochBasedGC
    */
   explicit EpochBasedGC(  //
       const std::string &pmem_path,
-      const size_t gc_size = PMEMOBJ_MIN_POOL * 2 * 10,  // about 10M garbage instances
+      const size_t gc_size = PMEMOBJ_MIN_POOL * 2,  // about 1M garbage instances
+      const std::string &layout_name = "gc_on_pmem",
       const size_t gc_interval_micro_sec = kDefaultGCTime,
       const size_t gc_thread_num = kDefaultGCThreadNum)
       : gc_interval_{gc_interval_micro_sec}, gc_thread_num_{gc_thread_num}
   {
     const auto *path = pmem_path.c_str();
+    const auto *layout = layout_name.c_str();
     if (std::filesystem::exists(pmem_path)) {
-      pop_ = pmemobj_open(path, layout_name);
+      pop_ = pmemobj_open(path, layout);
     } else {
       constexpr auto kModeRW = S_IRUSR | S_IWUSR;  // NOLINT
-      pop_ = pmemobj_create(path, layout_name, gc_size + PMEMOBJ_MIN_POOL, kModeRW);
+      pop_ = pmemobj_create(path, layout, gc_size + PMEMOBJ_MIN_POOL, kModeRW);
     }
     if (pop_ == nullptr) {
       std::cerr << pmemobj_errormsg() << std::endl;

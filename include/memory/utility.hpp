@@ -53,9 +53,6 @@ constexpr size_t kCashLineSize = 64;
  * Constants for persistent memory
  *####################################################################################*/
 
-/// the layout name of pmemobj_pool for GC.
-const char *const layout_name = "gc_on_pmem";
-
 /// In PMDK, the memblock header use 16 bytes
 constexpr size_t kPmemPageSize = kVMPageSize - 16;
 

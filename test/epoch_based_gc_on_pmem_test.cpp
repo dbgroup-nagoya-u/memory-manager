@@ -37,8 +37,10 @@ namespace dbgroup::memory::test
  *####################################################################################*/
 
 constexpr std::string_view kTmpPMEMPath = DBGROUP_ADD_QUOTES(DBGROUP_TEST_TMP_PMEM_PATH);
+constexpr size_t kSize = PMEMOBJ_MIN_POOL * 16;  // 128MiB
 constexpr const char *kPoolName = "memory_manager_epoch_based_gc_on_pmem_test";
 constexpr const char *kGCName = "memory_manager_epoch_based_gc_on_pmem_test_gc";
+constexpr const char *kLayout = "gc_on_pmem_test";
 constexpr auto kModeRW = S_IRUSR | S_IWUSR;  // NOLINT
 
 /*######################################################################################
@@ -94,10 +96,9 @@ class EpochBasedGCFixture : public ::testing::Test
     std::filesystem::remove(pool_path);
     std::filesystem::remove(gc_path_);
 
-    constexpr size_t kSize = PMEMOBJ_MIN_POOL * 16;  // 128MiB
     pop_ = pmemobj_create(pool_path.c_str(), kPoolName, kSize, kModeRW);
 
-    gc_ = std::make_unique<EpochBasedGC_t>(gc_path_, kSize, kGCInterval, kThreadNum);
+    gc_ = std::make_unique<EpochBasedGC_t>(gc_path_, kSize, kLayout, kGCInterval, kThreadNum);
     gc_->StartGC();
   }
 
@@ -404,12 +405,13 @@ TEST_F(EpochBasedGCFixture, RunGCMultipleTimesWithSamePool)
     gc_.reset(nullptr);
 
     // check all the pages on persistent memory are freed
-    auto *pop = pmemobj_open(gc_path_.c_str(), layout_name);
+    auto *pop = pmemobj_open(gc_path_.c_str(), kLayout);
     EXPECT_TRUE(OID_IS_NULL(pmemobj_first(pop)));
     pmemobj_close(pop);
 
     // reuse the same pmemobj pool
-    gc_ = std::make_unique<EpochBasedGC_t>(gc_path_, PMEMOBJ_MIN_POOL, kGCInterval, kThreadNum);
+
+    gc_ = std::make_unique<EpochBasedGC_t>(gc_path_, kSize, kLayout, kGCInterval, kThreadNum);
     gc_->StartGC();
   }
 }
