@@ -32,11 +32,13 @@
 
 namespace dbgroup::memory::test
 {
+// prepare a temporary directory
+auto *const env = testing::AddGlobalTestEnvironment(new TmpDirManager);
+
 /*######################################################################################
  * Global constants
  *####################################################################################*/
 
-constexpr std::string_view kTmpPMEMPath = DBGROUP_ADD_QUOTES(DBGROUP_TEST_TMP_PMEM_PATH);
 constexpr size_t kSize = PMEMOBJ_MIN_POOL * 16;  // 128MiB
 constexpr const char *kPoolName = "memory_manager_epoch_based_gc_on_pmem_test";
 constexpr const char *kGCName = "memory_manager_epoch_based_gc_on_pmem_test_gc";
@@ -86,18 +88,16 @@ class EpochBasedGCFixture : public ::testing::Test
   SetUp() override
   {
     // create a user directory for testing
-    const std::string user_name{std::getenv("USER")};
-    std::filesystem::path pool_path{kTmpPMEMPath};
-    pool_path /= user_name;
-    std::filesystem::create_directories(pool_path);
+    auto &&pool_path = GetTmpPoolPath();
     gc_path_ = pool_path;
     pool_path /= kPoolName;
+    if (std::filesystem::exists(pool_path)) {
+      pop_ = pmemobj_open(pool_path.c_str(), kLayout);
+    } else {
+      pop_ = pmemobj_create(pool_path.c_str(), kLayout, kSize, kModeRW);
+    }
+
     gc_path_ /= kGCName;
-    std::filesystem::remove(pool_path);
-    std::filesystem::remove(gc_path_);
-
-    pop_ = pmemobj_create(pool_path.c_str(), kPoolName, kSize, kModeRW);
-
     gc_ = std::make_unique<EpochBasedGC_t>(gc_path_, kSize, kLayout, kGCInterval, kThreadNum);
     gc_->StartGC();
   }

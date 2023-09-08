@@ -34,6 +34,9 @@
 
 namespace dbgroup::memory::component::test
 {
+// prepare a temporary directory
+auto *const env = testing::AddGlobalTestEnvironment(new TmpDirManager);
+
 /*######################################################################################
  * Global type aliases
  *####################################################################################*/
@@ -46,8 +49,6 @@ using Target = uint64_t;
 
 /// a file permission for pmemobj_pool.
 constexpr int kModeRW = S_IWUSR | S_IRUSR;  // NOLINT
-
-constexpr std::string_view kTmpPMEMPath = DBGROUP_ADD_QUOTES(DBGROUP_TEST_TMP_PMEM_PATH);
 constexpr const char *kPoolName = "memory_manager_garbage_list_on_pmem_test";
 constexpr const char *kLayout = "target";
 
@@ -78,17 +79,15 @@ class GarbageListOnPMEMFixture : public ::testing::Test
   void
   SetUp() override
   {
-    // create a user directory for testing
-    const std::string user_name{std::getenv("USER")};
-    std::filesystem::path pool_path{kTmpPMEMPath};
-    pool_path /= user_name;
-    std::filesystem::create_directories(pool_path);
-    pool_path /= kPoolName;
-    std::filesystem::remove(pool_path);
-
     // create a persistent pool for testing
     constexpr size_t kSize = PMEMOBJ_MIN_POOL * 16;  // 128MiB
-    pop_ = pmemobj_create(pool_path.c_str(), kLayout, kSize, kModeRW);
+    auto &&pool_path = GetTmpPoolPath();
+    pool_path /= kPoolName;
+    if (std::filesystem::exists(pool_path)) {
+      pop_ = pmemobj_open(pool_path.c_str(), kLayout);
+    } else {
+      pop_ = pmemobj_create(pool_path.c_str(), kLayout, kSize, kModeRW);
+    }
     auto *root_addr = pmemobj_direct(pmemobj_root(pop_, sizeof(PMEMoid)));
     auto *tls_oid = reinterpret_cast<PMEMoid *>(root_addr);
     list_ = std::make_unique<GarbageList_t>();
@@ -103,6 +102,10 @@ class GarbageListOnPMEMFixture : public ::testing::Test
   TearDown() override
   {
     list_.reset(nullptr);
+
+    auto *root_addr = pmemobj_direct(pmemobj_root(pop_, sizeof(PMEMoid)));
+    auto *tls_oid = reinterpret_cast<PMEMoid *>(root_addr);
+    pmemobj_free(tls_oid);
     pmemobj_close(pop_);
   }
 
