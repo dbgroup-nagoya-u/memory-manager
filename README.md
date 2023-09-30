@@ -15,6 +15,7 @@ This repository is an open source implementation of epoch-based garbage collecti
     - [Collect and Release Garbage Pages](#collect-and-release-garbage-pages)
     - [Destruct Garbage before Releasing](#destruct-garbage-before-releasing)
     - [Reuse Garbage-Collected Pages](#reuse-garbage-collected-pages)
+    - [Release Aligned Pages](#release-aligned-pages)
     - [Perform GC on Persistent Memory](#perform-gc-on-persistent-memory)
 - [Acknowledgments](#acknowledgments)
 
@@ -29,10 +30,10 @@ This repository is an open source implementation of epoch-based garbage collecti
 sudo apt update && sudo apt install -y build-essential cmake
 ```
 
-If you use this library for pages on persistent memory, install [libpmemobj++ (>= ver. 1.12)](https://pmem.io/pmdk/). You can install related packages by using a package manager on Ubuntu 22.04 LTS.
+If you use this library for pages on persistent memory, install [libpmemobj](https://pmem.io/pmdk/).
 
 ```bash
-sudo apt update && sudo apt install -y libpmemobj-cpp-dev
+sudo apt update && sudo apt install -y libpmemobj-dev
 ```
 
 ### Build Options
@@ -160,17 +161,9 @@ You can call a specific destructor before releasing garbage.
 #include "memory/epoch_based_gc.hpp"
 
 // prepare the information of target garbage
-struct SharedPtrTarget {
+struct SharedPtrTarget : public DefaultTarget {
   // set the type of garbage to perform destructor
   using T = std::shared_ptr<size_t>;
-
-  // do not reuse pages in this example
-  static constexpr bool kReusePages = false;
-
-  // use the standard delete function to release garbage
-  static const inline std::function<void(void *)> deleter = [](void *ptr) {
-    ::operator delete(ptr);
-  };
 };
 
 auto
@@ -254,17 +247,9 @@ You can reuse garbage-collected pages. Our GC maintains garbage lists in thread 
 #include "memory/epoch_based_gc.hpp"
 
 // prepare the information of target garbage
-struct ReusableTarget {
-  // do not call destructor
-  using T = void;
-
+struct ReusableTarget : public DefaultTarget {
   // reuse garbage-collected pages
   static constexpr bool kReusePages = true;
-
-  // use the standard delete function to release garbage
-  static const inline std::function<void(void *)> deleter = [](void *ptr) {
-    ::operator delete(ptr);
-  };
 };
 
 auto
@@ -316,6 +301,17 @@ main(  //
 }
 ```
 
+### Release Aligned Pages
+
+If a target class has a specific alignment, you must also specify this in your target garbage class.
+
+```cpp
+// release pointers with alignment for CPU cache lines
+struct alignas(64) AlignedTarget : public DefaultTarget {
+  // you can set the other parameters here
+};
+```
+
 ### Perform GC on Persistent Memory
 
 You can use our GC with peristent memory. Although the usage is roughly the same as for volatile memory, note that some APIs are slightly different.
@@ -336,19 +332,11 @@ Note that you can call a garbage destructor only in normal GC processes. In a re
 
 // prepare the information of target garbage
 struct PMEMTarget {
-  // do not call destructor
-  using T = void;
-
   // target pages are on persistent memory
   static constexpr bool kOnPMEM = true;
 
   // reuse garbage-collected pages
   static constexpr bool kReusePages = true;
-
-  // cannot specify a deleter function
-  // static const inline std::function<void(void *)> deleter = [](void *ptr) {
-  //   ::operator delete(ptr);
-  // };
 };
 
 using GC_t = ::dbgroup::memory::EpochBasedGC<PMEMTarget>;

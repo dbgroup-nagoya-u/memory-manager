@@ -37,6 +37,7 @@
     "DSIMPLE",
     "endl",
     "gtest",
+    "ifdef",
     "iostream",
     "IRUSR",
     "IWUSR",
