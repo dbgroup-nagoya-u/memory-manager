@@ -35,6 +35,9 @@ constexpr size_t kDefaultGCTime = 10000;  // 10 ms
 /// The default number of worker threads for garbage collection.
 constexpr size_t kDefaultGCThreadNum = 1;
 
+/// The default alignment size for dynamically allocated instances.
+constexpr size_t kDefaultAlignment = __STDCPP_DEFAULT_NEW_ALIGNMENT__;
+
 /*######################################################################################
  * Turning parameters
  *####################################################################################*/
@@ -55,8 +58,48 @@ constexpr size_t kCashLineSize = 64;
 
 /// In PMDK, the memblock header use 16 bytes
 constexpr size_t kPmemPageSize = kVMPageSize - 16;
-
 #endif
+
+/*######################################################################################
+ * Utility functions
+ *####################################################################################*/
+
+/**
+ * @brief Allocate a memory region with alignments.
+ *
+ * @tparam T A target class.
+ * @param size The size of target class.
+ * @return The address of an allocated one.
+ */
+template <class T>
+inline auto
+Allocate(size_t size = sizeof(T))  //
+    -> T *
+{
+  if constexpr (alignof(T) <= kDefaultAlignment) {
+    return reinterpret_cast<T *>(::operator new(size));
+  } else {
+    return reinterpret_cast<T *>(::operator new(size, static_cast<std::align_val_t>(alignof(T))));
+  }
+}
+
+/**
+ * @brief A deleter function to release aligned pages.
+ *
+ * @tparam T A target class.
+ * @param ptr The address of allocations to be released.
+ */
+template <class T>
+inline void
+Release(void *ptr)
+{
+  if constexpr (alignof(T) <= kDefaultAlignment) {
+    ::operator delete(ptr);
+  } else {
+    ::operator delete(ptr, static_cast<std::align_val_t>(alignof(T)));
+  }
+}
+
 }  // namespace dbgroup::memory
 
 #endif  // MEMORY_UTILITY_HPP
