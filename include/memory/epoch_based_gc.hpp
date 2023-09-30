@@ -49,28 +49,6 @@
 namespace dbgroup::memory
 {
 /**
- * @brief A default GC information.
- *
- */
-struct DefaultTarget {
-  /// Use the void type and do not perform destructors.
-  using T = void;
-
-  /// Do not reuse pages after GC (release immediately).
-  static constexpr bool kReusePages = false;
-
-#ifdef MEMORY_MANAGER_USE_PERSISTENT_MEMORY
-  /// Default targets are on volatile memory.
-  static constexpr bool kOnPMEM = false;
-#endif
-
-  /// Use the standard delete function to release pages.
-  static const inline std::function<void(void *)> deleter = [](void *ptr) {
-    ::operator delete(ptr);
-  };
-};
-
-/**
  * @brief A class to manage garbage collection.
  *
  * @tparam T a target class of garbage collection.
@@ -258,7 +236,7 @@ class EpochBasedGC
   template <class Target>
   auto
   GetUnreleasedFields()  //
-      -> std::vector<std::vector<PMEMoid *>>
+      -> std::vector<std::array<PMEMoid *, kTmpFieldNum>>
   {
     return GetRemainingPMEMoids<Target, GCTargets...>();
   }
@@ -500,13 +478,13 @@ class EpochBasedGC
   template <class Target, class Head, class... Tails>
   auto
   GetRemainingPMEMoids()  //
-      -> std::vector<std::vector<PMEMoid *>>
+      -> std::vector<std::array<PMEMoid *, kTmpFieldNum>>
   {
     if constexpr (std::is_same_v<Target, Head>) {
       static_assert(Target::kOnPMEM);
       constexpr size_t kPos = GetPositionOnPMEM<Target, GCTargets...>();
 
-      std::vector<std::vector<PMEMoid *>> list_vec{};
+      std::vector<std::array<PMEMoid *, kTmpFieldNum>> list_vec{};
       list_vec.reserve(kMaxThreadNum);
 
       auto *oids = reinterpret_cast<PMEMoid *>(pmemobj_direct(root_[kPos]));  // NOLINT
@@ -515,10 +493,10 @@ class EpochBasedGC
         if (OID_IS_NULL(oid)) continue;
 
         auto *tls = reinterpret_cast<component::TLSFields *>(pmemobj_direct(oid));
-        auto &&vec = tls->GetRemainingFields();
-        if (vec.empty()) continue;
+        auto &&[has_dirty, arr] = tls->GetRemainingFields();
+        if (!has_dirty) continue;
 
-        list_vec.emplace_back(std::move(vec));
+        list_vec.emplace_back(arr);
       }
 
       return list_vec;

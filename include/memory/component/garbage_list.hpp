@@ -343,7 +343,7 @@ class alignas(kCashLineSize) GarbageList
         auto pos = buf->begin_pos_.load(std::memory_order_relaxed);
         for (; pos < mid_pos; ++pos) {
           // the garbage has been already destructed
-          Target::deleter(buf->garbage_.at(pos).ptr);
+          Release<Target>(buf->garbage_.at(pos).ptr);
         }
         for (; pos < end_pos; ++pos) {
           if (buf->garbage_.at(pos).epoch >= protected_epoch) break;
@@ -352,7 +352,7 @@ class alignas(kCashLineSize) GarbageList
           if constexpr (!std::is_same_v<T, void>) {
             ptr->~T();
           }
-          Target::deleter(ptr);
+          Release<Target>(ptr);
         }
         buf->begin_pos_.store(pos, std::memory_order_relaxed);
         buf->mid_pos_.store(pos, std::memory_order_relaxed);
