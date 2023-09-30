@@ -89,13 +89,6 @@ OIDIsNull(const PMEMoid &oid)  //
  */
 struct TLSFields {
   /*####################################################################################
-   * Public constants
-   *##################################################################################*/
-
-  /// The number of temporary fields per thread.
-  static constexpr size_t kTmpFieldNum = 13;
-
-  /*####################################################################################
    * Public member variables
    *##################################################################################*/
 
@@ -135,17 +128,19 @@ struct TLSFields {
    */
   auto
   GetRemainingFields()  //
-      -> std::vector<PMEMoid *>
+      -> std::pair<bool, std::array<PMEMoid *, kTmpFieldNum>>
   {
-    std::vector<PMEMoid *> oids{};
-    oids.reserve(kTmpFieldNum);
+    std::array<PMEMoid *, kTmpFieldNum> oids{};
+    oids.fill(nullptr);
 
+    auto has_dirty = false;
     for (size_t i = 0; i < kTmpFieldNum; ++i) {
       if (OID_IS_NULL(tmp_oids[i])) continue;
-      oids.emplace_back(&(tmp_oids[i]));
+      oids[i] = &(tmp_oids[i]);
+      has_dirty = true;
     }
 
-    return oids;
+    return {has_dirty, oids};
   }
 };
 

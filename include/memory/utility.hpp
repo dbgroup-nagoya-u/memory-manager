@@ -58,6 +58,9 @@ constexpr size_t kCashLineSize = 64;
 
 /// In PMDK, the memblock header use 16 bytes
 constexpr size_t kPmemPageSize = kVMPageSize - 16;
+
+/// The number of temporary fields per thread.
+constexpr size_t kTmpFieldNum = 13;
 #endif
 
 /*######################################################################################

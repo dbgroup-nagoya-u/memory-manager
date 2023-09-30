@@ -236,7 +236,7 @@ class EpochBasedGC
   template <class Target>
   auto
   GetUnreleasedFields()  //
-      -> std::vector<std::vector<PMEMoid *>>
+      -> std::vector<std::array<PMEMoid *, kTmpFieldNum>>
   {
     return GetRemainingPMEMoids<Target, GCTargets...>();
   }
@@ -478,13 +478,13 @@ class EpochBasedGC
   template <class Target, class Head, class... Tails>
   auto
   GetRemainingPMEMoids()  //
-      -> std::vector<std::vector<PMEMoid *>>
+      -> std::vector<std::array<PMEMoid *, kTmpFieldNum>>
   {
     if constexpr (std::is_same_v<Target, Head>) {
       static_assert(Target::kOnPMEM);
       constexpr size_t kPos = GetPositionOnPMEM<Target, GCTargets...>();
 
-      std::vector<std::vector<PMEMoid *>> list_vec{};
+      std::vector<std::array<PMEMoid *, kTmpFieldNum>> list_vec{};
       list_vec.reserve(kMaxThreadNum);
 
       auto *oids = reinterpret_cast<PMEMoid *>(pmemobj_direct(root_[kPos]));  // NOLINT
@@ -493,10 +493,10 @@ class EpochBasedGC
         if (OID_IS_NULL(oid)) continue;
 
         auto *tls = reinterpret_cast<component::TLSFields *>(pmemobj_direct(oid));
-        auto &&vec = tls->GetRemainingFields();
-        if (vec.empty()) continue;
+        auto &&[has_dirty, arr] = tls->GetRemainingFields();
+        if (!has_dirty) continue;
 
-        list_vec.emplace_back(std::move(vec));
+        list_vec.emplace_back(arr);
       }
 
       return list_vec;
