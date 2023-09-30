@@ -61,6 +61,27 @@ constexpr size_t kPmemPageSize = kVMPageSize - 16;
 #endif
 
 /*######################################################################################
+ * Utility classes
+ *####################################################################################*/
+
+/**
+ * @brief A default GC information.
+ *
+ */
+struct DefaultTarget {
+  /// Use the void type and do not perform destructors.
+  using T = void;
+
+  /// Do not reuse pages after GC (release immediately).
+  static constexpr bool kReusePages = false;
+
+#ifdef MEMORY_MANAGER_USE_PERSISTENT_MEMORY
+  /// Default targets are on volatile memory.
+  static constexpr bool kOnPMEM = false;
+#endif
+};
+
+/*######################################################################################
  * Utility functions
  *####################################################################################*/
 

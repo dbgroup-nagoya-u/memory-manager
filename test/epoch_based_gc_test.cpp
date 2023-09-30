@@ -43,16 +43,9 @@ using Target = uint64_t;
  * Global classes
  *####################################################################################*/
 
-struct SharedPtrTarget {
+struct SharedPtrTarget : public DefaultTarget {
   using T = std::shared_ptr<Target>;
-
   static constexpr bool kReusePages = true;
-
-  static constexpr bool kOnPMEM = false;
-
-  static const inline std::function<void(void *)> deleter = [](void *ptr) {
-    ::operator delete(ptr);
-  };
 };
 
 class EpochBasedGCFixture : public ::testing::Test
@@ -102,9 +95,8 @@ class EpochBasedGCFixture : public ::testing::Test
     for (size_t loop = 0; loop < garbage_num; ++loop) {
       auto *target = new Target{loop};
       auto *page = gc_->GetPageIfPossible<SharedPtrTarget>();
-      std::shared_ptr<Target> *target_shared =  //
-          (page == nullptr) ? new std::shared_ptr<Target>{target}
-                            : new (page) std::shared_ptr<Target>{target};
+      auto *target_shared = (page == nullptr) ? new std::shared_ptr<Target>{target}
+                                              : new (page) std::shared_ptr<Target>{target};
 
       target_weak_ptrs.emplace_back(*target_shared);
       gc_->AddGarbage<SharedPtrTarget>(target_shared);

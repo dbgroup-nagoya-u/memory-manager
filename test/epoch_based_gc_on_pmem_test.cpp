@@ -58,9 +58,8 @@ class EpochBasedGCFixture : public ::testing::Test
    * Internal classes
    *####################################################################################*/
 
-  struct SharedPtrTarget {
+  struct SharedPtrTarget : public DefaultTarget {
     using T = std::shared_ptr<Target>;
-
     static constexpr bool kReusePages = true;
     static constexpr bool kOnPMEM = true;
   };

@@ -49,28 +49,6 @@
 namespace dbgroup::memory
 {
 /**
- * @brief A default GC information.
- *
- */
-struct DefaultTarget {
-  /// Use the void type and do not perform destructors.
-  using T = void;
-
-  /// Do not reuse pages after GC (release immediately).
-  static constexpr bool kReusePages = false;
-
-#ifdef MEMORY_MANAGER_USE_PERSISTENT_MEMORY
-  /// Default targets are on volatile memory.
-  static constexpr bool kOnPMEM = false;
-#endif
-
-  /// Use the standard delete function to release pages.
-  static const inline std::function<void(void *)> deleter = [](void *ptr) {
-    ::operator delete(ptr);
-  };
-};
-
-/**
  * @brief A class to manage garbage collection.
  *
  * @tparam T a target class of garbage collection.

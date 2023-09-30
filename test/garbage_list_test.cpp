@@ -44,14 +44,9 @@ class GarbageListFixture : public ::testing::Test
    * Internal classes
    *##################################################################################*/
 
-  struct SharedPtrTarget {
+  struct SharedPtrTarget : public DefaultTarget {
     using T = std::shared_ptr<Target>;
-
     static constexpr bool kReusePages = true;
-
-    static const inline std::function<void(void *)> deleter = [](void *ptr) {
-      ::operator delete(ptr);
-    };
   };
 
   /*####################################################################################
@@ -89,10 +84,8 @@ class GarbageListFixture : public ::testing::Test
       auto *target = new Target{0};
 
       auto *page = list_->GetPageIfPossible();
-      if (page == nullptr) {
-        page = ::operator new(sizeof(std::shared_ptr<Target>));
-      }
-      auto *garbage = new (page) std::shared_ptr<Target>{target};
+      auto *garbage = (page == nullptr) ? new std::shared_ptr<Target>{target}
+                                        : new (page) std::shared_ptr<Target>{target};
 
       list_->AddGarbage(current_epoch_.load(), garbage);
       references_.emplace_back(*garbage);
