@@ -32,7 +32,13 @@ if(NOT TARGET dbgroup::${PROJECT_NAME})
   find_package(Threads)
 
   # use our thread ID manager
-  add_subdirectory("external/cpp-utility")
+  include(FetchContent)
+  FetchContent_Declare(
+    cpp-utility
+    GIT_REPOSITORY "https://github.com/dbgroup-nagoya-u/cpp-utility.git"
+    GIT_TAG "953e9bbf8b0c99efe26976b0c07033d7ebcc3c14"
+  )
+  FetchContent_MakeAvailable(cpp-utility)
 
   #------------------------------------------------------------------------------------#
   # Build targets
