@@ -501,7 +501,7 @@ class EpochBasedGC
 
       return list_vec;
     } else {
-      return GetPositionOnPMEM<Target, Tails...>();
+      return GetRemainingPMEMoids<Target, Tails...>();
     }
   }
 #endif
