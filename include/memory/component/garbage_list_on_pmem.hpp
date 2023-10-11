@@ -436,8 +436,8 @@ class alignas(kCashLineSize) GarbageListOnPMEM
   GetTmpField(const size_t i)  //
       -> PMEMoid *
   {
-    assert(i >= 0);                       // NOLINT
-    assert(i < TLSFields::kTmpFieldNum);  // NOLINT
+    assert(i >= 0);            // NOLINT
+    assert(i < kTmpFieldNum);  // NOLINT
 
     AssignCurrentThreadIfNeeded();
     return &(tls_fields_->tmp_oids[i]);
