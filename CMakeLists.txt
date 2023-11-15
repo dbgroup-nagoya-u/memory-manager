@@ -25,7 +25,7 @@ if(NOT TARGET dbgroup::${PROJECT_NAME})
   )
 
   #------------------------------------------------------------------------------------#
-  # Configure external libraries
+  # Configurations
   #------------------------------------------------------------------------------------#
 
   # this library uses multi-threads

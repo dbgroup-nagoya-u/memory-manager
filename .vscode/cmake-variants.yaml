@@ -10,6 +10,7 @@ buildType:
         CMAKE_CXX_CLANG_TIDY: "clang-tidy"
         MEMORY_MANAGER_USE_PERSISTENT_MEMORY: OFF
         MEMORY_MANAGER_BUILD_TESTS: ON
+        DBGROUP_TEST_THREAD_NUM: ""
         DBGROUP_TEST_TMP_PMEM_PATH: "/pmem_tmp"
     relWithDebInfo:
       short: RelWithDebInfo
@@ -19,6 +20,7 @@ buildType:
         CMAKE_CXX_CLANG_TIDY: "clang-tidy"
         MEMORY_MANAGER_USE_PERSISTENT_MEMORY: OFF
         MEMORY_MANAGER_BUILD_TESTS: ON
+        DBGROUP_TEST_THREAD_NUM: ""
         DBGROUP_TEST_TMP_PMEM_PATH: "/pmem_tmp"
     release:
       short: Release
@@ -28,4 +30,5 @@ buildType:
         CMAKE_CXX_CLANG_TIDY: "clang-tidy"
         MEMORY_MANAGER_USE_PERSISTENT_MEMORY: OFF
         MEMORY_MANAGER_BUILD_TESTS: ON
+        DBGROUP_TEST_THREAD_NUM: ""
         DBGROUP_TEST_TMP_PMEM_PATH: "/pmem_tmp"
