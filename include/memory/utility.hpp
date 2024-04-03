@@ -14,8 +14,8 @@
  * limitations under the License.
  */
 
-#ifndef MEMORY_UTILITY_HPP
-#define MEMORY_UTILITY_HPP
+#ifndef DBGROUP_MEMORY_UTILITY_HPP
+#define DBGROUP_MEMORY_UTILITY_HPP
 
 // C++ standard libraries
 #include <cassert>
@@ -25,9 +25,9 @@
 
 namespace dbgroup::memory
 {
-/*######################################################################################
+/*##############################################################################
  * Global constants
- *####################################################################################*/
+ *############################################################################*/
 
 /// The default time interval for garbage collection [us].
 constexpr size_t kDefaultGCTime = 10000;  // 10 ms
@@ -38,9 +38,9 @@ constexpr size_t kDefaultGCThreadNum = 1;
 /// The default alignment size for dynamically allocated instances.
 constexpr size_t kDefaultAlignment = __STDCPP_DEFAULT_NEW_ALIGNMENT__;
 
-/*######################################################################################
+/*##############################################################################
  * Turning parameters
- *####################################################################################*/
+ *############################################################################*/
 
 /// The page size of virtual memory addresses.
 constexpr size_t kVMPageSize = 4096;
@@ -51,21 +51,9 @@ constexpr size_t kWordSize = 8;
 /// The expected cache-line size.
 constexpr size_t kCashLineSize = 64;
 
-#ifdef MEMORY_MANAGER_USE_PERSISTENT_MEMORY
-/*######################################################################################
- * Constants for persistent memory
- *####################################################################################*/
-
-/// In PMDK, the memblock header use 16 bytes
-constexpr size_t kPmemPageSize = kVMPageSize - 16;
-
-/// The number of temporary fields per thread.
-constexpr size_t kTmpFieldNum = 13;
-#endif
-
-/*######################################################################################
+/*##############################################################################
  * Utility classes
- *####################################################################################*/
+ *############################################################################*/
 
 /**
  * @brief A default GC information.
@@ -77,16 +65,11 @@ struct DefaultTarget {
 
   /// Do not reuse pages after GC (release immediately).
   static constexpr bool kReusePages = false;
-
-#ifdef MEMORY_MANAGER_USE_PERSISTENT_MEMORY
-  /// Default targets are on volatile memory.
-  static constexpr bool kOnPMEM = false;
-#endif
 };
 
-/*######################################################################################
+/*##############################################################################
  * Utility functions
- *####################################################################################*/
+ *############################################################################*/
 
 /**
  * @brief Allocate a memory region with alignments.
@@ -126,4 +109,4 @@ Release(void *ptr)
 
 }  // namespace dbgroup::memory
 
-#endif  // MEMORY_UTILITY_HPP
+#endif  // DBGROUP_MEMORY_UTILITY_HPP

@@ -14,11 +14,8 @@
  * limitations under the License.
  */
 
-#ifndef MEMORY_EPOCH_BASED_GC_HPP
-#define MEMORY_EPOCH_BASED_GC_HPP
-
-// system headers
-#include <sys/stat.h>
+#ifndef DBGROUP_MEMORY_EPOCH_BASED_GC_HPP
+#define DBGROUP_MEMORY_EPOCH_BASED_GC_HPP
 
 // C++ standard libraries
 #include <atomic>
@@ -33,18 +30,14 @@
 #include <utility>
 #include <vector>
 
-// external sources
+// external libraries
+#include "thread/epoch_guard.hpp"
+#include "thread/epoch_manager.hpp"
 #include "thread/id_manager.hpp"
 
 // local sources
-#include "memory/component/epoch_guard.hpp"
 #include "memory/component/garbage_list.hpp"
-#include "memory/epoch_manager.hpp"
 #include "memory/utility.hpp"
-
-#ifdef MEMORY_MANAGER_USE_PERSISTENT_MEMORY
-#include "memory/component/garbage_list_on_pmem.hpp"
-#endif
 
 namespace dbgroup::memory
 {
@@ -56,29 +49,22 @@ namespace dbgroup::memory
 template <class... GCTargets>
 class EpochBasedGC
 {
-  /*####################################################################################
+  /*############################################################################
    * Type aliases
-   *##################################################################################*/
+   *##########################################################################*/
 
   using IDManager = ::dbgroup::thread::IDManager;
-  using Epoch = component::Epoch;
-  using EpochGuard = component::EpochGuard;
+  using EpochGuard = ::dbgroup::thread::EpochGuard;
+  using EpochManager = ::dbgroup::thread::EpochManager;
   using Clock_t = ::std::chrono::high_resolution_clock;
 
-#ifndef MEMORY_MANAGER_USE_PERSISTENT_MEMORY
   template <class Target>
   using GarbageList = component::GarbageList<Target>;
-#else
-  template <class Target>
-  using GarbageList = std::conditional_t<Target::kOnPMEM,  //
-                                         component::GarbageListOnPMEM<Target>,
-                                         component::GarbageList<Target>>;
-#endif
 
  public:
-  /*####################################################################################
+  /*############################################################################
    * Public constructors and assignment operators
-   *##################################################################################*/
+   *##########################################################################*/
 
   /**
    * @brief Construct a new instance.
@@ -95,53 +81,15 @@ class EpochBasedGC
     cleaner_threads_.reserve(gc_thread_num_);
   }
 
-#ifdef MEMORY_MANAGER_USE_PERSISTENT_MEMORY
-  /**
-   * @brief Construct a new instance.
-   *
-   * @param pmem_path the path to a pmemobj pool for GC.
-   * @param gc_size the memory capacity for GC.
-   * @param gc_interval_micro_sec the duration of interval for GC.
-   * @param gc_thread_num the maximum number of threads to perform GC.
-   */
-  explicit EpochBasedGC(  //
-      const std::string &pmem_path,
-      const size_t gc_size = PMEMOBJ_MIN_POOL * 2,  // about 1M garbage instances
-      const std::string &layout_name = "gc_on_pmem",
-      const size_t gc_interval_micro_sec = kDefaultGCTime,
-      const size_t gc_thread_num = kDefaultGCThreadNum)
-      : gc_interval_{gc_interval_micro_sec}, gc_thread_num_{gc_thread_num}
-  {
-    const auto *path = pmem_path.c_str();
-    const auto *layout = layout_name.c_str();
-    if (std::filesystem::exists(pmem_path)) {
-      pop_ = pmemobj_open(path, layout);
-    } else {
-      constexpr auto kModeRW = S_IRUSR | S_IWUSR;  // NOLINT
-      pop_ = pmemobj_create(path, layout, gc_size + PMEMOBJ_MIN_POOL, kModeRW);
-    }
-    if (pop_ == nullptr) {
-      std::cerr << pmemobj_errormsg() << std::endl;
-      throw std::exception{};
-    }
-
-    auto &&root = pmemobj_root(pop_, sizeof(PMEMoid) * GetTargetNumOnPMEM<GCTargets...>());
-    root_ = reinterpret_cast<PMEMoid *>(pmemobj_direct(root));
-
-    InitializeGarbageLists<DefaultTarget, GCTargets...>();
-    cleaner_threads_.reserve(gc_thread_num_);
-  }
-#endif
-
   EpochBasedGC(const EpochBasedGC &) = delete;
   EpochBasedGC(EpochBasedGC &&) = delete;
 
   auto operator=(const EpochBasedGC &) -> EpochBasedGC & = delete;
   auto operator=(EpochBasedGC &&) -> EpochBasedGC & = delete;
 
-  /*####################################################################################
+  /*############################################################################
    * Public destructors
-   *##################################################################################*/
+   *##########################################################################*/
 
   /**
    * @brief Destroy the instance.
@@ -152,17 +100,11 @@ class EpochBasedGC
   {
     // stop garbage collection
     StopGC();
-
-#ifdef MEMORY_MANAGER_USE_PERSISTENT_MEMORY
-    if (pop_ != nullptr) {
-      pmemobj_close(pop_);
-    }
-#endif
   }
 
-  /*####################################################################################
+  /*############################################################################
    * Public utility functions
-   *##################################################################################*/
+   *##########################################################################*/
 
   /**
    * @brief Create a guard instance to protect garbage based on the scoped locking
@@ -207,73 +149,9 @@ class EpochBasedGC
     return GetGarbageList<Target>()->GetPageIfPossible();
   }
 
-#ifdef MEMORY_MANAGER_USE_PERSISTENT_MEMORY
-  /*####################################################################################
-   * Public utility functions for persistent memory
-   *##################################################################################*/
-
-  /**
-   * @brief Get the temporary field for memory allocation.
-   *
-   * @tparam Target a class for representing target garbage.
-   * @param i the position of fields (0 <= i <= 13).
-   * @return the address of the specified temporary field.
-   */
-  template <class Target>
-  auto
-  GetTmpField(const size_t i)  //
-      -> PMEMoid *
-  {
-    return GetGarbageList<Target>()->GetTmpField(i);
-  }
-
-  /**
-   * @brief Get the unreleased temporary fields of each thread.
-   *
-   * @tparam Target a class for representing target garbage.
-   * @return unreleased temporary fields if exist.
-   */
-  template <class Target>
-  auto
-  GetUnreleasedFields()  //
-      -> std::vector<std::array<PMEMoid *, kTmpFieldNum>>
-  {
-    return GetRemainingPMEMoids<Target, GCTargets...>();
-  }
-
-  /**
-   * @brief Add a new garbage instance.
-   *
-   * @tparam Target a class for representing target garbage.
-   * @param garbage_ptr a pointer to a target garbage.
-   */
-  template <class Target>
-  void
-  AddGarbage(PMEMoid *ptr)
-  {
-    static_assert(Target::kOnPMEM);
-
-    GetGarbageList<Target>()->AddGarbage(epoch_manager_.GetCurrentEpoch(), ptr);
-  }
-
-  /**
-   * @brief Reuse a released memory page if it exists.
-   *
-   * @tparam Target a class for representing target garbage.
-   * @param out_oid an address to be stored a reusable page.
-   */
-  template <class Target>
-  void
-  GetPageIfPossible(PMEMoid *out_oid)
-  {
-    static_assert(Target::kReusePages);
-    GetGarbageList<Target>()->GetPageIfPossible(out_oid);
-  }
-#endif
-
-  /*####################################################################################
+  /*############################################################################
    * Public GC control functions
-   *##################################################################################*/
+   *##########################################################################*/
 
   /**
    * @brief Start garbage collection.
@@ -312,16 +190,16 @@ class EpochBasedGC
   }
 
  private:
-  /*####################################################################################
+  /*############################################################################
    * Internal constants
-   *##################################################################################*/
+   *##########################################################################*/
 
   /// The expected maximum number of threads.
   static constexpr size_t kMaxThreadNum = ::dbgroup::thread::kMaxThreadNum;
 
-  /*####################################################################################
+  /*############################################################################
    * Internal utilities for initialization and finalization
-   *##################################################################################*/
+   *##########################################################################*/
 
   /**
    * @brief A dummy function for creating type aliases.
@@ -355,26 +233,6 @@ class EpochBasedGC
     auto &lists = std::get<ListsPtr>(garbage_lists_);
     lists.reset(new GarbageList<Target>[kMaxThreadNum]);
 
-#ifdef MEMORY_MANAGER_USE_PERSISTENT_MEMORY
-    if constexpr (Target::kOnPMEM) {
-      constexpr size_t kPos = GetPositionOnPMEM<Target, GCTargets...>();
-      auto *oid = &(root_[kPos]);  // NOLINT
-      if (OID_IS_NULL(*oid)) {
-        component::AllocatePmem(pop_, oid, sizeof(PMEMoid) * kMaxThreadNum);
-      }
-
-      auto *oids = reinterpret_cast<PMEMoid *>(pmemobj_direct(*oid));
-      for (size_t i = 0; i < kMaxThreadNum; ++i) {
-        oid = &(oids[i]);  // NOLINT
-        if (!OID_IS_NULL(*oid)) {
-          auto *tls_fields = reinterpret_cast<component::TLSFields *>(pmemobj_direct(*oid));
-          component::PMEMoidBuffer::ReleaseAllGarbages(tls_fields);
-        }
-        lists[i].SetPMEMInfo(pop_, oid);
-      }
-    }
-#endif
-
     if constexpr (sizeof...(Tails) > 0) {
       InitializeGarbageLists<Tails...>();
     }
@@ -395,120 +253,14 @@ class EpochBasedGC
     auto &lists = std::get<ListsPtr>(garbage_lists_);
     lists.reset(nullptr);
 
-#ifdef MEMORY_MANAGER_USE_PERSISTENT_MEMORY
-    if constexpr (Target::kOnPMEM) {
-      constexpr size_t kPos = GetPositionOnPMEM<Target, GCTargets...>();
-      auto &list_oid = root_[kPos];  // NOLINT
-      auto *oids = reinterpret_cast<PMEMoid *>(pmemobj_direct(list_oid));
-      for (size_t i = 0; i < kMaxThreadNum; ++i) {
-        auto *oid = &(oids[i]);  // NOLINT
-        if (!OID_IS_NULL(*oid)) {
-          auto *tls_fields = reinterpret_cast<component::TLSFields *>(pmemobj_direct(*oid));
-          component::PMEMoidBuffer::ReleaseAllGarbages(tls_fields);
-        }
-        pmemobj_free(oid);
-      }
-      pmemobj_free(&list_oid);
-    }
-#endif
-
     if constexpr (sizeof...(Tails) > 0) {
       DestroyGarbageLists<Tails...>();
     }
   }
 
-#ifdef MEMORY_MANAGER_USE_PERSISTENT_MEMORY
-  /*####################################################################################
-   * Additional utilities for persistent memory
-   *##################################################################################*/
-
-  /**
-   * @tparam Target the current class in garbage targets.
-   * @tparam Tails the remaining classes in garbage targets.
-   * @return the number of target classes on persistent memory.
-   */
-  template <class Target, class... Tails>
-  static constexpr auto
-  GetTargetNumOnPMEM()  //
-      -> size_t
-  {
-    if constexpr (sizeof...(Tails) > 0) {
-      if constexpr (Target::kOnPMEM) {
-        return 1 + GetTargetNumOnPMEM<Tails...>();
-      } else {
-        return GetTargetNumOnPMEM<Tails...>();
-      }
-    } else {
-      if constexpr (Target::kOnPMEM) {
-        return 1;
-      } else {
-        return 0;
-      }
-    }
-  }
-
-  /**
-   * @tparam Target a class for representing a target garbage.
-   * @tparam Head the current class in garbage targets.
-   * @tparam Tails the remaining classes in garbage targets.
-   * @param pos the current position.
-   * @return the position of a target class.
-   */
-  template <class Target, class Head, class... Tails>
-  static constexpr auto
-  GetPositionOnPMEM(const size_t pos = 0)  //
-      -> size_t
-  {
-    if constexpr (std::is_same_v<Target, Head>) {
-      static_assert(Target::kOnPMEM);
-      return pos;
-    } else if constexpr (Target::kOnPMEM) {
-      return GetPositionOnPMEM<Target, Tails...>(pos + 1);
-    } else {
-      return GetPositionOnPMEM<Target, Tails...>(pos);
-    }
-  }
-
-  /**
-   * @tparam Target a class for representing a target garbage.
-   * @tparam Head the current class in garbage targets.
-   * @tparam Tails the remaining classes in garbage targets.
-   * @return unreleased temporary fields if exist.
-   */
-  template <class Target, class Head, class... Tails>
-  auto
-  GetRemainingPMEMoids()  //
-      -> std::vector<std::array<PMEMoid *, kTmpFieldNum>>
-  {
-    if constexpr (std::is_same_v<Target, Head>) {
-      static_assert(Target::kOnPMEM);
-      constexpr size_t kPos = GetPositionOnPMEM<Target, GCTargets...>();
-
-      std::vector<std::array<PMEMoid *, kTmpFieldNum>> list_vec{};
-      list_vec.reserve(kMaxThreadNum);
-
-      auto *oids = reinterpret_cast<PMEMoid *>(pmemobj_direct(root_[kPos]));  // NOLINT
-      for (size_t i = 0; i < kMaxThreadNum; ++i) {
-        auto &oid = oids[i];  // NOLINT
-        if (OID_IS_NULL(oid)) continue;
-
-        auto *tls = reinterpret_cast<component::TLSFields *>(pmemobj_direct(oid));
-        auto &&[has_dirty, arr] = tls->GetRemainingFields();
-        if (!has_dirty) continue;
-
-        list_vec.emplace_back(arr);
-      }
-
-      return list_vec;
-    } else {
-      return GetRemainingPMEMoids<Target, Tails...>();
-    }
-  }
-#endif
-
-  /*####################################################################################
+  /*############################################################################
    * Internal utility functions
-   *##################################################################################*/
+   *##########################################################################*/
 
   /**
    * @tparam Target a class for representing target garbage.
@@ -586,9 +338,9 @@ class EpochBasedGC
     cleaner_threads_.clear();
   }
 
-  /*####################################################################################
+  /*############################################################################
    * Internal member variables
-   *##################################################################################*/
+   *##########################################################################*/
 
   /// The duration of garbage collection in micro seconds.
   const std::chrono::microseconds gc_interval_{};
@@ -614,16 +366,8 @@ class EpochBasedGC
   /// The heads of linked lists for each GC target.
   decltype(ConvToTuple<DefaultTarget, GCTargets...>()) garbage_lists_ =
       ConvToTuple<DefaultTarget, GCTargets...>();
-
-#ifdef MEMORY_MANAGER_USE_PERSISTENT_MEMORY
-  /// The pmemobj_pool for holding garbage lists.
-  PMEMobjpool *pop_{nullptr};
-
-  /// The root object for accessing each garbage list.
-  PMEMoid *root_{nullptr};
-#endif
 };
 
 }  // namespace dbgroup::memory
 
-#endif  // MEMORY_EPOCH_BASED_GC_HPP
+#endif  // DBGROUP_MEMORY_EPOCH_BASED_GC_HPP

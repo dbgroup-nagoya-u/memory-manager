@@ -14,8 +14,8 @@
  * limitations under the License.
  */
 
-#ifndef MEMORY_COMPONENT_GARBAGE_LIST_HPP
-#define MEMORY_COMPONENT_GARBAGE_LIST_HPP
+#ifndef DBGROUP_MEMORY_COMPONENT_GARBAGE_LIST_HPP
+#define DBGROUP_MEMORY_COMPONENT_GARBAGE_LIST_HPP
 
 // C++ standard libraries
 #include <array>
@@ -26,11 +26,11 @@
 #include <tuple>
 #include <utility>
 
-// external sources
+// external libraries
 #include "thread/id_manager.hpp"
 
 // local sources
-#include "memory/component/common.hpp"
+#include "memory/utility.hpp"
 
 namespace dbgroup::memory::component
 {
@@ -43,23 +43,23 @@ template <class Target>
 class alignas(kCashLineSize) GarbageList
 {
  public:
-  /*####################################################################################
+  /*############################################################################
    * Public global constants
-   *##################################################################################*/
+   *##########################################################################*/
 
   /// The size of buffers for retaining garbages.
   static constexpr size_t kBufferSize = (kVMPageSize - 4 * kWordSize) / (2 * kWordSize);
 
-  /*####################################################################################
+  /*############################################################################
    * Type aliases
-   *##################################################################################*/
+   *##########################################################################*/
 
   using T = typename Target::T;
   using IDManager = ::dbgroup::thread::IDManager;
 
-  /*####################################################################################
+  /*############################################################################
    * Public constructors and assignment operators
-   *##################################################################################*/
+   *##########################################################################*/
 
   /**
    * @brief Construct a new GarbageList object.
@@ -73,9 +73,9 @@ class alignas(kCashLineSize) GarbageList
   auto operator=(const GarbageList &) -> GarbageList & = delete;
   auto operator=(GarbageList &&) -> GarbageList & = delete;
 
-  /*####################################################################################
+  /*############################################################################
    * Public destructors
-   *##################################################################################*/
+   *##########################################################################*/
 
   /**
    * @brief Destroy the GarbageList object.
@@ -91,9 +91,9 @@ class alignas(kCashLineSize) GarbageList
     }
   }
 
-  /*####################################################################################
+  /*############################################################################
    * Public utility functions for worker threads
-   *##################################################################################*/
+   *##########################################################################*/
 
   /**
    * @brief Add a new garbage instance.
@@ -124,9 +124,9 @@ class alignas(kCashLineSize) GarbageList
     return GarbageBuffer::ReusePage(&head_);
   }
 
-  /*####################################################################################
+  /*############################################################################
    * Public utility functions for GC threads
-   *##################################################################################*/
+   *##########################################################################*/
 
   /**
    * @brief Release registered garbage if possible.
@@ -167,9 +167,9 @@ class alignas(kCashLineSize) GarbageList
   }
 
  private:
-  /*####################################################################################
+  /*############################################################################
    * Internal classes
-   *##################################################################################*/
+   *##########################################################################*/
 
   /**
    * @brief A class to represent a buffer of garbage instances.
@@ -178,9 +178,9 @@ class alignas(kCashLineSize) GarbageList
   class alignas(kVMPageSize) GarbageBuffer
   {
    public:
-    /*##################################################################################
+    /*##########################################################################
      * Public constructors and assignment operators
-     *################################################################################*/
+     *########################################################################*/
 
     /**
      * @brief Construct a new instance.
@@ -193,9 +193,9 @@ class alignas(kCashLineSize) GarbageList
     GarbageBuffer(GarbageBuffer &&) = delete;
     auto operator=(GarbageBuffer &&) -> GarbageBuffer & = delete;
 
-    /*##################################################################################
+    /*##########################################################################
      * Public destructors
-     *################################################################################*/
+     *########################################################################*/
 
     /**
      * @brief Destroy the instance.
@@ -203,9 +203,9 @@ class alignas(kCashLineSize) GarbageList
      */
     ~GarbageBuffer() = default;
 
-    /*##################################################################################
+    /*##########################################################################
      * Public getters/setters
-     *################################################################################*/
+     *########################################################################*/
 
     /**
      * @retval true if this list is empty.
@@ -221,9 +221,9 @@ class alignas(kCashLineSize) GarbageList
       return (size == 0) && (end_pos < kBufferSize);
     }
 
-    /*##################################################################################
+    /*##########################################################################
      * Public utility functions
-     *################################################################################*/
+     *########################################################################*/
 
     /**
      * @brief Add a new garbage instance to a specified buffer.
@@ -366,9 +366,9 @@ class alignas(kCashLineSize) GarbageList
     }
 
    private:
-    /*##################################################################################
+    /*##########################################################################
      * Internal classes
-     *################################################################################*/
+     *########################################################################*/
 
     /**
      * @brief A class to represent the pair of an epoch value and a registered garbage.
@@ -382,9 +382,9 @@ class alignas(kCashLineSize) GarbageList
       T *ptr{};
     };
 
-    /*##################################################################################
+    /*##########################################################################
      * Internal member variables
-     *################################################################################*/
+     *########################################################################*/
 
     /// The index to represent a head position.
     std::atomic_size_t begin_pos_{0};
@@ -402,9 +402,9 @@ class alignas(kCashLineSize) GarbageList
     GarbageBuffer *next_{nullptr};
   };
 
-  /*####################################################################################
+  /*############################################################################
    * Internal utilities
-   *##################################################################################*/
+   *##########################################################################*/
 
   /**
    * @brief Assign this list to the current thread.
@@ -415,7 +415,7 @@ class alignas(kCashLineSize) GarbageList
   {
     if (!heartbeat_.expired()) return;
 
-    std::lock_guard guard{mtx_};
+    const std::lock_guard guard{mtx_};
     if (tail_ == nullptr) {
       tail_ = new GarbageBuffer{};
       mid_ = tail_;
@@ -426,9 +426,9 @@ class alignas(kCashLineSize) GarbageList
     heartbeat_ = IDManager::GetHeartBeat();
   }
 
-  /*####################################################################################
+  /*############################################################################
    * Internal member variables
-   *##################################################################################*/
+   *##########################################################################*/
 
   /// A flag for indicating the corresponding thread has exited.
   std::weak_ptr<size_t> heartbeat_{};
@@ -451,4 +451,4 @@ class alignas(kCashLineSize) GarbageList
 
 }  // namespace dbgroup::memory::component
 
-#endif  // MEMORY_COMPONENT_GARBAGE_LIST_HPP
+#endif  // DBGROUP_MEMORY_COMPONENT_GARBAGE_LIST_HPP

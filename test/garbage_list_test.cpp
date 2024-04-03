@@ -18,46 +18,49 @@
 #include "memory/component/garbage_list.hpp"
 
 // C++ standard libraries
-#include <future>
+#include <atomic>
+#include <cstddef>
+#include <cstdint>
+#include <limits>
 #include <memory>
 #include <thread>
 #include <vector>
 
-// external sources
+// external libraries
 #include "gtest/gtest.h"
 
-// local sources
-#include "common.hpp"
+// library sources
+#include "memory/utility.hpp"
 
 namespace dbgroup::memory::component::test
 {
-/*######################################################################################
+/*##############################################################################
  * Global type aliases
- *####################################################################################*/
+ *############################################################################*/
 
 using Target = uint64_t;
 
 class GarbageListFixture : public ::testing::Test
 {
  protected:
-  /*####################################################################################
+  /*############################################################################
    * Internal classes
-   *##################################################################################*/
+   *##########################################################################*/
 
   struct SharedPtrTarget : public DefaultTarget {
     using T = std::shared_ptr<Target>;
     static constexpr bool kReusePages = true;
   };
 
-  /*####################################################################################
+  /*############################################################################
    * Type aliases
-   *##################################################################################*/
+   *##########################################################################*/
 
   using GarbageList_t = GarbageList<SharedPtrTarget>;
 
-  /*####################################################################################
+  /*############################################################################
    * Test setup/teardown
-   *##################################################################################*/
+   *##########################################################################*/
 
   void
   SetUp() override
@@ -73,9 +76,9 @@ class GarbageListFixture : public ::testing::Test
     list_.reset();
   }
 
-  /*####################################################################################
+  /*############################################################################
    * Internal utility functions
-   *##################################################################################*/
+   *##########################################################################*/
 
   void
   AddGarbage(const size_t n)
@@ -84,8 +87,10 @@ class GarbageListFixture : public ::testing::Test
       auto *target = new Target{0};
 
       auto *page = list_->GetPageIfPossible();
-      auto *garbage = (page == nullptr) ? new std::shared_ptr<Target>{target}
-                                        : new (page) std::shared_ptr<Target>{target};
+      if (page == nullptr) {
+        page = Allocate<std::shared_ptr<Target>>();
+      }
+      auto *garbage = new (page) std::shared_ptr<Target>{target};
 
       list_->AddGarbage(current_epoch_.load(), garbage);
       references_.emplace_back(*garbage);
@@ -103,17 +108,17 @@ class GarbageListFixture : public ::testing::Test
     }
   }
 
-  /*####################################################################################
+  /*############################################################################
    * Internal constants
-   *##################################################################################*/
+   *##########################################################################*/
 
   static constexpr size_t kSmallNum = GarbageList_t::kBufferSize / 2;
   static constexpr size_t kLargeNum = GarbageList_t::kBufferSize * 4;
   static constexpr size_t kMaxLong = std::numeric_limits<size_t>::max();
 
-  /*####################################################################################
+  /*############################################################################
    * Internal member variables
-   *##################################################################################*/
+   *##########################################################################*/
 
   std::atomic_size_t current_epoch_{};
 
@@ -122,9 +127,9 @@ class GarbageListFixture : public ::testing::Test
   std::unique_ptr<GarbageList_t> list_{};
 };
 
-/*######################################################################################
+/*##############################################################################
  * Unit test definitions
- *####################################################################################*/
+ *############################################################################*/
 
 TEST_F(GarbageListFixture, ClearGarbageWithoutProtectedEpochReleaseAllGarbage)
 {
@@ -161,7 +166,7 @@ TEST_F(GarbageListFixture, GetPageIfPossibleWithPagesReturnReusablePage)
   for (size_t i = 0; i < kLargeNum; ++i) {
     auto *page = list_->GetPageIfPossible();
     EXPECT_NE(nullptr, page);
-    ::operator delete(page);
+    Release<std::shared_ptr<Target>>(page);
   }
   EXPECT_EQ(nullptr, list_->GetPageIfPossible());
 }

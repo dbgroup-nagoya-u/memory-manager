@@ -51,8 +51,5 @@ function(DBGROUP_ADD_TEST DBGROUP_TEST_TARGET)
 endfunction()
 
 # add unit tests to build targets
-DBGROUP_ADD_TEST("epoch_test")
-DBGROUP_ADD_TEST("epoch_guard_test")
-DBGROUP_ADD_TEST("epoch_manager_test")
 DBGROUP_ADD_TEST("garbage_list_test")
 DBGROUP_ADD_TEST("epoch_based_gc_test")
