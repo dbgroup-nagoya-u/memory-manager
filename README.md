@@ -7,8 +7,6 @@ This repository is an open source implementation of epoch-based garbage collecti
 - [Build](#build)
     - [Prerequisites](#prerequisites)
     - [Build Options](#build-options)
-        - [Tuning Parameters](#tuning-parameters)
-        - [Parameters for Unit Testing](#parameters-for-unit-testing)
     - [Build and Run Unit Tests](#build-and-run-unit-tests)
 - [Usage](#usage)
     - [Linking by CMake](#linking-by-cmake)
@@ -40,14 +38,12 @@ sudo apt update && sudo apt install -y libpmemobj-dev
 
 #### Tuning Parameters
 
-- `MEMORY_MANAGER_USE_PERSISTENT_MEMORY`: perform garbage collection for pages on persistent memory (default: `OFF`).
 - `DBGROUP_MAX_THREAD_NUM`: the maximum number of worker threads (please refer to [cpp-utility](https://github.com/dbgroup-nagoya-u/cpp-utility)).
 
 #### Parameters for Unit Testing
 
 - `MEMORY_MANAGER_BUILD_TESTS`: build unit tests for this repository if `ON` (default `OFF`).
 - `DBGROUP_TEST_THREAD_NUM`: the number of threads to run unit tests (default `8`).
-- `DBGROUP_TEST_TMP_PMEM_PATH`: the path to a durable storage (default: `/tmp`). We expect this option to be used with persistent memory.
 
 ### Build and Run Unit Tests
 

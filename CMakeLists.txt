@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION "3.11")
+cmake_minimum_required(VERSION "3.14")
 
 # decline in-source build
 if("${CMAKE_SOURCE_DIR}" STREQUAL "${CMAKE_BINARY_DIR}")
@@ -14,35 +14,27 @@ project(
 )
 
 if(NOT TARGET dbgroup::${PROJECT_NAME})
-  #------------------------------------------------------------------------------------#
-  # Turning parameters
-  #------------------------------------------------------------------------------------#
+  # enable features
+  include(FetchContent)
 
-  option(
-    MEMORY_MANAGER_USE_PERSISTENT_MEMORY
-    "perform garbage collection for pages on persistent memory."
-    OFF
-  )
-
-  #------------------------------------------------------------------------------------#
+  #----------------------------------------------------------------------------#
   # Configurations
-  #------------------------------------------------------------------------------------#
+  #----------------------------------------------------------------------------#
 
   # this library uses multi-threads
   find_package(Threads)
 
   # use our thread ID manager
-  include(FetchContent)
   FetchContent_Declare(
     cpp-utility
     GIT_REPOSITORY "https://github.com/dbgroup-nagoya-u/cpp-utility.git"
-    GIT_TAG "c37418e13d8e258b9b76470a4958a974da37c093"
+    GIT_TAG "d78f5873934ce67b73215b8d44dc97e1d7140199"
   )
   FetchContent_MakeAvailable(cpp-utility)
 
-  #------------------------------------------------------------------------------------#
+  #----------------------------------------------------------------------------#
   # Build targets
-  #------------------------------------------------------------------------------------#
+  #----------------------------------------------------------------------------#
 
   add_library(${PROJECT_NAME} INTERFACE)
   add_library(dbgroup::${PROJECT_NAME} ALIAS ${PROJECT_NAME})
@@ -57,33 +49,15 @@ if(NOT TARGET dbgroup::${PROJECT_NAME})
     dbgroup::cpp_utility
   )
 
-  if(${MEMORY_MANAGER_USE_PERSISTENT_MEMORY})
-    find_package(PkgConfig)
-    pkg_check_modules(LIBPMEM REQUIRED libpmem)
-    pkg_check_modules(LIBPMEMOBJ REQUIRED libpmemobj)
+  #----------------------------------------------------------------------------#
+  # Build unit tests
+  #----------------------------------------------------------------------------#
 
-    target_compile_definitions(${PROJECT_NAME} INTERFACE
-      MEMORY_MANAGER_USE_PERSISTENT_MEMORY=${MEMORY_MANAGER_USE_PERSISTENT_MEMORY}
-    )
-    target_include_directories(${PROJECT_NAME} INTERFACE
-      "${LIBPMEM_INCLUDE_DIRS}"
-      "${LIBPMEMOBJ_INCLUDE_DIRS}"
-    )
-    target_link_libraries(${PROJECT_NAME} INTERFACE
-      ${LIBPMEM_LIBRARIES}
-      ${LIBPMEMOBJ_LIBRARIES}
-    )
+  # build unit tests if required
+  option(MEMORY_MANAGER_BUILD_TESTS "build unit tests for this repository" OFF)
+  if(${MEMORY_MANAGER_BUILD_TESTS})
+    enable_testing()
+    # include unit tests
+    add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/test")
   endif()
-endif()
-
-#--------------------------------------------------------------------------------------#
-# Build unit tests
-#--------------------------------------------------------------------------------------#
-
-# build unit tests if required
-option(MEMORY_MANAGER_BUILD_TESTS "build unit tests for this repository" OFF)
-if(${MEMORY_MANAGER_BUILD_TESTS})
-  enable_testing()
-  # include unit tests
-  add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/test")
 endif()
