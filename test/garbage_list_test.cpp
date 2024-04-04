@@ -15,7 +15,7 @@
  */
 
 // the corresponding header
-#include "memory/component/garbage_list.hpp"
+#include "memory/component/list_holder.hpp"
 
 // C++ standard libraries
 #include <atomic>
@@ -56,7 +56,7 @@ class GarbageListFixture : public ::testing::Test
    * Type aliases
    *##########################################################################*/
 
-  using GarbageList_t = GarbageList<SharedPtrTarget>;
+  using GarbageList_t = ListHolder<SharedPtrTarget>;
 
   /*############################################################################
    * Test setup/teardown
@@ -112,8 +112,8 @@ class GarbageListFixture : public ::testing::Test
    * Internal constants
    *##########################################################################*/
 
-  static constexpr size_t kSmallNum = GarbageList_t::kBufferSize / 2;
-  static constexpr size_t kLargeNum = GarbageList_t::kBufferSize * 4;
+  static constexpr size_t kSmallNum = kGarbageBufSize / 2;
+  static constexpr size_t kLargeNum = kGarbageBufSize * 4;
   static constexpr size_t kMaxLong = std::numeric_limits<size_t>::max();
 
   /*############################################################################

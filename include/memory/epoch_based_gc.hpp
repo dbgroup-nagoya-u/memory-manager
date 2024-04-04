@@ -20,14 +20,9 @@
 // C++ standard libraries
 #include <atomic>
 #include <chrono>
-#include <filesystem>
-#include <functional>
-#include <limits>
-#include <memory>
-#include <shared_mutex>
+#include <cstddef>
 #include <thread>
 #include <tuple>
-#include <utility>
 #include <vector>
 
 // external libraries
@@ -36,15 +31,15 @@
 #include "thread/id_manager.hpp"
 
 // local sources
-#include "memory/component/garbage_list.hpp"
+#include "memory/component/list_holder.hpp"
 #include "memory/utility.hpp"
 
 namespace dbgroup::memory
 {
 /**
- * @brief A class to manage garbage collection.
+ * @brief A class for managing garbage collection.
  *
- * @tparam T a target class of garbage collection.
+ * @tparam GCTargets Classes for representing target garbage.
  */
 template <class... GCTargets>
 class EpochBasedGC
@@ -59,7 +54,7 @@ class EpochBasedGC
   using Clock_t = ::std::chrono::high_resolution_clock;
 
   template <class Target>
-  using GarbageList = component::GarbageList<Target>;
+  using GarbageList = component::ListHolder<Target>;
 
  public:
   /*############################################################################
@@ -69,10 +64,10 @@ class EpochBasedGC
   /**
    * @brief Construct a new instance.
    *
-   * @param gc_interval_micro_sec the duration of interval for GC.
-   * @param gc_thread_num the maximum number of threads to perform GC.
+   * @param gc_interval_micro_sec The duration of GC interval.
+   * @param gc_thread_num The maximum number of threads for performing GC.
    */
-  constexpr explicit EpochBasedGC(  //
+  explicit EpochBasedGC(  //
       const size_t gc_interval_micro_sec = kDefaultGCTime,
       const size_t gc_thread_num = kDefaultGCThreadNum)
       : gc_interval_{gc_interval_micro_sec}, gc_thread_num_{gc_thread_num}
@@ -96,21 +91,17 @@ class EpochBasedGC
    *
    * If protected garbage remains, this destructor waits for them to be free.
    */
-  ~EpochBasedGC()
-  {
-    // stop garbage collection
-    StopGC();
-  }
+  ~EpochBasedGC() { StopGC(); }
 
   /*############################################################################
    * Public utility functions
    *##########################################################################*/
 
   /**
-   * @brief Create a guard instance to protect garbage based on the scoped locking
-   * pattern.
+   * @brief Create a guard instance to protect garbage based on the scoped
+   * locking pattern.
    *
-   * @return EpochGuard a created epoch guard.
+   * @return A guard instance.
    */
   auto
   CreateEpochGuard()  //
@@ -122,23 +113,24 @@ class EpochBasedGC
   /**
    * @brief Add a new garbage instance.
    *
-   * @tparam Target a class for representing target garbage.
-   * @param garbage_ptr a pointer to a target garbage.
+   * @tparam Target A class for representing target garbage.
+   * @param garbage_ptr A pointer to target garbage.
    */
   template <class Target = DefaultTarget>
   void
-  AddGarbage(const void *garbage_ptr)
+  AddGarbage(  //
+      const void *garbage_ptr)
   {
     auto *ptr = static_cast<typename Target::T *>(const_cast<void *>(garbage_ptr));
     GetGarbageList<Target>()->AddGarbage(epoch_manager_.GetCurrentEpoch(), ptr);
   }
 
   /**
-   * @brief Reuse a released memory page if it exists.
+   * @brief Reuse a destructed page if exist.
    *
-   * @tparam Target a class for representing target garbage.
-   * @retval nullptr if there are no reusable pages.
-   * @retval a memory page.
+   * @tparam Target A class for representing target garbage.
+   * @retval A memory page if exist.
+   * @retval nullptr otherwise.
    */
   template <class Target = DefaultTarget>
   auto
@@ -194,7 +186,7 @@ class EpochBasedGC
    * Internal constants
    *##########################################################################*/
 
-  /// The expected maximum number of threads.
+  /// @brief The expected maximum number of threads.
   static constexpr size_t kMaxThreadNum = ::dbgroup::thread::kMaxThreadNum;
 
   /*############################################################################
@@ -204,6 +196,8 @@ class EpochBasedGC
   /**
    * @brief A dummy function for creating type aliases.
    *
+   * @tparam Target The current class in garbage targets.
+   * @tparam Tails The remaining classes in garbage targets.
    */
   template <class Target, class... Tails>
   static auto
@@ -219,10 +213,10 @@ class EpochBasedGC
   }
 
   /**
-   * @brief Create the space for garbage lists for all the target garbage.
+   * @brief Allocate the space of garbage lists for each target recursively.
    *
-   * @tparam Target the current class in garbage targets.
-   * @tparam Tails the remaining classes in garbage targets.
+   * @tparam Target The current class in garbage targets.
+   * @tparam Tails The remaining classes in garbage targets.
    */
   template <class Target, class... Tails>
   void
@@ -239,10 +233,10 @@ class EpochBasedGC
   }
 
   /**
-   * @brief Destroy all the garbage lists for destruction.
+   * @brief Destroy all the garbage lists.
    *
-   * @tparam Target the current class in garbage targets.
-   * @tparam Tails the remaining classes in garbage targets.
+   * @tparam Target The current class in garbage targets.
+   * @tparam Tails The remaining classes in garbage targets.
    */
   template <class Target, class... Tails>
   void
@@ -263,8 +257,8 @@ class EpochBasedGC
    *##########################################################################*/
 
   /**
-   * @tparam Target a class for representing target garbage.
-   * @return the head of a linked list of garbage nodes and its mutex object.
+   * @tparam Target A class for representing target garbage.
+   * @return A garbage list for a given target class.
    */
   template <class Target>
   [[nodiscard]] auto
@@ -278,13 +272,14 @@ class EpochBasedGC
   /**
    * @brief Clear registered garbage if possible.
    *
-   * @tparam Target the current class in garbage targets.
-   * @tparam Tails the remaining classes in garbage targets.
-   * @param protected_epoch an epoch value to be protected.
+   * @tparam Target The current class in garbage targets.
+   * @tparam Tails The remaining classes in garbage targets.
+   * @param protected_epoch An epoch to check whether garbage can be freed.
    */
   template <class Target, class... Tails>
   void
-  ClearGarbage(const size_t protected_epoch)
+  ClearGarbage(  //
+      const size_t protected_epoch)
   {
     using ListsPtr = std::unique_ptr<GarbageList<Target>[]>;
 
@@ -299,7 +294,7 @@ class EpochBasedGC
   }
 
   /**
-   * @brief Run a procedure of garbage collection.
+   * @brief Create and run cleaner threads for garbage collection.
    *
    */
   void
@@ -342,28 +337,25 @@ class EpochBasedGC
    * Internal member variables
    *##########################################################################*/
 
-  /// The duration of garbage collection in micro seconds.
+  /// @brief The duration of garbage collection in micro seconds.
   const std::chrono::microseconds gc_interval_{};
 
-  /// The maximum number of cleaner threads
+  /// @brief The maximum number of cleaner threads
   const size_t gc_thread_num_{1};
 
-  /// An epoch manager.
+  /// @brief An epoch manager.
   EpochManager epoch_manager_{};
 
-  /// A mutex to protect liked garbage lists
-  std::shared_mutex garbage_lists_lock_{};
-
-  /// A thread to run garbage collection.
+  /// @brief A thread for managing garbage collection.
   std::thread gc_thread_{};
 
-  /// Worker threads to release garbage
+  /// @brief Worker threads for releasing garbage.
   std::vector<std::thread> cleaner_threads_{};
 
-  /// A flag to check whether garbage collection is running.
+  /// @brief A flag for checking if garbage collection is running.
   std::atomic_bool gc_is_running_{false};
 
-  /// The heads of linked lists for each GC target.
+  /// @brief A tuple containing the garbage lists of each GC target.
   decltype(ConvToTuple<DefaultTarget, GCTargets...>()) garbage_lists_ =
       ConvToTuple<DefaultTarget, GCTargets...>();
 };

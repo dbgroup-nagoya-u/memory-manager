@@ -18,10 +18,8 @@
 #define DBGROUP_MEMORY_UTILITY_HPP
 
 // C++ standard libraries
-#include <cassert>
 #include <cstddef>
-#include <cstdint>
-#include <type_traits>
+#include <new>
 
 namespace dbgroup::memory
 {
@@ -29,27 +27,30 @@ namespace dbgroup::memory
  * Global constants
  *############################################################################*/
 
-/// The default time interval for garbage collection [us].
-constexpr size_t kDefaultGCTime = 10000;  // 10 ms
+/// @brief The default time interval for garbage collection (10 ms).
+constexpr size_t kDefaultGCTime = 10000;
 
-/// The default number of worker threads for garbage collection.
+/// @brief The default number of worker threads for garbage collection.
 constexpr size_t kDefaultGCThreadNum = 1;
 
-/// The default alignment size for dynamically allocated instances.
+/// @brief The default alignment size for dynamically allocated instances.
 constexpr size_t kDefaultAlignment = __STDCPP_DEFAULT_NEW_ALIGNMENT__;
 
 /*##############################################################################
  * Turning parameters
  *############################################################################*/
 
-/// The page size of virtual memory addresses.
+/// @brief The page size of virtual memory addresses.
 constexpr size_t kVMPageSize = 4096;
 
-/// The size of words.
+/// @brief The size of words.
 constexpr size_t kWordSize = 8;
 
-/// The expected cache-line size.
+/// @brief The expected cache line size.
 constexpr size_t kCashLineSize = 64;
+
+/// @brief The size of buffers for retaining garbages.
+constexpr size_t kGarbageBufSize = (kVMPageSize - 4 * kWordSize) / (2 * kWordSize);
 
 /*##############################################################################
  * Utility classes
@@ -60,10 +61,10 @@ constexpr size_t kCashLineSize = 64;
  *
  */
 struct DefaultTarget {
-  /// Use the void type and do not perform destructors.
+  /// @brief Use the void type to avoid calling a destructor.
   using T = void;
 
-  /// Do not reuse pages after GC (release immediately).
+  /// @brief Do not reuse pages after GC (release immediately).
   static constexpr bool kReusePages = false;
 };
 
@@ -80,7 +81,8 @@ struct DefaultTarget {
  */
 template <class T>
 inline auto
-Allocate(size_t size = sizeof(T))  //
+Allocate(                     //
+    size_t size = sizeof(T))  //
     -> T *
 {
   if constexpr (alignof(T) <= kDefaultAlignment) {
@@ -98,7 +100,8 @@ Allocate(size_t size = sizeof(T))  //
  */
 template <class T>
 inline void
-Release(void *ptr)
+Release(  //
+    void *ptr)
 {
   if constexpr (alignof(T) <= kDefaultAlignment) {
     ::operator delete(ptr);
