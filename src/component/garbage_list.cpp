@@ -39,7 +39,6 @@ GarbageList::Empty() const  //
 {
   const auto end_pos = end_pos_.load(kAcquire);
   const auto size = end_pos - begin_pos_.load(kRelaxed);
-
   return (size == 0) && (end_pos < kGarbageBufSize);
 }
 
@@ -59,20 +58,14 @@ GarbageList::AddGarbage(  //
     void *garbage)
 {
   auto *buf = buf_addr->load(kRelaxed);
+
   const auto pos = buf->end_pos_.load(kRelaxed);
-
-  // insert a new garbage
-  buf->garbage_.at(pos).epoch = epoch;
-  buf->garbage_.at(pos).ptr = garbage;
-
-  // check whether the list is full
+  buf->garbage_.at(pos) = {epoch, garbage};
   if (pos >= kGarbageBufSize - 1) {
     auto *new_tail = new GarbageList{};
     buf->next_.store(new_tail, kRelaxed);
     buf_addr->store(new_tail, kRelaxed);
   }
-
-  // increment the end position
   buf->end_pos_.fetch_add(1, kRelease);
 }
 
@@ -82,13 +75,12 @@ GarbageList::ReusePage(                    //
     -> void *
 {
   auto *buf = buf_addr->load(kRelaxed);
+
   const auto pos = buf->begin_pos_.load(kRelaxed);
   const auto mid_pos = buf->mid_pos_.load(kAcquire);
+  if (pos >= mid_pos) return nullptr;  // there is no reusable page
 
-  // check whether there are released garbage
-  if (pos >= mid_pos) return nullptr;
-
-  // get a released page
+  // get a reusable page
   buf->begin_pos_.fetch_add(1, kRelaxed);
   auto *page = buf->garbage_.at(pos).ptr;
 

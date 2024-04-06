@@ -124,35 +124,31 @@ class alignas(kVMPageSize) GarbageList
       auto *buf = GetNext(buf_addr).second;
       const auto end_pos = buf->end_pos_.load(kAcquire);
       auto mid_pos = buf->mid_pos_.load(kRelaxed);
-      for (; mid_pos < end_pos; ++mid_pos) {
-        if (buf->garbage_.at(mid_pos).epoch >= protected_epoch) break;
-
-        // only call destructor to reuse pages
+      for (; mid_pos < end_pos && buf->garbage_.at(mid_pos).epoch < protected_epoch; ++mid_pos) {
         if constexpr (!std::is_same_v<T, void>) {
           reinterpret_cast<T *>(buf->garbage_.at(mid_pos).ptr)->~T();
         }
       }
-
-      // update the position to make visible destructed garbage
       buf->mid_pos_.store(mid_pos, kRelease);
       if (mid_pos < kGarbageBufSize) return;
 
+      // check if this list is empty
       auto pos = buf->begin_pos_.load(kRelaxed);
       auto *next = GetNext(&(buf->next_)).second;
-      if (pos == kGarbageBufSize) {  // found the empty buffer
+      if (pos == kGarbageBufSize) {  // found the empty list
         reuse_buf = nullptr;
         delete buf;
         buf_addr->store(next, kRelaxed);
         continue;
       }
 
-      if (pos > 0) {  // found the dirty buffer
+      if (pos > 0) {  // found the dirty list
         reuse_buf = nullptr;
         buf_addr = &(buf->next_);
         continue;
       }
 
-      // fount the fully destructed buffer
+      // fount the fully destructed list
       if (reuse_buf != nullptr && reuse_buf->begin_pos_.load(kRelaxed) == 0) {
         auto [used, cur] = GetNext(&(reuse_buf->next_));
         if (!used && reuse_buf->next_.compare_exchange_strong(cur, next, kRelaxed, kRelaxed)) {
@@ -191,12 +187,9 @@ class alignas(kVMPageSize) GarbageList
       // release unprotected garbage
       auto pos = buf->begin_pos_.load(kRelaxed);
       for (; pos < mid_pos; ++pos) {
-        // the garbage has been already destructed
-        Release<Target>(buf->garbage_.at(pos).ptr);
+        Release<Target>(buf->garbage_.at(pos).ptr);  // already destructed
       }
-      for (; pos < end_pos; ++pos) {
-        if (buf->garbage_.at(pos).epoch >= protected_epoch) break;
-
+      for (; pos < end_pos && buf->garbage_.at(pos).epoch < protected_epoch; ++pos) {
         auto *ptr = buf->garbage_.at(pos).ptr;
         if constexpr (!std::is_same_v<T, void>) {
           reinterpret_cast<T *>(ptr)->~T();
@@ -205,7 +198,6 @@ class alignas(kVMPageSize) GarbageList
       }
       buf->begin_pos_.store(pos, kRelaxed);
       buf->mid_pos_.store(pos, kRelaxed);
-
       if (pos < kGarbageBufSize) return;
 
       // release the next buffer recursively
