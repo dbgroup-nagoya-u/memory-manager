@@ -34,6 +34,7 @@ readability-*,
 -readability-braces-around-statements,
 -readability-identifier-length,
 performance-*,'
+-performance-no-int-to-ptr,
 WarningsAsErrors: ''
 HeaderFilterRegex: '(include|src|test)/.*\.hpp$'
 AnalyzeTemporaryDtors: false

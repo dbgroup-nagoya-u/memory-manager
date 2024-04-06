@@ -72,10 +72,9 @@ class alignas(kCashLineSize) ListHolder
    */
   ~ListHolder()
   {
-    auto *head = Target::kReusePages ? head_.load(std::memory_order_relaxed) : mid_;
-    if (head != nullptr) {
-      GarbageList::Clear<Target>(&head, std::numeric_limits<size_t>::max());
-      delete head;
+    if (gc_head_.load(std::memory_order_relaxed) != nullptr) {
+      GarbageList::Clear<Target>(&gc_head_, std::numeric_limits<size_t>::max());
+      delete gc_head_.load(std::memory_order_relaxed);
     }
   }
 
@@ -95,7 +94,7 @@ class alignas(kCashLineSize) ListHolder
       typename Target::T *garbage)
   {
     AssignCurrentThreadIfNeeded();
-    GarbageList::AddGarbage(&tail_, epoch, garbage);
+    GarbageList::AddGarbage(&cli_tail_, epoch, garbage);
   }
 
   /**
@@ -109,7 +108,7 @@ class alignas(kCashLineSize) ListHolder
       -> void *
   {
     AssignCurrentThreadIfNeeded();
-    return GarbageList::ReusePage(&head_);
+    return GarbageList::ReusePage(&cli_head_);
   }
 
   /*############################################################################
@@ -126,33 +125,30 @@ class alignas(kCashLineSize) ListHolder
       const size_t protected_epoch)
   {
     std::unique_lock guard{mtx_, std::defer_lock};
-    if (!guard.try_lock() || mid_ == nullptr) return;
+    auto *head = gc_head_.load(std::memory_order_relaxed);
+    if (!guard.try_lock() || head == nullptr) return;
 
     // destruct or release garbages
     if constexpr (!Target::kReusePages) {
-      GarbageList::Clear<Target>(&mid_, protected_epoch);
+      GarbageList::Clear<Target>(&gc_head_, protected_epoch);
     } else {
       if (!heartbeat_.expired()) {
-        GarbageList::Destruct<Target>(&mid_, protected_epoch);
+        GarbageList::Destruct<Target>(&gc_head_, protected_epoch);
         return;
       }
-
-      auto *head = head_.load(std::memory_order_relaxed);
-      if (head != nullptr) {
-        mid_ = head;
-      }
-      GarbageList::Clear<Target>(&mid_, protected_epoch);
-      head_.store(mid_, std::memory_order_relaxed);
+      GarbageList::Clear<Target>(&gc_head_, protected_epoch);
+      head = gc_head_.load(std::memory_order_relaxed);
+      cli_head_.store(head, std::memory_order_relaxed);
     }
 
     // check this list is alive
-    if (!heartbeat_.expired() || !mid_->Empty()) return;
+    if (!heartbeat_.expired() || !head->Empty()) return;
 
     // release buffers if the thread has exitted
-    delete mid_;
-    head_.store(nullptr, std::memory_order_relaxed);
-    mid_ = nullptr;
-    tail_ = nullptr;
+    delete head;
+    cli_tail_.store(nullptr, std::memory_order_relaxed);
+    cli_head_.store(nullptr, std::memory_order_relaxed);
+    gc_head_.store(nullptr, std::memory_order_relaxed);
   }
 
  private:
@@ -170,12 +166,13 @@ class alignas(kCashLineSize) ListHolder
     if (!heartbeat_.expired()) return;
 
     const std::lock_guard guard{mtx_};
-    if (tail_ == nullptr) {
-      tail_ = new GarbageList{};
-      mid_ = tail_;
+    if (cli_tail_.load(std::memory_order_relaxed) == nullptr) {
+      auto *list = new GarbageList{};
+      cli_tail_.store(list, std::memory_order_relaxed);
       if constexpr (Target::kReusePages) {
-        head_.store(tail_, std::memory_order_relaxed);
+        cli_head_.store(list, std::memory_order_relaxed);
       }
+      gc_head_.store(list, std::memory_order_relaxed);
     }
     heartbeat_ = IDManager::GetHeartBeat();
   }
@@ -187,11 +184,11 @@ class alignas(kCashLineSize) ListHolder
   /// @brief A flag for checking the corresponding thread has exited.
   std::weak_ptr<size_t> heartbeat_{};
 
-  /// @brief A garbage list that has destructed pages.
-  std::atomic<GarbageList *> head_{nullptr};
-
   /// @brief A garbage list that has free space for new garbage.
-  GarbageList *tail_{nullptr};
+  std::atomic<GarbageList *> cli_tail_{nullptr};
+
+  /// @brief A garbage list that has destructed pages.
+  std::atomic<GarbageList *> cli_head_{nullptr};
 
   /// @brief A dummy array for cache line alignments
   uint64_t padding_[4]{};
@@ -200,7 +197,7 @@ class alignas(kCashLineSize) ListHolder
   std::mutex mtx_{};
 
   /// @brief A garbage list that has not destructed pages.
-  GarbageList *mid_{nullptr};
+  std::atomic<GarbageList *> gc_head_{nullptr};
 };
 
 }  // namespace dbgroup::memory::component

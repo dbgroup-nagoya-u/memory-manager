@@ -163,7 +163,7 @@ TEST_F(GarbageListFixture, GetPageIfPossibleWithPagesReturnReusablePage)
   AddGarbage(kLargeNum);
   list_->ClearGarbage(kMaxLong);
 
-  for (size_t i = 0; i < kLargeNum; ++i) {
+  for (size_t i = 0; i < kGarbageBufSize; ++i) {
     auto *page = list_->GetPageIfPossible();
     EXPECT_NE(nullptr, page);
     Release<std::shared_ptr<Target>>(page);

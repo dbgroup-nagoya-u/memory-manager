@@ -21,6 +21,7 @@
 #include <array>
 #include <atomic>
 #include <cstddef>
+#include <utility>
 
 // local sources
 #include "memory/utility.hpp"
@@ -68,6 +69,16 @@ class alignas(kVMPageSize) GarbageList
    *##########################################################################*/
 
   /**
+   * @param buf_addr An address containing the next garbage list.
+   * @retval 1st: true if a client thread has already used the next list.
+   * @retval 1st: false otherwise.
+   * @retval 2nd: The next garbage list.
+   */
+  static auto GetNext(                       //
+      std::atomic<GarbageList *> *buf_addr)  //
+      -> std::pair<bool, GarbageList *>;
+
+  /**
    * @brief Add a new garbage instance to a specified buffer.
    *
    * If the buffer becomes full, create a new garbage buffer and link them.
@@ -77,7 +88,7 @@ class alignas(kVMPageSize) GarbageList
    * @param garbage A new garbage instance.
    */
   static void AddGarbage(  //
-      GarbageList **buf_addr,
+      std::atomic<GarbageList *> *buf_addr,
       size_t epoch,
       void *garbage);
 
@@ -102,31 +113,60 @@ class alignas(kVMPageSize) GarbageList
   template <class Target>
   static void
   Destruct(  //
-      GarbageList **buf_addr,
+      std::atomic<GarbageList *> *buf_addr,
       const size_t protected_epoch)
   {
     using T = typename Target::T;
 
+    GarbageList *reuse_buf = nullptr;
     while (true) {
       // release unprotected garbage
-      auto *buf = *buf_addr;
+      auto *buf = GetNext(buf_addr).second;
       const auto end_pos = buf->end_pos_.load(std::memory_order_acquire);
-      auto pos = buf->mid_pos_.load(std::memory_order_relaxed);
-      for (; pos < end_pos; ++pos) {
-        if (buf->garbage_.at(pos).epoch >= protected_epoch) break;
+      auto mid_pos = buf->mid_pos_.load(std::memory_order_relaxed);
+      for (; mid_pos < end_pos; ++mid_pos) {
+        if (buf->garbage_.at(mid_pos).epoch >= protected_epoch) break;
 
         // only call destructor to reuse pages
         if constexpr (!std::is_same_v<T, void>) {
-          reinterpret_cast<T *>(buf->garbage_.at(pos).ptr)->~T();
+          reinterpret_cast<T *>(buf->garbage_.at(mid_pos).ptr)->~T();
         }
       }
 
       // update the position to make visible destructed garbage
-      buf->mid_pos_.store(pos, std::memory_order_release);
-      if (pos < kGarbageBufSize) return;
+      buf->mid_pos_.store(mid_pos, std::memory_order_release);
+      if (mid_pos < kGarbageBufSize) return;
 
-      // release the next buffer recursively
-      *buf_addr = buf->next_;
+      auto pos = buf->begin_pos_.load(std::memory_order_relaxed);
+      auto *next = GetNext(&(buf->next_)).second;
+      if (pos == kGarbageBufSize) {  // found the empty buffer
+        reuse_buf = nullptr;
+        delete buf;
+        buf_addr->store(next, std::memory_order_relaxed);
+        continue;
+      }
+
+      if (pos > 0) {  // found the dirty buffer
+        reuse_buf = nullptr;
+        buf_addr = &(buf->next_);
+        continue;
+      }
+
+      // fount the fully destructed buffer
+      if (reuse_buf != nullptr && reuse_buf->begin_pos_.load(std::memory_order_relaxed) == 0) {
+        auto [used, cur] = GetNext(&(reuse_buf->next_));
+        if (!used
+            && reuse_buf->next_.compare_exchange_strong(cur, next, std::memory_order_relaxed,
+                                                        std::memory_order_relaxed)) {
+          for (; pos < kGarbageBufSize; ++pos) {
+            Release<Target>(buf->garbage_.at(pos).ptr);
+          }
+          delete buf;
+          continue;
+        }
+      }
+      reuse_buf = buf;
+      buf_addr = &(buf->next_);
     }
   }
 
@@ -140,13 +180,13 @@ class alignas(kVMPageSize) GarbageList
   template <class Target>
   static void
   Clear(  //
-      GarbageList **buf_addr,
+      std::atomic<GarbageList *> *buf_addr,
       const size_t protected_epoch)
   {
     using T = typename Target::T;
 
     while (true) {
-      auto *buf = *buf_addr;
+      auto *buf = GetNext(buf_addr).second;
       const auto mid_pos = buf->mid_pos_.load(std::memory_order_relaxed);
       const auto end_pos = buf->end_pos_.load(std::memory_order_acquire);
 
@@ -171,12 +211,19 @@ class alignas(kVMPageSize) GarbageList
       if (pos < kGarbageBufSize) return;
 
       // release the next buffer recursively
-      *buf_addr = buf->next_;
+      buf_addr->store(GetNext(&(buf->next_)).second, std::memory_order_relaxed);
       delete buf;
     }
   }
 
  private:
+  /*############################################################################
+   * Internal constants
+   *##########################################################################*/
+
+  /// @brief A flag for indicating client threads have already used a pointer.
+  static constexpr uintptr_t kUsedFlag = 1UL << 63UL;
+
   /*############################################################################
    * Internal classes
    *##########################################################################*/
@@ -210,7 +257,7 @@ class alignas(kVMPageSize) GarbageList
   std::atomic_size_t end_pos_{0};
 
   /// @brief The next garbage buffer.
-  GarbageList *next_{nullptr};
+  std::atomic<GarbageList *> next_{nullptr};
 };
 
 }  // namespace dbgroup::memory::component

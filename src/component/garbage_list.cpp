@@ -21,6 +21,8 @@
 #include <array>
 #include <atomic>
 #include <cstddef>
+#include <cstdint>
+#include <utility>
 
 // local sources
 #include "memory/utility.hpp"
@@ -41,13 +43,22 @@ GarbageList::Empty() const  //
   return (size == 0) && (end_pos < kGarbageBufSize);
 }
 
+auto
+GarbageList::GetNext(                      //
+    std::atomic<GarbageList *> *buf_addr)  //
+    -> std::pair<bool, GarbageList *>
+{
+  auto next = reinterpret_cast<uintptr_t>(buf_addr->load(std::memory_order_relaxed));
+  return {(next & kUsedFlag) > 0, reinterpret_cast<GarbageList *>(next & ~kUsedFlag)};
+}
+
 void
 GarbageList::AddGarbage(  //
-    GarbageList **buf_addr,
+    std::atomic<GarbageList *> *buf_addr,
     const size_t epoch,
     void *garbage)
 {
-  auto *buf = *buf_addr;
+  auto *buf = buf_addr->load(std::memory_order_relaxed);
   const auto pos = buf->end_pos_.load(std::memory_order_relaxed);
 
   // insert a new garbage
@@ -57,8 +68,8 @@ GarbageList::AddGarbage(  //
   // check whether the list is full
   if (pos >= kGarbageBufSize - 1) {
     auto *new_tail = new GarbageList{};
-    buf->next_ = new_tail;
-    *buf_addr = new_tail;
+    buf->next_.store(new_tail, std::memory_order_relaxed);
+    buf_addr->store(new_tail, std::memory_order_relaxed);
   }
 
   // increment the end position
@@ -83,8 +94,13 @@ GarbageList::ReusePage(                    //
 
   // check whether all the pages in the list are reused
   if (pos >= kGarbageBufSize - 1) {
-    buf_addr->store(buf->next_, std::memory_order_relaxed);
-    delete buf;
+    auto *next = buf->next_.load(std::memory_order_relaxed);
+    while (!buf->next_.compare_exchange_weak(
+        next, reinterpret_cast<GarbageList *>(reinterpret_cast<uintptr_t>(next) | kUsedFlag),
+        std::memory_order_relaxed, std::memory_order_relaxed)) {
+      // continue until the next list is reserved
+    }
+    buf_addr->store(next, std::memory_order_relaxed);
   }
 
   return page;
