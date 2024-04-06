@@ -155,9 +155,9 @@ class EpochBasedGC
   StartGC()  //
       -> bool
   {
-    if (gc_is_running_.load(std::memory_order_relaxed)) return false;
+    if (gc_is_running_.load(kRelaxed)) return false;
 
-    gc_is_running_.store(true, std::memory_order_relaxed);
+    gc_is_running_.store(true, kRelaxed);
     gc_thread_ = std::thread{&EpochBasedGC::RunGC, this};
     return true;
   }
@@ -172,9 +172,9 @@ class EpochBasedGC
   StopGC()  //
       -> bool
   {
-    if (!gc_is_running_.load(std::memory_order_relaxed)) return false;
+    if (!gc_is_running_.load(kRelaxed)) return false;
 
-    gc_is_running_.store(false, std::memory_order_relaxed);
+    gc_is_running_.store(false, kRelaxed);
     gc_thread_.join();
 
     DestroyGarbageLists<DefaultTarget, GCTargets...>();
@@ -304,7 +304,7 @@ class EpochBasedGC
     for (size_t i = 0; i < gc_thread_num_; ++i) {
       cleaner_threads_.emplace_back([&]() {
         for (auto wake_time = Clock_t::now() + gc_interval_;  //
-             gc_is_running_.load(std::memory_order_relaxed);  //
+             gc_is_running_.load(kRelaxed);                   //
              wake_time += gc_interval_)                       //
         {
           // release unprotected garbage
@@ -318,7 +318,7 @@ class EpochBasedGC
 
     // manage the global epoch
     for (auto wake_time = Clock_t::now() + gc_interval_;  //
-         gc_is_running_.load(std::memory_order_relaxed);  //
+         gc_is_running_.load(kRelaxed);                   //
          wake_time += gc_interval_)                       //
     {
       // wait until the next epoch

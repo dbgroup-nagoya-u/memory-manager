@@ -37,8 +37,8 @@ auto
 GarbageList::Empty() const  //
     -> bool
 {
-  const auto end_pos = end_pos_.load(std::memory_order_acquire);
-  const auto size = end_pos - begin_pos_.load(std::memory_order_relaxed);
+  const auto end_pos = end_pos_.load(kAcquire);
+  const auto size = end_pos - begin_pos_.load(kRelaxed);
 
   return (size == 0) && (end_pos < kGarbageBufSize);
 }
@@ -48,7 +48,7 @@ GarbageList::GetNext(                      //
     std::atomic<GarbageList *> *buf_addr)  //
     -> std::pair<bool, GarbageList *>
 {
-  auto next = reinterpret_cast<uintptr_t>(buf_addr->load(std::memory_order_relaxed));
+  auto next = reinterpret_cast<uintptr_t>(buf_addr->load(kRelaxed));
   return {(next & kUsedFlag) > 0, reinterpret_cast<GarbageList *>(next & ~kUsedFlag)};
 }
 
@@ -58,8 +58,8 @@ GarbageList::AddGarbage(  //
     const size_t epoch,
     void *garbage)
 {
-  auto *buf = buf_addr->load(std::memory_order_relaxed);
-  const auto pos = buf->end_pos_.load(std::memory_order_relaxed);
+  auto *buf = buf_addr->load(kRelaxed);
+  const auto pos = buf->end_pos_.load(kRelaxed);
 
   // insert a new garbage
   buf->garbage_.at(pos).epoch = epoch;
@@ -68,12 +68,12 @@ GarbageList::AddGarbage(  //
   // check whether the list is full
   if (pos >= kGarbageBufSize - 1) {
     auto *new_tail = new GarbageList{};
-    buf->next_.store(new_tail, std::memory_order_relaxed);
-    buf_addr->store(new_tail, std::memory_order_relaxed);
+    buf->next_.store(new_tail, kRelaxed);
+    buf_addr->store(new_tail, kRelaxed);
   }
 
   // increment the end position
-  buf->end_pos_.fetch_add(1, std::memory_order_release);
+  buf->end_pos_.fetch_add(1, kRelease);
 }
 
 auto
@@ -81,26 +81,26 @@ GarbageList::ReusePage(                    //
     std::atomic<GarbageList *> *buf_addr)  //
     -> void *
 {
-  auto *buf = buf_addr->load(std::memory_order_relaxed);
-  const auto pos = buf->begin_pos_.load(std::memory_order_relaxed);
-  const auto mid_pos = buf->mid_pos_.load(std::memory_order_acquire);
+  auto *buf = buf_addr->load(kRelaxed);
+  const auto pos = buf->begin_pos_.load(kRelaxed);
+  const auto mid_pos = buf->mid_pos_.load(kAcquire);
 
   // check whether there are released garbage
   if (pos >= mid_pos) return nullptr;
 
   // get a released page
-  buf->begin_pos_.fetch_add(1, std::memory_order_relaxed);
+  buf->begin_pos_.fetch_add(1, kRelaxed);
   auto *page = buf->garbage_.at(pos).ptr;
 
   // check whether all the pages in the list are reused
   if (pos >= kGarbageBufSize - 1) {
-    auto *next = buf->next_.load(std::memory_order_relaxed);
+    auto *next = buf->next_.load(kRelaxed);
     while (!buf->next_.compare_exchange_weak(
         next, reinterpret_cast<GarbageList *>(reinterpret_cast<uintptr_t>(next) | kUsedFlag),
-        std::memory_order_relaxed, std::memory_order_relaxed)) {
+        kRelaxed, kRelaxed)) {
       // continue until the next list is reserved
     }
-    buf_addr->store(next, std::memory_order_relaxed);
+    buf_addr->store(next, kRelaxed);
   }
 
   return page;

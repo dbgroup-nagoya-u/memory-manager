@@ -18,6 +18,7 @@
 #define DBGROUP_MEMORY_UTILITY_HPP
 
 // C++ standard libraries
+#include <atomic>
 #include <cstddef>
 #include <new>
 
@@ -35,6 +36,15 @@ constexpr size_t kDefaultGCThreadNum = 1;
 
 /// @brief The default alignment size for dynamically allocated instances.
 constexpr size_t kDefaultAlignment = __STDCPP_DEFAULT_NEW_ALIGNMENT__;
+
+/// @brief An alias of the acquire memory order.
+constexpr std::memory_order kAcquire = std::memory_order_acquire;
+
+/// @brief An alias of the release memory order.
+constexpr std::memory_order kRelease = std::memory_order_release;
+
+/// @brief An alias of the relaxed memory order.
+constexpr std::memory_order kRelaxed = std::memory_order_relaxed;
 
 /*##############################################################################
  * Turning parameters

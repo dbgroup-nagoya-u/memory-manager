@@ -122,8 +122,8 @@ class alignas(kVMPageSize) GarbageList
     while (true) {
       // release unprotected garbage
       auto *buf = GetNext(buf_addr).second;
-      const auto end_pos = buf->end_pos_.load(std::memory_order_acquire);
-      auto mid_pos = buf->mid_pos_.load(std::memory_order_relaxed);
+      const auto end_pos = buf->end_pos_.load(kAcquire);
+      auto mid_pos = buf->mid_pos_.load(kRelaxed);
       for (; mid_pos < end_pos; ++mid_pos) {
         if (buf->garbage_.at(mid_pos).epoch >= protected_epoch) break;
 
@@ -134,15 +134,15 @@ class alignas(kVMPageSize) GarbageList
       }
 
       // update the position to make visible destructed garbage
-      buf->mid_pos_.store(mid_pos, std::memory_order_release);
+      buf->mid_pos_.store(mid_pos, kRelease);
       if (mid_pos < kGarbageBufSize) return;
 
-      auto pos = buf->begin_pos_.load(std::memory_order_relaxed);
+      auto pos = buf->begin_pos_.load(kRelaxed);
       auto *next = GetNext(&(buf->next_)).second;
       if (pos == kGarbageBufSize) {  // found the empty buffer
         reuse_buf = nullptr;
         delete buf;
-        buf_addr->store(next, std::memory_order_relaxed);
+        buf_addr->store(next, kRelaxed);
         continue;
       }
 
@@ -153,11 +153,9 @@ class alignas(kVMPageSize) GarbageList
       }
 
       // fount the fully destructed buffer
-      if (reuse_buf != nullptr && reuse_buf->begin_pos_.load(std::memory_order_relaxed) == 0) {
+      if (reuse_buf != nullptr && reuse_buf->begin_pos_.load(kRelaxed) == 0) {
         auto [used, cur] = GetNext(&(reuse_buf->next_));
-        if (!used
-            && reuse_buf->next_.compare_exchange_strong(cur, next, std::memory_order_relaxed,
-                                                        std::memory_order_relaxed)) {
+        if (!used && reuse_buf->next_.compare_exchange_strong(cur, next, kRelaxed, kRelaxed)) {
           for (; pos < kGarbageBufSize; ++pos) {
             Release<Target>(buf->garbage_.at(pos).ptr);
           }
@@ -187,11 +185,11 @@ class alignas(kVMPageSize) GarbageList
 
     while (true) {
       auto *buf = GetNext(buf_addr).second;
-      const auto mid_pos = buf->mid_pos_.load(std::memory_order_relaxed);
-      const auto end_pos = buf->end_pos_.load(std::memory_order_acquire);
+      const auto mid_pos = buf->mid_pos_.load(kRelaxed);
+      const auto end_pos = buf->end_pos_.load(kAcquire);
 
       // release unprotected garbage
-      auto pos = buf->begin_pos_.load(std::memory_order_relaxed);
+      auto pos = buf->begin_pos_.load(kRelaxed);
       for (; pos < mid_pos; ++pos) {
         // the garbage has been already destructed
         Release<Target>(buf->garbage_.at(pos).ptr);
@@ -205,13 +203,13 @@ class alignas(kVMPageSize) GarbageList
         }
         Release<Target>(ptr);
       }
-      buf->begin_pos_.store(pos, std::memory_order_relaxed);
-      buf->mid_pos_.store(pos, std::memory_order_relaxed);
+      buf->begin_pos_.store(pos, kRelaxed);
+      buf->mid_pos_.store(pos, kRelaxed);
 
       if (pos < kGarbageBufSize) return;
 
       // release the next buffer recursively
-      buf_addr->store(GetNext(&(buf->next_)).second, std::memory_order_relaxed);
+      buf_addr->store(GetNext(&(buf->next_)).second, kRelaxed);
       delete buf;
     }
   }

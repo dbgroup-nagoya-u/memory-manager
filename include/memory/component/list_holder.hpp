@@ -72,9 +72,9 @@ class alignas(kCashLineSize) ListHolder
    */
   ~ListHolder()
   {
-    if (gc_head_.load(std::memory_order_relaxed) != nullptr) {
+    if (gc_head_.load(kRelaxed) != nullptr) {
       GarbageList::Clear<Target>(&gc_head_, std::numeric_limits<size_t>::max());
-      delete gc_head_.load(std::memory_order_relaxed);
+      delete gc_head_.load(kRelaxed);
     }
   }
 
@@ -125,7 +125,7 @@ class alignas(kCashLineSize) ListHolder
       const size_t protected_epoch)
   {
     std::unique_lock guard{mtx_, std::defer_lock};
-    auto *head = gc_head_.load(std::memory_order_relaxed);
+    auto *head = gc_head_.load(kRelaxed);
     if (!guard.try_lock() || head == nullptr) return;
 
     // destruct or release garbages
@@ -137,8 +137,8 @@ class alignas(kCashLineSize) ListHolder
         return;
       }
       GarbageList::Clear<Target>(&gc_head_, protected_epoch);
-      head = gc_head_.load(std::memory_order_relaxed);
-      cli_head_.store(head, std::memory_order_relaxed);
+      head = gc_head_.load(kRelaxed);
+      cli_head_.store(head, kRelaxed);
     }
 
     // check this list is alive
@@ -146,9 +146,9 @@ class alignas(kCashLineSize) ListHolder
 
     // release buffers if the thread has exitted
     delete head;
-    cli_tail_.store(nullptr, std::memory_order_relaxed);
-    cli_head_.store(nullptr, std::memory_order_relaxed);
-    gc_head_.store(nullptr, std::memory_order_relaxed);
+    cli_tail_.store(nullptr, kRelaxed);
+    cli_head_.store(nullptr, kRelaxed);
+    gc_head_.store(nullptr, kRelaxed);
   }
 
  private:
@@ -166,13 +166,13 @@ class alignas(kCashLineSize) ListHolder
     if (!heartbeat_.expired()) return;
 
     const std::lock_guard guard{mtx_};
-    if (cli_tail_.load(std::memory_order_relaxed) == nullptr) {
+    if (cli_tail_.load(kRelaxed) == nullptr) {
       auto *list = new GarbageList{};
-      cli_tail_.store(list, std::memory_order_relaxed);
+      cli_tail_.store(list, kRelaxed);
       if constexpr (Target::kReusePages) {
-        cli_head_.store(list, std::memory_order_relaxed);
+        cli_head_.store(list, kRelaxed);
       }
-      gc_head_.store(list, std::memory_order_relaxed);
+      gc_head_.store(list, kRelaxed);
     }
     heartbeat_ = IDManager::GetHeartBeat();
   }
