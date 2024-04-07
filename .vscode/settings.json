@@ -60,6 +60,7 @@
     "alloc",
     "cerr",
     "cout",
+    "cstddef",
     "ctest",
     "DCMAKE",
     "DMEMORY",
@@ -170,6 +171,7 @@
     "typeindex": "cpp",
     "valarray": "cpp",
     "*.ipp": "cpp",
-    "source_location": "cpp"
+    "source_location": "cpp",
+    "regex": "cpp"
   },
 }
