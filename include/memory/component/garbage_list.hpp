@@ -14,58 +14,32 @@
  * limitations under the License.
  */
 
-#ifndef MEMORY_COMPONENT_GARBAGE_LIST_HPP
-#define MEMORY_COMPONENT_GARBAGE_LIST_HPP
+#ifndef DBGROUP_MEMORY_COMPONENT_GARBAGE_LIST_HPP
+#define DBGROUP_MEMORY_COMPONENT_GARBAGE_LIST_HPP
 
 // C++ standard libraries
 #include <array>
 #include <atomic>
-#include <limits>
-#include <memory>
-#include <mutex>
-#include <tuple>
+#include <cstddef>
 #include <utility>
 
-// external sources
-#include "thread/id_manager.hpp"
-
 // local sources
-#include "memory/component/common.hpp"
+#include "memory/utility.hpp"
 
 namespace dbgroup::memory::component
 {
 /**
- * @brief A class for representing garbage lists.
+ * @brief A class for representing the buffer of garbage instances.
  *
- * @tparam Target a target class of garbage collection.
  */
-template <class Target>
-class alignas(kCashLineSize) GarbageList
+class alignas(kVMPageSize) GarbageList
 {
  public:
-  /*####################################################################################
-   * Public global constants
-   *##################################################################################*/
-
-  /// The size of buffers for retaining garbages.
-  static constexpr size_t kBufferSize = (kVMPageSize - 4 * kWordSize) / (2 * kWordSize);
-
-  /*####################################################################################
-   * Type aliases
-   *##################################################################################*/
-
-  using T = typename Target::T;
-  using IDManager = ::dbgroup::thread::IDManager;
-
-  /*####################################################################################
+  /*############################################################################
    * Public constructors and assignment operators
-   *##################################################################################*/
+   *##########################################################################*/
 
-  /**
-   * @brief Construct a new GarbageList object.
-   *
-   */
-  GarbageList() = default;
+  constexpr GarbageList() = default;
 
   GarbageList(const GarbageList &) = delete;
   GarbageList(GarbageList &&) = delete;
@@ -73,382 +47,209 @@ class alignas(kCashLineSize) GarbageList
   auto operator=(const GarbageList &) -> GarbageList & = delete;
   auto operator=(GarbageList &&) -> GarbageList & = delete;
 
-  /*####################################################################################
+  /*############################################################################
    * Public destructors
-   *##################################################################################*/
+   *##########################################################################*/
+
+  ~GarbageList() = default;
+
+  /*############################################################################
+   * Public getters/setters
+   *##########################################################################*/
 
   /**
-   * @brief Destroy the GarbageList object.
-   *
-   * If the list contains unreleased garbage, the destructor will forcibly release it.
+   * @retval true if this list is empty.
+   * @retval false otherwise
    */
-  ~GarbageList()
+  [[nodiscard]] auto Empty() const  //
+      -> bool;
+
+  /*############################################################################
+   * Public utility functions
+   *##########################################################################*/
+
+  /**
+   * @param buf_addr An address containing the next garbage list.
+   * @retval 1st: true if a client thread has already used the next list.
+   * @retval 1st: false otherwise.
+   * @retval 2nd: The next garbage list.
+   */
+  static auto GetNext(                       //
+      std::atomic<GarbageList *> *buf_addr)  //
+      -> std::pair<bool, GarbageList *>;
+
+  /**
+   * @brief Add a new garbage instance to a specified buffer.
+   *
+   * If the buffer becomes full, create a new garbage buffer and link them.
+   *
+   * @param buf_addr The address of the pointer of a target buffer.
+   * @param epoch An epoch when garbage is added.
+   * @param garbage A new garbage instance.
+   */
+  static void AddGarbage(  //
+      std::atomic<GarbageList *> *buf_addr,
+      size_t epoch,
+      void *garbage);
+
+  /**
+   * @brief Reuse a destructed page if exist.
+   *
+   * @param buf_addr The address of the pointer of a target buffer.
+   * @retval A memory page if exist.
+   * @retval nullptr otherwise.
+   */
+  static auto ReusePage(                     //
+      std::atomic<GarbageList *> *buf_addr)  //
+      -> void *;
+
+  /**
+   * @brief Destruct garbage where their epoch is less than a protected one.
+   *
+   * @tparam Target A class for representing target garbage.
+   * @param buf_addr The address of the pointer of a target buffer.
+   * @param protected_epoch A protected epoch.
+   */
+  template <class Target>
+  static void
+  Destruct(  //
+      std::atomic<GarbageList *> *buf_addr,
+      const size_t protected_epoch)
   {
-    auto *head = Target::kReusePages ? head_.load(std::memory_order_relaxed) : mid_;
-    if (head != nullptr) {
-      GarbageBuffer::Clear(&head, std::numeric_limits<size_t>::max());
-      delete head;
+    using T = typename Target::T;
+
+    GarbageList *reuse_buf = nullptr;
+    while (true) {
+      // release unprotected garbage
+      auto *buf = GetNext(buf_addr).second;
+      const auto end_pos = buf->end_pos_.load(kAcquire);
+      auto mid_pos = buf->mid_pos_.load(kRelaxed);
+      for (; mid_pos < end_pos && buf->garbage_.at(mid_pos).epoch < protected_epoch; ++mid_pos) {
+        if constexpr (!std::is_same_v<T, void>) {
+          reinterpret_cast<T *>(buf->garbage_.at(mid_pos).ptr)->~T();
+        }
+      }
+      buf->mid_pos_.store(mid_pos, kRelease);
+      if (mid_pos < kGarbageBufSize) return;
+
+      // check if this list is empty
+      auto pos = buf->begin_pos_.load(kRelaxed);
+      auto *next = GetNext(&(buf->next_)).second;
+      if (pos == kGarbageBufSize) {  // found the empty list
+        reuse_buf = nullptr;
+        delete buf;
+        buf_addr->store(next, kRelaxed);
+        continue;
+      }
+
+      if (pos > 0) {  // found the dirty list
+        reuse_buf = nullptr;
+        buf_addr = &(buf->next_);
+        continue;
+      }
+
+      // fount the fully destructed list
+      if (reuse_buf != nullptr && reuse_buf->begin_pos_.load(kRelaxed) == 0) {
+        auto [used, cur] = GetNext(&(reuse_buf->next_));
+        if (!used && reuse_buf->next_.compare_exchange_strong(cur, next, kRelaxed, kRelaxed)) {
+          for (; pos < kGarbageBufSize; ++pos) {
+            Release<Target>(buf->garbage_.at(pos).ptr);
+          }
+          delete buf;
+          continue;
+        }
+      }
+      reuse_buf = buf;
+      buf_addr = &(buf->next_);
     }
   }
 
-  /*####################################################################################
-   * Public utility functions for worker threads
-   *##################################################################################*/
-
   /**
-   * @brief Add a new garbage instance.
+   * @brief Release garbage where their epoch is less than a protected one.
    *
-   * @param epoch an epoch value when a garbage is added.
-   * @param garbage_ptr a pointer to a target garbage.
+   * @tparam Target A class for representing target garbage.
+   * @param buf_addr The address of the pointer of a target buffer.
+   * @param protected_epoch A protected epoch.
    */
-  void
-  AddGarbage(  //
-      const size_t epoch,
-      T *garbage_ptr)
+  template <class Target>
+  static void
+  Clear(  //
+      std::atomic<GarbageList *> *buf_addr,
+      const size_t protected_epoch)
   {
-    AssignCurrentThreadIfNeeded();
-    GarbageBuffer::AddGarbage(&tail_, epoch, garbage_ptr);
-  }
+    using T = typename Target::T;
 
-  /**
-   * @brief Reuse a released memory page if it exists in the list.
-   *
-   * @retval nullptr if the list does not have reusable pages.
-   * @retval a memory page otherwise.
-   */
-  auto
-  GetPageIfPossible()  //
-      -> void *
-  {
-    AssignCurrentThreadIfNeeded();
-    return GarbageBuffer::ReusePage(&head_);
-  }
+    while (true) {
+      auto *buf = GetNext(buf_addr).second;
+      const auto mid_pos = buf->mid_pos_.load(kRelaxed);
+      const auto end_pos = buf->end_pos_.load(kAcquire);
 
-  /*####################################################################################
-   * Public utility functions for GC threads
-   *##################################################################################*/
-
-  /**
-   * @brief Release registered garbage if possible.
-   *
-   * @param protected_epoch an epoch value to check whether garbage can be freed.
-   */
-  void
-  ClearGarbage(const size_t protected_epoch)
-  {
-    std::unique_lock guard{mtx_, std::defer_lock};
-    if (!guard.try_lock() || mid_ == nullptr) return;
-
-    // destruct or release garbages
-    if constexpr (!Target::kReusePages) {
-      GarbageBuffer::Clear(&mid_, protected_epoch);
-    } else {
-      if (!heartbeat_.expired()) {
-        GarbageBuffer::Destruct(&mid_, protected_epoch);
-        return;
+      // release unprotected garbage
+      auto pos = buf->begin_pos_.load(kRelaxed);
+      for (; pos < mid_pos; ++pos) {
+        Release<Target>(buf->garbage_.at(pos).ptr);  // already destructed
       }
-
-      auto *head = head_.load(std::memory_order_relaxed);
-      if (head != nullptr) {
-        mid_ = head;
+      for (; pos < end_pos && buf->garbage_.at(pos).epoch < protected_epoch; ++pos) {
+        auto *ptr = buf->garbage_.at(pos).ptr;
+        if constexpr (!std::is_same_v<T, void>) {
+          reinterpret_cast<T *>(ptr)->~T();
+        }
+        Release<Target>(ptr);
       }
-      GarbageBuffer::Clear(&mid_, protected_epoch);
-      head_.store(mid_, std::memory_order_relaxed);
+      buf->begin_pos_.store(pos, kRelaxed);
+      buf->mid_pos_.store(pos, kRelaxed);
+      if (pos < kGarbageBufSize) return;
+
+      // release the next buffer recursively
+      buf_addr->store(GetNext(&(buf->next_)).second, kRelaxed);
+      delete buf;
     }
-
-    // check this list is alive
-    if (!heartbeat_.expired() || !mid_->Empty()) return;
-
-    // release buffers if the thread has exitted
-    delete mid_;
-    head_.store(nullptr, std::memory_order_relaxed);
-    mid_ = nullptr;
-    tail_ = nullptr;
   }
 
  private:
-  /*####################################################################################
+  /*############################################################################
+   * Internal constants
+   *##########################################################################*/
+
+  /// @brief A flag for indicating client threads have already used a pointer.
+  static constexpr uintptr_t kUsedFlag = 1UL << 63UL;
+
+  /*############################################################################
    * Internal classes
-   *##################################################################################*/
+   *##########################################################################*/
 
   /**
-   * @brief A class to represent a buffer of garbage instances.
+   * @brief A class for retaining registered garbage instances.
    *
    */
-  class alignas(kVMPageSize) GarbageBuffer
-  {
-   public:
-    /*##################################################################################
-     * Public constructors and assignment operators
-     *################################################################################*/
+  struct Garbage {
+    /// @brief An epoch when garbage is registered.
+    size_t epoch{0};
 
-    /**
-     * @brief Construct a new instance.
-     *
-     */
-    constexpr GarbageBuffer() = default;
-
-    GarbageBuffer(const GarbageBuffer &) = delete;
-    auto operator=(const GarbageBuffer &) -> GarbageBuffer & = delete;
-    GarbageBuffer(GarbageBuffer &&) = delete;
-    auto operator=(GarbageBuffer &&) -> GarbageBuffer & = delete;
-
-    /*##################################################################################
-     * Public destructors
-     *################################################################################*/
-
-    /**
-     * @brief Destroy the instance.
-     *
-     */
-    ~GarbageBuffer() = default;
-
-    /*##################################################################################
-     * Public getters/setters
-     *################################################################################*/
-
-    /**
-     * @retval true if this list is empty.
-     * @retval false otherwise
-     */
-    [[nodiscard]] auto
-    Empty() const  //
-        -> bool
-    {
-      const auto end_pos = end_pos_.load(std::memory_order_acquire);
-      const auto size = end_pos - begin_pos_.load(std::memory_order_relaxed);
-
-      return (size == 0) && (end_pos < kBufferSize);
-    }
-
-    /*##################################################################################
-     * Public utility functions
-     *################################################################################*/
-
-    /**
-     * @brief Add a new garbage instance to a specified buffer.
-     *
-     * If the buffer becomes full, create a new garbage buffer and link them.
-     *
-     * @param buf_addr the address of the pointer of a target buffer.
-     * @param epoch an epoch value when a garbage is added.
-     * @param garbage a new garbage instance.
-     */
-    static void
-    AddGarbage(  //
-        GarbageBuffer **buf_addr,
-        const size_t epoch,
-        T *garbage)
-    {
-      auto *buf = *buf_addr;
-      const auto pos = buf->end_pos_.load(std::memory_order_relaxed);
-
-      // insert a new garbage
-      buf->garbage_.at(pos).epoch = epoch;
-      buf->garbage_.at(pos).ptr = garbage;
-
-      // check whether the list is full
-      if (pos >= kBufferSize - 1) {
-        auto *new_tail = new GarbageBuffer{};
-        buf->next_ = new_tail;
-        *buf_addr = new_tail;
-      }
-
-      // increment the end position
-      buf->end_pos_.fetch_add(1, std::memory_order_release);
-    }
-
-    /**
-     * @brief Reuse a released memory page.
-     *
-     * @param buf_addr the address of the pointer of a target buffer.
-     * @retval a memory page if exist.
-     * @retval nullptr otherwise.
-     */
-    static auto
-    ReusePage(std::atomic<GarbageBuffer *> *buf_addr)  //
-        -> void *
-    {
-      auto *buf = buf_addr->load(std::memory_order_relaxed);
-      const auto pos = buf->begin_pos_.load(std::memory_order_relaxed);
-      const auto mid_pos = buf->mid_pos_.load(std::memory_order_acquire);
-
-      // check whether there are released garbage
-      if (pos >= mid_pos) return nullptr;
-
-      // get a released page
-      buf->begin_pos_.fetch_add(1, std::memory_order_relaxed);
-      auto *page = buf->garbage_.at(pos).ptr;
-
-      // check whether all the pages in the list are reused
-      if (pos >= kBufferSize - 1) {
-        buf_addr->store(buf->next_, std::memory_order_relaxed);
-        delete buf;
-      }
-
-      return page;
-    }
-
-    /**
-     * @brief Destruct garbage where their epoch is less than a protected one.
-     *
-     * @param buf_addr the address of the pointer of a target buffer.
-     * @param protected_epoch a protected epoch.
-     */
-    static void
-    Destruct(  //
-        GarbageBuffer **buf_addr,
-        const size_t protected_epoch)
-    {
-      while (true) {
-        // release unprotected garbage
-        auto *buf = *buf_addr;
-        const auto end_pos = buf->end_pos_.load(std::memory_order_acquire);
-        auto pos = buf->mid_pos_.load(std::memory_order_relaxed);
-        for (; pos < end_pos; ++pos) {
-          if (buf->garbage_.at(pos).epoch >= protected_epoch) break;
-
-          // only call destructor to reuse pages
-          if constexpr (!std::is_same_v<T, void>) {
-            buf->garbage_.at(pos).ptr->~T();
-          }
-        }
-
-        // update the position to make visible destructed garbage
-        buf->mid_pos_.store(pos, std::memory_order_release);
-        if (pos < kBufferSize) return;
-
-        // release the next buffer recursively
-        *buf_addr = buf->next_;
-      }
-    }
-
-    /**
-     * @brief Release garbage where their epoch is less than a protected one.
-     *
-     * @param buf_addr the address of the pointer of a target buffer.
-     * @param protected_epoch a protected epoch.
-     */
-    static void
-    Clear(  //
-        GarbageBuffer **buf_addr,
-        const size_t protected_epoch)
-    {
-      while (true) {
-        auto *buf = *buf_addr;
-        const auto mid_pos = buf->mid_pos_.load(std::memory_order_relaxed);
-        const auto end_pos = buf->end_pos_.load(std::memory_order_acquire);
-
-        // release unprotected garbage
-        auto pos = buf->begin_pos_.load(std::memory_order_relaxed);
-        for (; pos < mid_pos; ++pos) {
-          // the garbage has been already destructed
-          Release<Target>(buf->garbage_.at(pos).ptr);
-        }
-        for (; pos < end_pos; ++pos) {
-          if (buf->garbage_.at(pos).epoch >= protected_epoch) break;
-
-          auto *ptr = buf->garbage_.at(pos).ptr;
-          if constexpr (!std::is_same_v<T, void>) {
-            ptr->~T();
-          }
-          Release<Target>(ptr);
-        }
-        buf->begin_pos_.store(pos, std::memory_order_relaxed);
-        buf->mid_pos_.store(pos, std::memory_order_relaxed);
-
-        if (pos < kBufferSize) return;
-
-        // release the next buffer recursively
-        *buf_addr = buf->next_;
-        delete buf;
-      }
-    }
-
-   private:
-    /*##################################################################################
-     * Internal classes
-     *################################################################################*/
-
-    /**
-     * @brief A class to represent the pair of an epoch value and a registered garbage.
-     *
-     */
-    struct Garbage {
-      /// An epoch value when the garbage is registered.
-      size_t epoch{};
-
-      /// A pointer to the registered garbage.
-      T *ptr{};
-    };
-
-    /*##################################################################################
-     * Internal member variables
-     *################################################################################*/
-
-    /// The index to represent a head position.
-    std::atomic_size_t begin_pos_{0};
-
-    /// The end of released indexes
-    std::atomic_size_t mid_pos_{0};
-
-    /// A buffer of garbage instances with added epochs.
-    std::array<Garbage, kBufferSize> garbage_{};
-
-    /// The index to represent a tail position.
-    std::atomic_size_t end_pos_{0};
-
-    /// A pointer to a next garbage buffer.
-    GarbageBuffer *next_{nullptr};
+    /// @brief A registered garbage pointer.
+    void *ptr{nullptr};
   };
 
-  /*####################################################################################
-   * Internal utilities
-   *##################################################################################*/
-
-  /**
-   * @brief Assign this list to the current thread.
-   *
-   */
-  void
-  AssignCurrentThreadIfNeeded()
-  {
-    if (!heartbeat_.expired()) return;
-
-    std::lock_guard guard{mtx_};
-    if (tail_ == nullptr) {
-      tail_ = new GarbageBuffer{};
-      mid_ = tail_;
-      if constexpr (Target::kReusePages) {
-        head_.store(tail_, std::memory_order_relaxed);
-      }
-    }
-    heartbeat_ = IDManager::GetHeartBeat();
-  }
-
-  /*####################################################################################
+  /*############################################################################
    * Internal member variables
-   *##################################################################################*/
+   *##########################################################################*/
 
-  /// A flag for indicating the corresponding thread has exited.
-  std::weak_ptr<size_t> heartbeat_{};
+  /// @brief The begin position of destructed garbage.
+  std::atomic_size_t begin_pos_{0};
 
-  /// A garbage list that has destructed pages.
-  std::atomic<GarbageBuffer *> head_{nullptr};
+  /// @brief The end position of destructed garbage.
+  std::atomic_size_t mid_pos_{0};
 
-  /// A garbage list that has free space for new garbages.
-  GarbageBuffer *tail_{nullptr};
+  /// @brief A buffer of garbage instances with added epochs.
+  std::array<Garbage, kGarbageBufSize> garbage_{};
 
-  /// A dummy array for cache line alignments
-  uint64_t padding_[4]{};
+  /// @brief The end position of registered garbage.
+  std::atomic_size_t end_pos_{0};
 
-  /// A mutex instance for modifying buffer pointers.
-  std::mutex mtx_{};
-
-  /// A garbage list that has not destructed pages.
-  GarbageBuffer *mid_{nullptr};
+  /// @brief The next garbage buffer.
+  std::atomic<GarbageList *> next_{nullptr};
 };
 
 }  // namespace dbgroup::memory::component
 
-#endif  // MEMORY_COMPONENT_GARBAGE_LIST_HPP
+#endif  // DBGROUP_MEMORY_COMPONENT_GARBAGE_LIST_HPP

@@ -14,79 +14,73 @@
  * limitations under the License.
  */
 
-#ifndef MEMORY_UTILITY_HPP
-#define MEMORY_UTILITY_HPP
+#ifndef DBGROUP_MEMORY_UTILITY_HPP
+#define DBGROUP_MEMORY_UTILITY_HPP
 
 // C++ standard libraries
-#include <cassert>
+#include <atomic>
 #include <cstddef>
-#include <cstdint>
-#include <type_traits>
+#include <new>
 
 namespace dbgroup::memory
 {
-/*######################################################################################
+/*##############################################################################
  * Global constants
- *####################################################################################*/
+ *############################################################################*/
 
-/// The default time interval for garbage collection [us].
-constexpr size_t kDefaultGCTime = 10000;  // 10 ms
+/// @brief The default time interval for garbage collection (10 ms).
+constexpr size_t kDefaultGCTime = 10000;
 
-/// The default number of worker threads for garbage collection.
+/// @brief The default number of worker threads for garbage collection.
 constexpr size_t kDefaultGCThreadNum = 1;
 
-/// The default alignment size for dynamically allocated instances.
+/// @brief The default alignment size for dynamically allocated instances.
 constexpr size_t kDefaultAlignment = __STDCPP_DEFAULT_NEW_ALIGNMENT__;
 
-/*######################################################################################
- * Turning parameters
- *####################################################################################*/
+/// @brief An alias of the acquire memory order.
+constexpr std::memory_order kAcquire = std::memory_order_acquire;
 
-/// The page size of virtual memory addresses.
+/// @brief An alias of the release memory order.
+constexpr std::memory_order kRelease = std::memory_order_release;
+
+/// @brief An alias of the relaxed memory order.
+constexpr std::memory_order kRelaxed = std::memory_order_relaxed;
+
+/*##############################################################################
+ * Turning parameters
+ *############################################################################*/
+
+/// @brief The page size of virtual memory addresses.
 constexpr size_t kVMPageSize = 4096;
 
-/// The size of words.
+/// @brief The size of words.
 constexpr size_t kWordSize = 8;
 
-/// The expected cache-line size.
+/// @brief The expected cache line size.
 constexpr size_t kCashLineSize = 64;
 
-#ifdef MEMORY_MANAGER_USE_PERSISTENT_MEMORY
-/*######################################################################################
- * Constants for persistent memory
- *####################################################################################*/
+/// @brief The size of buffers for retaining garbages.
+constexpr size_t kGarbageBufSize = (kVMPageSize - 4 * kWordSize) / (2 * kWordSize);
 
-/// In PMDK, the memblock header use 16 bytes
-constexpr size_t kPmemPageSize = kVMPageSize - 16;
-
-/// The number of temporary fields per thread.
-constexpr size_t kTmpFieldNum = 13;
-#endif
-
-/*######################################################################################
+/*##############################################################################
  * Utility classes
- *####################################################################################*/
+ *############################################################################*/
 
 /**
  * @brief A default GC information.
  *
  */
 struct DefaultTarget {
-  /// Use the void type and do not perform destructors.
+  /// @brief Use the void type to avoid calling a destructor.
   using T = void;
 
-  /// Do not reuse pages after GC (release immediately).
+  /// @brief Do not reuse pages after GC (release immediately).
   static constexpr bool kReusePages = false;
-
-#ifdef MEMORY_MANAGER_USE_PERSISTENT_MEMORY
-  /// Default targets are on volatile memory.
-  static constexpr bool kOnPMEM = false;
-#endif
 };
 
-/*######################################################################################
+/*##############################################################################
  * Utility functions
- *####################################################################################*/
+ *############################################################################*/
 
 /**
  * @brief Allocate a memory region with alignments.
@@ -97,7 +91,8 @@ struct DefaultTarget {
  */
 template <class T>
 inline auto
-Allocate(size_t size = sizeof(T))  //
+Allocate(                     //
+    size_t size = sizeof(T))  //
     -> T *
 {
   if constexpr (alignof(T) <= kDefaultAlignment) {
@@ -115,7 +110,8 @@ Allocate(size_t size = sizeof(T))  //
  */
 template <class T>
 inline void
-Release(void *ptr)
+Release(  //
+    void *ptr)
 {
   if constexpr (alignof(T) <= kDefaultAlignment) {
     ::operator delete(ptr);
@@ -126,4 +122,4 @@ Release(void *ptr)
 
 }  // namespace dbgroup::memory
 
-#endif  // MEMORY_UTILITY_HPP
+#endif  // DBGROUP_MEMORY_UTILITY_HPP

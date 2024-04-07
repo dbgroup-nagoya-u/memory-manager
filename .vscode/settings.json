@@ -1,7 +1,17 @@
 {
-  // enable formatting
-  "editor.formatOnPaste": false,
+  // editor settings
+  "editor.rulers": [
+    80,
+    100
+  ],
+  "editor.renderControlCharacters": true,
+  "editor.renderWhitespace": "all",
   "editor.formatOnSave": true,
+  "editor.tabSize": 2,
+  // files settings
+  "files.insertFinalNewline": true,
+  "files.trimFinalNewlines": true,
+  "files.trimTrailingWhitespace": true,
   "files.exclude": {
     "**/.git": true,
     "**/.svn": true,
@@ -15,22 +25,42 @@
     "**/.git/subtree-cache/**": true,
     "**/node_modules/*/**": true,
     "**/.hg/store/**": true,
-    "**/third_party/**": true,
-    "**/pmwcas/**": true
   },
-  // unit testing
+  // C/C++ settings
+  "C_Cpp.codeAnalysis.runAutomatically": true,
+  "C_Cpp.codeAnalysis.clangTidy.enabled": true,
+  // "C_Cpp.codeAnalysis.clangTidy.path": "/usr/bin/clang-tidy",
+  // "C_Cpp.codeAnalysis.clangTidy.useBuildPath": true,
+  // "C_Cpp.default.compileCommands": "build/vscode/compile_commands.json",
+  // unit test settings
   "testMate.cpp.test.runtimeLimit": 60,
-  "testMate.cpp.test.executables": "build/**/test/*_test",
-  // using Ninja for buiding
+  "testMate.cpp.test.executables": "build/vscode/test/*_test",
+  // cmake settings
+  "[cmake]": {
+    "editor.autoIndent": "brackets",
+  },
+  "cmake.configureOnOpen": true,
+  "cmake.buildDirectory": "${workspaceRoot}/build/vscode",
   "cmake.generator": "Ninja",
-  // ignore the top level heading from TOC
-  "markdown.extension.toc.levels": "2..6",
+  "cmake.options.statusBarVisibility": "compact",
+  "cmake.debugConfig": {
+    "args": []
+  },
+  // Markdown settings
+  "[markdown]": {
+    "editor.tabSize": 4,
+    "files.trimTrailingWhitespace": false,
+  },
+  "markdown.extension.list.indentationSize": "inherit",
+  "markdown.extension.tableFormatter.enabled": false,
+  "markdown.extension.toc.levels": "2..3",
   // extra words for spell checking
   "cSpell.words": [
     "alignas",
     "alloc",
     "cerr",
     "cout",
+    "cstddef",
     "ctest",
     "DCMAKE",
     "DMEMORY",
@@ -141,6 +171,7 @@
     "typeindex": "cpp",
     "valarray": "cpp",
     "*.ipp": "cpp",
-    "source_location": "cpp"
+    "source_location": "cpp",
+    "regex": "cpp"
   },
 }
