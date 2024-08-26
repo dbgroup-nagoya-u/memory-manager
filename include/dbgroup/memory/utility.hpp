@@ -14,8 +14,8 @@
  * limitations under the License.
  */
 
-#ifndef DBGROUP_MEMORY_UTILITY_HPP
-#define DBGROUP_MEMORY_UTILITY_HPP
+#ifndef MEMORY_MANAGER_DBGROUP_MEMORY_UTILITY_HPP_
+#define MEMORY_MANAGER_DBGROUP_MEMORY_UTILITY_HPP_
 
 // C++ standard libraries
 #include <atomic>
@@ -126,4 +126,4 @@ Release(  //
 
 }  // namespace dbgroup::memory
 
-#endif  // DBGROUP_MEMORY_UTILITY_HPP
+#endif  // MEMORY_MANAGER_DBGROUP_MEMORY_UTILITY_HPP_

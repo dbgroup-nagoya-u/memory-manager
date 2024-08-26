@@ -14,8 +14,8 @@
  * limitations under the License.
  */
 
-#ifndef BC_TREE_COMPONENT_MAPPING_TABLE_HPP
-#define BC_TREE_COMPONENT_MAPPING_TABLE_HPP
+#ifndef MEMORY_MANAGER_DBGROUP_MEMORY_MAPPING_TABLE_HPP_
+#define MEMORY_MANAGER_DBGROUP_MEMORY_MAPPING_TABLE_HPP_
 
 // C++ standard libraries
 #include <atomic>
@@ -25,7 +25,7 @@
 #include <utility>
 
 // local sources
-#include "memory/utility.hpp"
+#include "dbgroup/memory/utility.hpp"
 
 namespace dbgroup::memory
 {
@@ -264,4 +264,4 @@ class alignas(kVMPageSize) MappingTable
 
 }  // namespace dbgroup::memory
 
-#endif  // BC_TREE_COMPONENT_MAPPING_TABLE_HPP
+#endif  // MEMORY_MANAGER_DBGROUP_MEMORY_MAPPING_TABLE_HPP_

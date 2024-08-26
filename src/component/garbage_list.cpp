@@ -15,7 +15,7 @@
  */
 
 // the corresponding header
-#include "memory/component/garbage_list.hpp"
+#include "dbgroup/memory/component/garbage_list.hpp"
 
 // C++ standard libraries
 #include <array>
@@ -25,7 +25,7 @@
 #include <utility>
 
 // local sources
-#include "memory/utility.hpp"
+#include "dbgroup/memory/utility.hpp"
 
 namespace dbgroup::memory::component
 {

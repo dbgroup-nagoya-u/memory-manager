@@ -15,7 +15,7 @@
  */
 
 // the corresponding header
-#include "memory/mapping_table.hpp"
+#include "dbgroup/memory/mapping_table.hpp"
 
 // C++ standard libraries
 #include <algorithm>
@@ -28,8 +28,8 @@
 #include <vector>
 
 // external libraries
+#include "dbgroup/lock/common.hpp"
 #include "gtest/gtest.h"
-#include "lock/common.hpp"
 
 namespace dbgroup::memory::test
 {

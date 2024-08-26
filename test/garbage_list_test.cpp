@@ -15,7 +15,7 @@
  */
 
 // the corresponding header
-#include "memory/component/list_holder.hpp"
+#include "dbgroup/memory/component/list_holder.hpp"
 
 // C++ standard libraries
 #include <atomic>
@@ -30,7 +30,7 @@
 #include "gtest/gtest.h"
 
 // library sources
-#include "memory/utility.hpp"
+#include "dbgroup/memory/utility.hpp"
 
 namespace dbgroup::memory::component::test
 {

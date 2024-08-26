@@ -15,7 +15,7 @@
  */
 
 // the corresponding header
-#include "memory/mapping_table.hpp"
+#include "dbgroup/memory/mapping_table.hpp"
 
 // C++ standard libraries
 #include <atomic>
@@ -26,10 +26,10 @@
 #include <utility>
 
 // external libraries
-#include "lock/common.hpp"
+#include "dbgroup/lock/common.hpp"
 
 // local sources
-#include "memory/utility.hpp"
+#include "dbgroup/memory/utility.hpp"
 
 namespace dbgroup::memory
 {

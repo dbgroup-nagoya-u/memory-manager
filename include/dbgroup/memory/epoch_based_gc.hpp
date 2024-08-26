@@ -14,8 +14,8 @@
  * limitations under the License.
  */
 
-#ifndef DBGROUP_MEMORY_EPOCH_BASED_GC_HPP
-#define DBGROUP_MEMORY_EPOCH_BASED_GC_HPP
+#ifndef MEMORY_MANAGER_DBGROUP_MEMORY_EPOCH_BASED_GC_HPP_
+#define MEMORY_MANAGER_DBGROUP_MEMORY_EPOCH_BASED_GC_HPP_
 
 // C++ standard libraries
 #include <atomic>
@@ -26,13 +26,13 @@
 #include <vector>
 
 // external libraries
-#include "thread/epoch_guard.hpp"
-#include "thread/epoch_manager.hpp"
-#include "thread/id_manager.hpp"
+#include "dbgroup/thread/epoch_guard.hpp"
+#include "dbgroup/thread/epoch_manager.hpp"
+#include "dbgroup/thread/id_manager.hpp"
 
 // local sources
-#include "memory/component/list_holder.hpp"
-#include "memory/utility.hpp"
+#include "dbgroup/memory/component/list_holder.hpp"
+#include "dbgroup/memory/utility.hpp"
 
 namespace dbgroup::memory
 {
@@ -362,4 +362,4 @@ class EpochBasedGC
 
 }  // namespace dbgroup::memory
 
-#endif  // DBGROUP_MEMORY_EPOCH_BASED_GC_HPP
+#endif  // MEMORY_MANAGER_DBGROUP_MEMORY_EPOCH_BASED_GC_HPP_

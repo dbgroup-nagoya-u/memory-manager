@@ -15,7 +15,7 @@
  */
 
 // the corresponding header
-#include "memory/epoch_based_gc.hpp"
+#include "dbgroup/memory/epoch_based_gc.hpp"
 
 // C++ standard libraries
 #include <array>
@@ -34,7 +34,7 @@
 #include "gtest/gtest.h"
 
 // library sources
-#include "memory/utility.hpp"
+#include "dbgroup/memory/utility.hpp"
 
 namespace dbgroup::memory::test
 {
