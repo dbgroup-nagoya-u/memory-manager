@@ -40,7 +40,7 @@ namespace dbgroup::memory::component
  * @tparam Target A class for representing target garbage.
  */
 template <class Target>
-class alignas(kCashLineSize) ListHolder
+class alignas(kCacheLineSize) ListHolder
 {
  public:
   /*############################################################################

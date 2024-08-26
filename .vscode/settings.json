@@ -172,6 +172,11 @@
     "valarray": "cpp",
     "*.ipp": "cpp",
     "source_location": "cpp",
-    "regex": "cpp"
+    "regex": "cpp",
+    "compare": "cpp",
+    "concepts": "cpp",
+    "numbers": "cpp",
+    "semaphore": "cpp",
+    "stop_token": "cpp"
   },
 }

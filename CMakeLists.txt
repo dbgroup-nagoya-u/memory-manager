@@ -38,6 +38,7 @@ if(NOT TARGET dbgroup::${PROJECT_NAME})
 
   add_library(${PROJECT_NAME} STATIC
     "${CMAKE_CURRENT_SOURCE_DIR}/src/component/garbage_list.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/mapping_table.cpp"
   )
   add_library(dbgroup::${PROJECT_NAME} ALIAS ${PROJECT_NAME})
   target_compile_features(${PROJECT_NAME} PUBLIC

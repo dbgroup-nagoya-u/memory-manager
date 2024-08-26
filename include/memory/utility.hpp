@@ -57,7 +57,7 @@ constexpr size_t kVMPageSize = 4096;
 constexpr size_t kWordSize = 8;
 
 /// @brief The expected cache line size.
-constexpr size_t kCashLineSize = 64;
+constexpr size_t kCacheLineSize = 64;
 
 /// @brief The size of buffers for retaining garbages.
 constexpr size_t kGarbageBufSize = (kVMPageSize - 4 * kWordSize) / (2 * kWordSize);
@@ -108,15 +108,19 @@ Allocate(                     //
  * @tparam T A target class.
  * @param ptr The address of allocations to be released.
  */
-template <class T>
+template <class T = void>
 inline void
 Release(  //
     void *ptr)
 {
-  if constexpr (alignof(T) <= kDefaultAlignment) {
+  if constexpr (std::is_same_v<T, void>) {
     ::operator delete(ptr);
   } else {
-    ::operator delete(ptr, static_cast<std::align_val_t>(alignof(T)));
+    if constexpr (alignof(T) <= kDefaultAlignment) {
+      ::operator delete(ptr);
+    } else {
+      ::operator delete(ptr, static_cast<std::align_val_t>(alignof(T)));
+    }
   }
 }
 
