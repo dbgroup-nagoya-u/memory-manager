@@ -8,8 +8,8 @@ endif()
 # project information
 project(
   memory_manager
-  VERSION "0.2.0"
-  DESCRIPTION "An open-source simple GC library."
+  VERSION "0.3.0"
+  DESCRIPTION "A memory management library."
   LANGUAGES "CXX"
 )
 
