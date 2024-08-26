@@ -81,7 +81,7 @@ If you want only to release garbage pointers, you can use our garbage collector 
 #include <vector>
 
 // our libraries
-#include "memory/epoch_based_gc.hpp"
+#include "dbgroup/memory/epoch_based_gc.hpp"
 
 auto
 main(  //
@@ -142,7 +142,7 @@ You can call a specific destructor before releasing garbage.
 #include <vector>
 
 // our libraries
-#include "memory/epoch_based_gc.hpp"
+#include "dbgroup/memory/epoch_based_gc.hpp"
 
 // prepare the information of target garbage
 struct SharedPtrTarget : public ::dbgroup::memory::DefaultTarget {
@@ -224,7 +224,7 @@ You can reuse garbage-collected pages. Our GC maintains garbage lists in each th
 #include <vector>
 
 // our libraries
-#include "memory/epoch_based_gc.hpp"
+#include "dbgroup/memory/epoch_based_gc.hpp"
 
 // prepare the information of target garbage
 struct ReusableTarget : public ::dbgroup::memory::DefaultTarget {

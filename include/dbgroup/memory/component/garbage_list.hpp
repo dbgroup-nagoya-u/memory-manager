@@ -14,8 +14,8 @@
  * limitations under the License.
  */
 
-#ifndef DBGROUP_MEMORY_COMPONENT_GARBAGE_LIST_HPP
-#define DBGROUP_MEMORY_COMPONENT_GARBAGE_LIST_HPP
+#ifndef MEMORY_MANAGER_DBGROUP_MEMORY_COMPONENT_GARBAGE_LIST_HPP_
+#define MEMORY_MANAGER_DBGROUP_MEMORY_COMPONENT_GARBAGE_LIST_HPP_
 
 // C++ standard libraries
 #include <array>
@@ -24,7 +24,7 @@
 #include <utility>
 
 // local sources
-#include "memory/utility.hpp"
+#include "dbgroup/memory/utility.hpp"
 
 namespace dbgroup::memory::component
 {
@@ -252,4 +252,4 @@ class alignas(kVMPageSize) GarbageList
 
 }  // namespace dbgroup::memory::component
 
-#endif  // DBGROUP_MEMORY_COMPONENT_GARBAGE_LIST_HPP
+#endif  // MEMORY_MANAGER_DBGROUP_MEMORY_COMPONENT_GARBAGE_LIST_HPP_

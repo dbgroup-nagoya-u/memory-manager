@@ -53,3 +53,4 @@ endfunction()
 # add unit tests to build targets
 DBGROUP_ADD_TEST("garbage_list_test")
 DBGROUP_ADD_TEST("epoch_based_gc_test")
+DBGROUP_ADD_TEST("mapping_table_test")

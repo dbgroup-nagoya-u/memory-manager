@@ -14,8 +14,8 @@
  * limitations under the License.
  */
 
-#ifndef DBGROUP_MEMORY_COMPONENT_LIST_HOLDER_HPP
-#define DBGROUP_MEMORY_COMPONENT_LIST_HOLDER_HPP
+#ifndef MEMORY_MANAGER_DBGROUP_MEMORY_COMPONENT_LIST_HOLDER_HPP_
+#define MEMORY_MANAGER_DBGROUP_MEMORY_COMPONENT_LIST_HOLDER_HPP_
 
 // C++ standard libraries
 #include <atomic>
@@ -26,11 +26,11 @@
 #include <mutex>
 
 // external libraries
-#include "thread/id_manager.hpp"
+#include "dbgroup/thread/id_manager.hpp"
 
 // local sources
-#include "memory/component/garbage_list.hpp"
-#include "memory/utility.hpp"
+#include "dbgroup/memory/component/garbage_list.hpp"
+#include "dbgroup/memory/utility.hpp"
 
 namespace dbgroup::memory::component
 {
@@ -40,7 +40,7 @@ namespace dbgroup::memory::component
  * @tparam Target A class for representing target garbage.
  */
 template <class Target>
-class alignas(kCashLineSize) ListHolder
+class alignas(kCacheLineSize) ListHolder
 {
  public:
   /*############################################################################
@@ -202,4 +202,4 @@ class alignas(kCashLineSize) ListHolder
 
 }  // namespace dbgroup::memory::component
 
-#endif  // DBGROUP_MEMORY_COMPONENT_LIST_HOLDER_HPP
+#endif  // MEMORY_MANAGER_DBGROUP_MEMORY_COMPONENT_LIST_HOLDER_HPP_
