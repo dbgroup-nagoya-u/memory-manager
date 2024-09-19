@@ -69,8 +69,11 @@ class EpochBasedGC
    */
   explicit EpochBasedGC(  //
       const size_t gc_interval_micro_sec = kDefaultGCTime,
-      const size_t gc_thread_num = kDefaultGCThreadNum)
-      : gc_interval_{gc_interval_micro_sec}, gc_thread_num_{gc_thread_num}
+      const size_t gc_thread_num = kDefaultGCThreadNum,
+      const size_t reuse_capacity = kDefaultReusePageCapacity)
+      : gc_interval_{gc_interval_micro_sec},
+        gc_thread_num_{gc_thread_num},
+        reuse_capacity_{reuse_capacity}
   {
     InitializeGarbageLists<DefaultTarget, GCTargets...>();
     cleaner_threads_.reserve(gc_thread_num_);
@@ -285,7 +288,7 @@ class EpochBasedGC
 
     auto &lists = std::get<ListsPtr>(garbage_lists_);
     for (size_t i = 0; i < kMaxThreadNum; ++i) {
-      lists[i].ClearGarbage(protected_epoch);
+      lists[i].ClearGarbage(protected_epoch, reuse_capacity_);
     }
 
     if constexpr (sizeof...(Tails) > 0) {
@@ -340,8 +343,11 @@ class EpochBasedGC
   /// @brief The duration of garbage collection in micro seconds.
   const std::chrono::microseconds gc_interval_{};
 
-  /// @brief The maximum number of cleaner threads
-  const size_t gc_thread_num_{1};
+  /// @brief The maximum number of cleaner threads.
+  const size_t gc_thread_num_{};
+
+  /// @brief The maximum number of reusable pages for each thread.
+  const size_t reuse_capacity_{};
 
   /// @brief An epoch manager.
   EpochManager epoch_manager_{};

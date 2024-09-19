@@ -23,13 +23,14 @@
 #include <cstdint>
 #include <limits>
 #include <memory>
-#include <mutex>
 
 // external libraries
+#include "dbgroup/lock/common.hpp"
 #include "dbgroup/thread/id_manager.hpp"
 
 // local sources
 #include "dbgroup/memory/component/garbage_list.hpp"
+#include "dbgroup/memory/component/reuse_list.hpp"
 #include "dbgroup/memory/utility.hpp"
 
 namespace dbgroup::memory::component
@@ -53,7 +54,18 @@ class alignas(kCacheLineSize) ListHolder
    * Public constructors and assignment operators
    *##########################################################################*/
 
-  constexpr ListHolder() = default;
+  ListHolder()
+  {
+    auto *glist = new GarbageList{};
+    cl_glist_.store(glist, kRelease);
+    gc_glist_.store(reinterpret_cast<uintptr_t>(glist), kRelease);
+
+    if constexpr (Target::kReusePages) {
+      auto *rlist = new ReuseList{};
+      cl_rlist_.store(rlist, kRelease);
+      gc_rlist_.store(reinterpret_cast<uintptr_t>(rlist), kRelease);
+    }
+  }
 
   ListHolder(const ListHolder &) = delete;
   ListHolder(ListHolder &&) = delete;
@@ -68,18 +80,20 @@ class alignas(kCacheLineSize) ListHolder
   /**
    * @brief Destroy the object.
    *
-   * If the list contains unreleased garbage, it will be forcibly released.
    */
   ~ListHolder()
   {
-    if (gc_head_.load(kRelaxed) != nullptr) {
-      GarbageList::Clear<Target>(&gc_head_, std::numeric_limits<size_t>::max());
-      delete gc_head_.load(kRelaxed);
+    auto *glist = reinterpret_cast<GarbageList *>(gc_glist_.load(kRelaxed));
+    delete glist;
+
+    if constexpr (Target::kReusePages) {
+      auto *rlist = cl_rlist_.load(kAcquire);
+      ReuseList::DestroyPages<Target>(rlist);
     }
   }
 
   /*############################################################################
-   * Public utility functions for client threads
+   * Public APIs for clients
    *##########################################################################*/
 
   /**
@@ -91,10 +105,10 @@ class alignas(kCacheLineSize) ListHolder
   void
   AddGarbage(  //
       const size_t epoch,
-      typename Target::T *garbage)
+      void *garbage)
   {
     AssignCurrentThreadIfNeeded();
-    GarbageList::AddGarbage(&cli_tail_, epoch, garbage);
+    GarbageList::AddGarbage(&cl_glist_, epoch, garbage);
   }
 
   /**
@@ -108,47 +122,46 @@ class alignas(kCacheLineSize) ListHolder
       -> void *
   {
     AssignCurrentThreadIfNeeded();
-    return GarbageList::ReusePage(&cli_head_);
+    return ReuseList::GetPage(&cl_rlist_);
   }
 
   /*############################################################################
-   * Public utility functions for GC threads
+   * Public APIs for cleaners
    *##########################################################################*/
 
   /**
    * @brief Release registered garbage if possible.
    *
-   * @param protected_epoch An epoch to check whether garbage can be freed.
+   * @param min_epoch An epoch to check whether garbage can be freed.
+   * @param reuse_capacity The maximum number of reusable pages for each thread.
+   * @retval true if all the garbage pages are released.
+   * @retval false otherwise.
    */
-  void
+  auto
   ClearGarbage(  //
-      const size_t protected_epoch)
+      const size_t min_epoch,
+      const size_t reuse_capacity)  //
+      -> bool
   {
-    std::unique_lock guard{mtx_, std::defer_lock};
-    auto *head = gc_head_.load(kRelaxed);
-    if (!guard.try_lock() || head == nullptr) return;
-
-    // destruct or release garbages
+    fence_.test_and_set(kAcquire);
     if constexpr (!Target::kReusePages) {
-      GarbageList::Clear<Target>(&gc_head_, protected_epoch);
+      return GarbageList::Clear<Target>(&gc_glist_, min_epoch);
     } else {
-      if (!heartbeat_.expired()) {
-        GarbageList::Destruct<Target>(&gc_head_, protected_epoch);
-        return;
+      thread_local std::vector<void *> reuse_pages{};
+      if (heartbeat_.expired()) {
+        return GarbageList::Clear<Target>(&gc_glist_, min_epoch);
       }
-      GarbageList::Clear<Target>(&gc_head_, protected_epoch);
-      head = gc_head_.load(kRelaxed);
-      cli_head_.store(head, kRelaxed);
+
+      const auto no_garbage = GarbageList::Clear<Target>(&gc_glist_, min_epoch, &reuse_pages);
+      if (!reuse_pages.empty()) {
+        ReuseList::AddPages(&gc_rlist_, reuse_pages, reuse_capacity);
+        for (auto *page : reuse_pages) {
+          Release<Target>(page);
+        }
+        reuse_pages.clear();
+      }
+      return no_garbage;
     }
-
-    // check this list is alive
-    if (!heartbeat_.expired() || !head->Empty()) return;
-
-    // release buffers if the thread has exitted
-    delete head;
-    cli_tail_.store(nullptr, kRelaxed);
-    cli_head_.store(nullptr, kRelaxed);
-    gc_head_.store(nullptr, kRelaxed);
   }
 
  private:
@@ -164,17 +177,8 @@ class alignas(kCacheLineSize) ListHolder
   AssignCurrentThreadIfNeeded()
   {
     if (!heartbeat_.expired()) return;
-
-    const std::lock_guard guard{mtx_};
-    if (cli_tail_.load(kRelaxed) == nullptr) {
-      auto *list = new GarbageList{};
-      cli_tail_.store(list, kRelaxed);
-      if constexpr (Target::kReusePages) {
-        cli_head_.store(list, kRelaxed);
-      }
-      gc_head_.store(list, kRelaxed);
-    }
     heartbeat_ = IDManager::GetHeartBeat();
+    fence_.clear(kRelease);
   }
 
   /*############################################################################
@@ -184,20 +188,23 @@ class alignas(kCacheLineSize) ListHolder
   /// @brief A flag for checking the corresponding thread has exited.
   std::weak_ptr<size_t> heartbeat_{};
 
-  /// @brief A garbage list that has free space for new garbage.
-  std::atomic<GarbageList *> cli_tail_{nullptr};
+  /// @brief A garbage list for a client thread.
+  std::atomic<GarbageList *> cl_glist_{};
 
-  /// @brief A garbage list that has destructed pages.
-  std::atomic<GarbageList *> cli_head_{nullptr};
+  /// @brief A reusable page list for a client thread.
+  std::atomic<ReuseList *> cl_rlist_{};
 
-  /// @brief A dummy array for cache line alignments
-  uint64_t padding_[4]{};
+  /// @brief A padding region for cache line alignment.
+  uint64_t padding_[4] = {};
 
-  /// @brief A mutex instance for modifying buffer pointers.
-  std::mutex mtx_{};
+  /// @brief A dummy fence.
+  std::atomic_flag fence_{};
 
-  /// @brief A garbage list that has not destructed pages.
-  std::atomic<GarbageList *> gc_head_{nullptr};
+  /// @brief A garbage list for cleaner threads.
+  std::atomic_uintptr_t gc_glist_{};
+
+  /// @brief A reusable page list for cleaner threads.
+  std::atomic_uintptr_t gc_rlist_{};
 };
 
 }  // namespace dbgroup::memory::component

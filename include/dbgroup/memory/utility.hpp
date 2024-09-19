@@ -34,6 +34,9 @@ constexpr size_t kDefaultGCTime = 10000;
 /// @brief The default number of worker threads for garbage collection.
 constexpr size_t kDefaultGCThreadNum = 1;
 
+/// @brief The default number of worker threads for garbage collection.
+constexpr size_t kDefaultReusePageCapacity = 32;
+
 /// @brief The default alignment size for dynamically allocated instances.
 constexpr size_t kDefaultAlignment = __STDCPP_DEFAULT_NEW_ALIGNMENT__;
 
@@ -58,9 +61,6 @@ constexpr size_t kWordSize = 8;
 
 /// @brief The expected cache line size.
 constexpr size_t kCacheLineSize = 64;
-
-/// @brief The size of buffers for retaining garbages.
-constexpr size_t kGarbageBufSize = (kVMPageSize - 4 * kWordSize) / (2 * kWordSize);
 
 /*##############################################################################
  * Utility classes
