@@ -61,6 +61,7 @@ class EpochBasedGCFixture : public ::testing::Test
    *##########################################################################*/
 
   using EpochBasedGC_t = EpochBasedGC<SharedPtrTarget>;
+  using GCBuilder = Builder<SharedPtrTarget>;
   using GarbageRef = std::vector<std::weak_ptr<Target>>;
 
   /*############################################################################
@@ -68,7 +69,7 @@ class EpochBasedGCFixture : public ::testing::Test
    *##########################################################################*/
 
   static constexpr size_t kThreadNum = DBGROUP_TEST_THREAD_NUM;
-  static constexpr size_t kGCInterval = 100000;
+  static constexpr size_t kGCInterval = 10000;
   static constexpr size_t kGarbageNumLarge = 1E6;
   static constexpr size_t kGarbageNumSmall = 10;
 
@@ -79,7 +80,7 @@ class EpochBasedGCFixture : public ::testing::Test
   void
   SetUp() override
   {
-    gc_ = std::make_unique<EpochBasedGC_t>(kGCInterval, kThreadNum);
+    gc_ = GCBuilder{}.SetGCInterval(kGCInterval).SetGCThreadNum(kThreadNum).Build();
   }
 
   void
@@ -297,11 +298,11 @@ class EpochBasedGCFixture : public ::testing::Test
   static void
   VerifyDefaultTarget()
   {
-    EpochBasedGC gc{kGCInterval, kThreadNum};
+    auto &&gc = GCBuilder{}.SetGCInterval(kGCInterval).SetGCThreadNum(kThreadNum).Build();
 
     for (size_t loop = 0; loop < kGarbageNumLarge; ++loop) {
       auto *target = new Target{loop};
-      gc.AddGarbage(target);
+      gc->AddGarbage(target);
     }
   }
 

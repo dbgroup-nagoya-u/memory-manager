@@ -21,6 +21,7 @@
 #include <atomic>
 #include <chrono>
 #include <cstddef>
+#include <memory>
 #include <thread>
 #include <tuple>
 #include <vector>
@@ -64,16 +65,15 @@ class EpochBasedGC
   /**
    * @brief Construct a new instance.
    *
-   * @param gc_interval_micro_sec The duration of GC interval.
-   * @param gc_thread_num The maximum number of threads for performing GC.
+   * @param gc_interval_us The interval of garbage collection in micro seconds.
+   * @param gc_thread_num The maximum number of cleaner threads.
+   * @param reuse_capacity The maximum number of reusable pages for each thread.
    */
   explicit EpochBasedGC(  //
-      const size_t gc_interval_micro_sec = kDefaultGCTime,
+      const size_t gc_interval_us = kDefaultGCTime,
       const size_t gc_thread_num = kDefaultGCThreadNum,
       const size_t reuse_capacity = kDefaultReusePageCapacity)
-      : gc_interval_{gc_interval_micro_sec},
-        gc_thread_num_{gc_thread_num},
-        reuse_capacity_{reuse_capacity}
+      : gc_interval_{gc_interval_us}, gc_thread_num_{gc_thread_num}, reuse_capacity_{reuse_capacity}
   {
     StartGC();
   }
@@ -338,14 +338,14 @@ class EpochBasedGC
    * Internal member variables
    *##########################################################################*/
 
-  /// @brief The duration of garbage collection in micro seconds.
-  const std::chrono::microseconds gc_interval_{};
+  /// @brief The interval of garbage collection in micro seconds.
+  std::chrono::microseconds gc_interval_{};
 
   /// @brief The maximum number of cleaner threads.
-  const size_t gc_thread_num_{};
+  size_t gc_thread_num_{};
 
   /// @brief The maximum number of reusable pages for each thread.
-  const size_t reuse_capacity_{};
+  size_t reuse_capacity_{};
 
   /// @brief An epoch manager.
   EpochManager epoch_manager_{};
@@ -362,6 +362,113 @@ class EpochBasedGC
   /// @brief A tuple containing the garbage lists of each GC target.
   decltype(ConvToTuple<DefaultTarget, GCTargets...>()) garbage_lists_ =
       ConvToTuple<DefaultTarget, GCTargets...>();
+};
+
+/**
+ * @brief A class for construcing an object.
+ *
+ * @tparam GCTargets Classes for representing target garbage.
+ */
+template <class... GCTargets>
+class Builder
+{
+  /*############################################################################
+   * Type aliases
+   *##########################################################################*/
+
+  using GC_t = EpochBasedGC<GCTargets...>;
+
+ public:
+  /*############################################################################
+   * Public constructors and assignment operators
+   *##########################################################################*/
+
+  constexpr Builder() = default;
+
+  constexpr Builder(const Builder &) = default;
+  constexpr Builder(Builder &&) noexcept = default;
+
+  constexpr Builder &operator=(const Builder &) = default;
+  constexpr Builder &operator=(Builder &&) noexcept = default;
+
+  /*############################################################################
+   * Public destructor
+   *##########################################################################*/
+
+  ~Builder() = default;
+
+  /*############################################################################
+   * Public utilities
+   *##########################################################################*/
+
+  /**
+   * @brief Construct an object using the set parameters.
+   *
+   * @return The @c std::unique_ptr of an object.
+   */
+  [[nodiscard]] auto
+  Build() const  //
+      -> std::unique_ptr<GC_t>
+  {
+    return std::make_unique<GC_t>(gc_interval_, gc_thread_num_, reuse_capacity_);
+  }
+
+  /*############################################################################
+   * Public setters
+   *##########################################################################*/
+
+  /**
+   * @param gc_interval_us The interval of garbage collection in micro seconds.
+   * @return Oneself.
+   */
+  constexpr auto
+  SetGCInterval(                    //
+      const size_t gc_interval_us)  //
+      -> Builder &
+  {
+    gc_interval_ = gc_interval_us;
+    return *this;
+  }
+
+  /**
+   * @param gc_thread_num The maximum number of cleaner threads.
+   * @return Oneself.
+   */
+  constexpr auto
+  SetGCThreadNum(                  //
+      const size_t gc_thread_num)  //
+      -> Builder &
+  {
+    gc_thread_num_ = gc_thread_num;
+    return *this;
+  }
+
+  /**
+   * @param reuse_capacity The maximum number of reusable pages for each thread.
+   * @return Oneself.
+   */
+  constexpr auto
+  SetReusablePageNum(               //
+      const size_t reuse_capacity)  //
+      -> Builder &
+  {
+    reuse_capacity_ = reuse_capacity;
+    return *this;
+  }
+
+ private:
+  /*############################################################################
+   * Internal member variables
+   *##########################################################################*/
+
+  /// @brief The interval of garbage collection in micro seconds.
+  size_t gc_interval_{kDefaultGCTime};
+
+  /// @brief The maximum number of cleaner threads.
+  size_t gc_thread_num_{kDefaultGCThreadNum};
+
+  /// @brief The maximum number of reusable pages for each thread.
+  size_t reuse_capacity_{kDefaultReusePageCapacity};
 };
 
 }  // namespace dbgroup::memory
