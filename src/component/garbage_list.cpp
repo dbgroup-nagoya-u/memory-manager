@@ -22,7 +22,11 @@
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <utility>
+
+// external libraries
+#include "dbgroup/lock/common.hpp"
 
 // local sources
 #include "dbgroup/memory/utility.hpp"
@@ -30,72 +34,24 @@
 namespace dbgroup::memory::component
 {
 /*##############################################################################
- * Public APIs
+ * Public APIs for clients
  *############################################################################*/
-
-auto
-GarbageList::Empty() const  //
-    -> bool
-{
-  const auto end_pos = end_pos_.load(kAcquire);
-  const auto size = end_pos - begin_pos_.load(kRelaxed);
-  return (size == 0) && (end_pos < kGarbageBufSize);
-}
-
-auto
-GarbageList::GetNext(                      //
-    std::atomic<GarbageList *> *buf_addr)  //
-    -> std::pair<bool, GarbageList *>
-{
-  auto next = reinterpret_cast<uintptr_t>(buf_addr->load(kRelaxed));
-  return {(next & kUsedFlag) > 0, reinterpret_cast<GarbageList *>(next & ~kUsedFlag)};
-}
 
 void
 GarbageList::AddGarbage(  //
-    std::atomic<GarbageList *> *buf_addr,
+    std::atomic<GarbageList *> *tail_addr,
     const size_t epoch,
     void *garbage)
 {
-  auto *buf = buf_addr->load(kRelaxed);
-
-  const auto pos = buf->end_pos_.load(kRelaxed);
-  buf->garbage_.at(pos) = {epoch, garbage};
-  if (pos >= kGarbageBufSize - 1) {
-    auto *new_tail = new GarbageList{};
-    buf->next_.store(new_tail, kRelaxed);
-    buf_addr->store(new_tail, kRelaxed);
+  auto *list = tail_addr->load(kAcquire);
+  const auto tail = list->tail_.load(kRelaxed);
+  list->garbage_[tail] = {epoch, garbage};
+  if (tail >= kGarbageListCapacity - 1) {
+    auto *next = new GarbageList{};
+    tail_addr->store(next, kRelease);
+    list->next_ = next;
   }
-  buf->end_pos_.fetch_add(1, kRelease);
-}
-
-auto
-GarbageList::ReusePage(                    //
-    std::atomic<GarbageList *> *buf_addr)  //
-    -> void *
-{
-  auto *buf = buf_addr->load(kRelaxed);
-
-  const auto pos = buf->begin_pos_.load(kRelaxed);
-  const auto mid_pos = buf->mid_pos_.load(kAcquire);
-  if (pos >= mid_pos) return nullptr;  // there is no reusable page
-
-  // get a reusable page
-  buf->begin_pos_.fetch_add(1, kRelaxed);
-  auto *page = buf->garbage_.at(pos).ptr;
-
-  // check whether all the pages in the list are reused
-  if (pos >= kGarbageBufSize - 1) {
-    auto *next = buf->next_.load(kRelaxed);
-    while (!buf->next_.compare_exchange_weak(
-        next, reinterpret_cast<GarbageList *>(reinterpret_cast<uintptr_t>(next) | kUsedFlag),
-        kRelaxed, kRelaxed)) {
-      // continue until the next list is reserved
-    }
-    buf_addr->store(next, kRelaxed);
-  }
-
-  return page;
+  list->tail_.fetch_add(1, kRelease);
 }
 
 }  // namespace dbgroup::memory::component

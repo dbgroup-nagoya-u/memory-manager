@@ -27,6 +27,8 @@
 #include <vector>
 
 // external libraries
+#include "dbgroup/lock/common.hpp"
+#include "dbgroup/thread/common.hpp"
 #include "gtest/gtest.h"
 
 // library sources
@@ -39,6 +41,18 @@ namespace dbgroup::memory::component::test
  *############################################################################*/
 
 using Target = uint64_t;
+
+/*##############################################################################
+ * Global constants
+ *############################################################################*/
+
+constexpr size_t kLargeNum = 1024;
+constexpr size_t kMaxLong = std::numeric_limits<size_t>::max();
+constexpr size_t kReusablePageNum = 32;
+
+/*##############################################################################
+ * Fixture declaration
+ *############################################################################*/
 
 class GarbageListFixture : public ::testing::Test
 {
@@ -72,7 +86,11 @@ class GarbageListFixture : public ::testing::Test
   void
   TearDown() override
   {
-    list_->ClearGarbage(kMaxLong);
+    list_->ClearGarbage(kMaxLong, kReusablePageNum, reuse_pages_);
+    for (auto *page : reuse_pages_) {
+      Release<SharedPtrTarget>(page);
+    }
+    reuse_pages_.clear();
     list_.reset();
   }
 
@@ -81,7 +99,8 @@ class GarbageListFixture : public ::testing::Test
    *##########################################################################*/
 
   void
-  AddGarbage(const size_t n)
+  AddGarbage(  //
+      const size_t n)
   {
     for (size_t i = 0; i < n; ++i) {
       auto *target = new Target{0};
@@ -98,23 +117,72 @@ class GarbageListFixture : public ::testing::Test
   }
 
   void
-  CheckGarbage(const size_t n)
+  CheckGarbage(  //
+      const size_t n)
   {
     for (size_t i = 0; i < n; ++i) {
-      EXPECT_TRUE(references_[i].expired());
+      ASSERT_TRUE(references_[i].expired());
     }
     for (size_t i = n; i < references_.size(); ++i) {
-      EXPECT_FALSE(references_[i].expired());
+      ASSERT_FALSE(references_[i].expired());
     }
   }
 
   /*############################################################################
-   * Internal constants
+   * Verification APIs
    *##########################################################################*/
 
-  static constexpr size_t kSmallNum = kGarbageBufSize / 2;
-  static constexpr size_t kLargeNum = kGarbageBufSize * 4;
-  static constexpr size_t kMaxLong = std::numeric_limits<size_t>::max();
+  void
+  VerifyGCWithMultiThreads(      //
+      const size_t cleaner_num)  //
+  {
+    const size_t loop_num = 1E5 * cleaner_num;
+    std::atomic_bool has_prepared = false;
+    std::atomic_bool is_running = true;
+
+    AddGarbage(loop_num);
+    current_epoch_.fetch_add(1);
+
+    std::thread loader{[&]() {
+      while (!has_prepared) {
+        CPP_UTILITY_SPINLOCK_HINT
+      }
+      for (size_t i = 0; i < loop_num; ++i) {
+        AddGarbage(1);
+        current_epoch_.fetch_add(1);
+      }
+    }};
+
+    std::vector<std::thread> cleaners{};
+    for (size_t i = 0; i < cleaner_num; ++i) {
+      cleaners.emplace_back([&]() {
+        while (!has_prepared) {
+          CPP_UTILITY_SPINLOCK_HINT
+        }
+        thread_local std::vector<void *> reuse_pages{};
+        while (is_running) {
+          list_->ClearGarbage(current_epoch_ - 1, kReusablePageNum, reuse_pages);
+          for (auto *page : reuse_pages) {
+            Release<SharedPtrTarget>(page);
+          }
+          reuse_pages.clear();
+        }
+        list_->ClearGarbage(kMaxLong, kReusablePageNum, reuse_pages);
+        for (auto *page : reuse_pages) {
+          Release<SharedPtrTarget>(page);
+        }
+      });
+    }
+
+    has_prepared.store(true);
+    loader.join();
+    is_running.store(false);
+    for (auto &&t : cleaners) {
+      t.join();
+    }
+
+    CheckGarbage(2 * loop_num);
+  }
 
   /*############################################################################
    * Internal member variables
@@ -124,6 +192,8 @@ class GarbageListFixture : public ::testing::Test
 
   std::vector<std::weak_ptr<Target>> references_{};
 
+  std::vector<void *> reuse_pages_{};
+
   std::unique_ptr<GarbageList_t> list_{};
 };
 
@@ -131,39 +201,45 @@ class GarbageListFixture : public ::testing::Test
  * Unit test definitions
  *############################################################################*/
 
-TEST_F(GarbageListFixture, ClearGarbageWithoutProtectedEpochReleaseAllGarbage)
+TEST_F(  //
+    GarbageListFixture,
+    ClearGarbageWithoutProtectedEpochReleaseAllGarbage)
 {
   AddGarbage(kLargeNum);
-  list_->ClearGarbage(kMaxLong);
+  list_->ClearGarbage(kMaxLong, kReusablePageNum, reuse_pages_);
 
   CheckGarbage(kLargeNum);
 }
 
-TEST_F(GarbageListFixture, ClearGarbageWithProtectedEpochKeepProtectedGarbage)
+TEST_F(  //
+    GarbageListFixture,
+    ClearGarbageWithProtectedEpochKeepProtectedGarbage)
 {
   const size_t protected_epoch = current_epoch_.load() + 1;
 
   AddGarbage(kLargeNum);
   current_epoch_ = protected_epoch;
   AddGarbage(kLargeNum);
-  list_->ClearGarbage(protected_epoch);
+  list_->ClearGarbage(protected_epoch, kReusablePageNum, reuse_pages_);
 
   CheckGarbage(kLargeNum);
 }
 
-TEST_F(GarbageListFixture, GetPageIfPossibleWithoutPagesReturnNullptr)
+TEST_F(  //
+    GarbageListFixture,
+    GetPageIfPossibleWithoutPagesReturnNullptr)
 {
-  auto *page = list_->GetPageIfPossible();
-
-  EXPECT_EQ(nullptr, page);
+  EXPECT_EQ(nullptr, list_->GetPageIfPossible());
 }
 
-TEST_F(GarbageListFixture, GetPageIfPossibleWithPagesReturnReusablePage)
+TEST_F(  //
+    GarbageListFixture,
+    GetPageIfPossibleWithPagesReturnReusablePage)
 {
   AddGarbage(kLargeNum);
-  list_->ClearGarbage(kMaxLong);
+  list_->ClearGarbage(kMaxLong, kReusablePageNum, reuse_pages_);
 
-  for (size_t i = 0; i < kGarbageBufSize; ++i) {
+  for (size_t i = 0; i < kReusablePageNum; ++i) {
     auto *page = list_->GetPageIfPossible();
     EXPECT_NE(nullptr, page);
     Release<std::shared_ptr<Target>>(page);
@@ -171,30 +247,18 @@ TEST_F(GarbageListFixture, GetPageIfPossibleWithPagesReturnReusablePage)
   EXPECT_EQ(nullptr, list_->GetPageIfPossible());
 }
 
-TEST_F(GarbageListFixture, AddAndClearGarbageWithMultiThreadsReleaseAllGarbage)
+TEST_F(  //
+    GarbageListFixture,
+    AddGarbageWithSingleCleaner)
 {
-  constexpr size_t kLoopNum = 1e6;
-  std::atomic_bool is_running = true;
+  VerifyGCWithMultiThreads(1);
+}
 
-  std::thread loader{[&]() {
-    for (size_t i = 0; i < kLoopNum; ++i) {
-      AddGarbage(1);
-      current_epoch_.fetch_add(1);
-    }
-  }};
-
-  std::thread cleaner{[&]() {
-    while (is_running.load()) {
-      list_->ClearGarbage(current_epoch_.load() - 1);
-    }
-    list_->ClearGarbage(kMaxLong);
-  }};
-
-  loader.join();
-  is_running.store(false);
-  cleaner.join();
-
-  CheckGarbage(kLoopNum);
+TEST_F(  //
+    GarbageListFixture,
+    AddGarbageWithManyCleaner)
+{
+  VerifyGCWithMultiThreads(::dbgroup::thread::kMaxThreadNum);
 }
 
 }  // namespace dbgroup::memory::component::test
