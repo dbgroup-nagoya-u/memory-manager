@@ -137,7 +137,8 @@ class alignas(kVMPageSize) GarbageList
     }
 
   end:
-    const auto no_garbage = list->garbage_[tail - 1].epoch < min_epoch;
+    const auto no_garbage =
+        list->next_ == nullptr && (tail == 0 || list->garbage_[tail - 1].epoch < min_epoch);
     head_addr->fetch_sub(kCntUnit, kRelease);
     return no_garbage;
   }

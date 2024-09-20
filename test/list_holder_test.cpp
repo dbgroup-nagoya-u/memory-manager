@@ -86,7 +86,11 @@ class GarbageListFixture : public ::testing::Test
   void
   TearDown() override
   {
-    list_->ClearGarbage(kMaxLong, kReusablePageNum);
+    list_->ClearGarbage(kMaxLong, kReusablePageNum, reuse_pages_);
+    for (auto *page : reuse_pages_) {
+      Release<SharedPtrTarget>(page);
+    }
+    reuse_pages_.clear();
     list_.reset();
   }
 
@@ -117,10 +121,10 @@ class GarbageListFixture : public ::testing::Test
       const size_t n)
   {
     for (size_t i = 0; i < n; ++i) {
-      EXPECT_TRUE(references_[i].expired());
+      ASSERT_TRUE(references_[i].expired());
     }
     for (size_t i = n; i < references_.size(); ++i) {
-      EXPECT_FALSE(references_[i].expired());
+      ASSERT_FALSE(references_[i].expired());
     }
   }
 
@@ -135,6 +139,9 @@ class GarbageListFixture : public ::testing::Test
     const size_t loop_num = 1E5 * cleaner_num;
     std::atomic_bool has_prepared = false;
     std::atomic_bool is_running = true;
+
+    AddGarbage(loop_num);
+    current_epoch_.fetch_add(1);
 
     std::thread loader{[&]() {
       while (!has_prepared) {
@@ -152,10 +159,18 @@ class GarbageListFixture : public ::testing::Test
         while (!has_prepared) {
           CPP_UTILITY_SPINLOCK_HINT
         }
+        thread_local std::vector<void *> reuse_pages{};
         while (is_running) {
-          list_->ClearGarbage(current_epoch_ - 1, kReusablePageNum);
+          list_->ClearGarbage(current_epoch_ - 1, kReusablePageNum, reuse_pages);
+          for (auto *page : reuse_pages) {
+            Release<SharedPtrTarget>(page);
+          }
+          reuse_pages.clear();
         }
-        list_->ClearGarbage(kMaxLong, kReusablePageNum);
+        list_->ClearGarbage(kMaxLong, kReusablePageNum, reuse_pages);
+        for (auto *page : reuse_pages) {
+          Release<SharedPtrTarget>(page);
+        }
       });
     }
 
@@ -166,7 +181,7 @@ class GarbageListFixture : public ::testing::Test
       t.join();
     }
 
-    CheckGarbage(loop_num);
+    CheckGarbage(2 * loop_num);
   }
 
   /*############################################################################
@@ -176,6 +191,8 @@ class GarbageListFixture : public ::testing::Test
   std::atomic_size_t current_epoch_{};
 
   std::vector<std::weak_ptr<Target>> references_{};
+
+  std::vector<void *> reuse_pages_{};
 
   std::unique_ptr<GarbageList_t> list_{};
 };
@@ -189,7 +206,7 @@ TEST_F(  //
     ClearGarbageWithoutProtectedEpochReleaseAllGarbage)
 {
   AddGarbage(kLargeNum);
-  list_->ClearGarbage(kMaxLong, kReusablePageNum);
+  list_->ClearGarbage(kMaxLong, kReusablePageNum, reuse_pages_);
 
   CheckGarbage(kLargeNum);
 }
@@ -203,7 +220,7 @@ TEST_F(  //
   AddGarbage(kLargeNum);
   current_epoch_ = protected_epoch;
   AddGarbage(kLargeNum);
-  list_->ClearGarbage(protected_epoch, kReusablePageNum);
+  list_->ClearGarbage(protected_epoch, kReusablePageNum, reuse_pages_);
 
   CheckGarbage(kLargeNum);
 }
@@ -220,7 +237,7 @@ TEST_F(  //
     GetPageIfPossibleWithPagesReturnReusablePage)
 {
   AddGarbage(kLargeNum);
-  list_->ClearGarbage(kMaxLong, kReusablePageNum);
+  list_->ClearGarbage(kMaxLong, kReusablePageNum, reuse_pages_);
 
   for (size_t i = 0; i < kReusablePageNum; ++i) {
     auto *page = list_->GetPageIfPossible();

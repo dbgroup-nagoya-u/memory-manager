@@ -134,20 +134,21 @@ class alignas(kCacheLineSize) ListHolder
    *
    * @param min_epoch An epoch to check whether garbage can be freed.
    * @param reuse_capacity The maximum number of reusable pages for each thread.
+   * @param reuse_pages A temporary buffer for reusable pages.
    * @retval true if all the garbage pages are released.
    * @retval false otherwise.
    */
   auto
   ClearGarbage(  //
       const size_t min_epoch,
-      const size_t reuse_capacity)  //
+      const size_t reuse_capacity,
+      std::vector<void *> &reuse_pages)  //
       -> bool
   {
     fence_.test_and_set(kAcquire);
     if constexpr (!Target::kReusePages) {
       return GarbageList::Clear<Target>(&gc_glist_, min_epoch);
     } else {
-      thread_local std::vector<void *> reuse_pages{};
       if (heartbeat_.expired()) {
         return GarbageList::Clear<Target>(&gc_glist_, min_epoch);
       }
@@ -155,10 +156,6 @@ class alignas(kCacheLineSize) ListHolder
       const auto no_garbage = GarbageList::Clear<Target>(&gc_glist_, min_epoch, &reuse_pages);
       if (!reuse_pages.empty()) {
         ReuseList::AddPages(&gc_rlist_, reuse_pages, reuse_capacity);
-        for (auto *page : reuse_pages) {
-          Release<Target>(page);
-        }
-        reuse_pages.clear();
       }
       return no_garbage;
     }

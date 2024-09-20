@@ -75,8 +75,7 @@ class EpochBasedGC
         gc_thread_num_{gc_thread_num},
         reuse_capacity_{reuse_capacity}
   {
-    InitializeGarbageLists<DefaultTarget, GCTargets...>();
-    cleaner_threads_.reserve(gc_thread_num_);
+    StartGC();
   }
 
   EpochBasedGC(const EpochBasedGC &) = delete;
@@ -160,6 +159,7 @@ class EpochBasedGC
   {
     if (gc_is_running_.load(kRelaxed)) return false;
 
+    InitializeGarbageLists<DefaultTarget, GCTargets...>();
     gc_is_running_.store(true, kRelaxed);
     gc_thread_ = std::thread{&EpochBasedGC::RunGC, this};
     return true;
@@ -179,19 +179,11 @@ class EpochBasedGC
 
     gc_is_running_.store(false, kRelaxed);
     gc_thread_.join();
-
     DestroyGarbageLists<DefaultTarget, GCTargets...>();
     return true;
   }
 
  private:
-  /*############################################################################
-   * Internal constants
-   *##########################################################################*/
-
-  /// @brief The expected maximum number of threads.
-  static constexpr size_t kMaxThreadNum = ::dbgroup::thread::kMaxThreadNum;
-
   /*############################################################################
    * Internal utilities for initialization and finalization
    *##########################################################################*/
@@ -228,7 +220,7 @@ class EpochBasedGC
     using ListsPtr = std::unique_ptr<GarbageList<Target>[]>;
 
     auto &lists = std::get<ListsPtr>(garbage_lists_);
-    lists.reset(new GarbageList<Target>[kMaxThreadNum]);
+    lists.reset(new GarbageList<Target>[::dbgroup::thread::kMaxThreadNum]);
 
     if constexpr (sizeof...(Tails) > 0) {
       InitializeGarbageLists<Tails...>();
@@ -280,20 +272,28 @@ class EpochBasedGC
    * @param protected_epoch An epoch to check whether garbage can be freed.
    */
   template <class Target, class... Tails>
-  void
-  ClearGarbage(  //
-      const size_t protected_epoch)
+  auto
+  ClearGarbage(                      //
+      const size_t protected_epoch)  //
+      -> bool
   {
     using ListsPtr = std::unique_ptr<GarbageList<Target>[]>;
+    thread_local std::vector<void *> reuse_pages{};
 
     auto &lists = std::get<ListsPtr>(garbage_lists_);
-    for (size_t i = 0; i < kMaxThreadNum; ++i) {
-      lists[i].ClearGarbage(protected_epoch, reuse_capacity_);
+    auto no_garbage = true;
+    for (size_t i = 0; i < ::dbgroup::thread::kMaxThreadNum; ++i) {
+      no_garbage &= lists[i].ClearGarbage(protected_epoch, reuse_capacity_, reuse_pages);
     }
+    for (auto *page : reuse_pages) {
+      Release<Target>(page);
+    }
+    reuse_pages.clear();
 
     if constexpr (sizeof...(Tails) > 0) {
-      ClearGarbage<Tails...>(protected_epoch);
+      return no_garbage && ClearGarbage<Tails...>(protected_epoch);
     }
+    return no_garbage;
   }
 
   /**
@@ -304,24 +304,22 @@ class EpochBasedGC
   RunGC()
   {
     // create cleaner threads
+    std::atomic_size_t exited_num{0};
+    auto cleaner = [&]() {
+      for (auto wake_time = Clock_t::now() + gc_interval_; true; wake_time += gc_interval_) {
+        auto no_garbage = ClearGarbage<DefaultTarget, GCTargets...>(epoch_manager_.GetMinEpoch());
+        if (!gc_is_running_.load(kRelaxed) && no_garbage) break;
+        std::this_thread::sleep_until(wake_time);
+      }
+      exited_num.fetch_add(1, kRelaxed);
+    };
     for (size_t i = 0; i < gc_thread_num_; ++i) {
-      cleaner_threads_.emplace_back([&]() {
-        for (auto wake_time = Clock_t::now() + gc_interval_;  //
-             gc_is_running_.load(kRelaxed);                   //
-             wake_time += gc_interval_)                       //
-        {
-          // release unprotected garbage
-          ClearGarbage<DefaultTarget, GCTargets...>(epoch_manager_.GetMinEpoch());
-
-          // wait until the next epoch
-          std::this_thread::sleep_until(wake_time);
-        }
-      });
+      cleaner_threads_.emplace_back(cleaner);
     }
 
     // manage the global epoch
     for (auto wake_time = Clock_t::now() + gc_interval_;  //
-         gc_is_running_.load(kRelaxed);                   //
+         exited_num.load(kRelaxed) < gc_thread_num_;      //
          wake_time += gc_interval_)                       //
     {
       // wait until the next epoch

@@ -80,12 +80,12 @@ class EpochBasedGCFixture : public ::testing::Test
   SetUp() override
   {
     gc_ = std::make_unique<EpochBasedGC_t>(kGCInterval, kThreadNum);
-    gc_->StartGC();
   }
 
   void
   TearDown() override
   {
+    gc_.reset();
   }
 
   /*############################################################################
@@ -112,7 +112,8 @@ class EpochBasedGCFixture : public ::testing::Test
   }
 
   void
-  KeepEpochGuard(std::promise<Target> p)
+  KeepEpochGuard(  //
+      std::promise<Target> p)
   {
     const auto guard = gc_->CreateEpochGuard();
     p.set_value(0);  // set promise to notice
@@ -142,7 +143,8 @@ class EpochBasedGCFixture : public ::testing::Test
   }
 
   auto
-  TestReuse(const size_t garbage_num)  //
+  TestReuse(                     //
+      const size_t garbage_num)  //
       -> GarbageRef
   {
     // an array for embedding reserved pages
@@ -212,7 +214,8 @@ class EpochBasedGCFixture : public ::testing::Test
    *##########################################################################*/
 
   void
-  VerifyDestructor(const size_t thread_num)
+  VerifyDestructor(  //
+      const size_t thread_num)
   {
     // register garbage to GC
     auto target_weak_ptrs = TestGC(thread_num, kGarbageNumLarge);
@@ -227,7 +230,8 @@ class EpochBasedGCFixture : public ::testing::Test
   }
 
   void
-  VerifyStopGC(const size_t thread_num)
+  VerifyStopGC(  //
+      const size_t thread_num)
   {
     // register garbage to GC
     auto target_weak_ptrs = TestGC(thread_num, kGarbageNumLarge);
@@ -242,7 +246,8 @@ class EpochBasedGCFixture : public ::testing::Test
   }
 
   void
-  VerifyCreateEpochGuard(const size_t thread_num)
+  VerifyCreateEpochGuard(  //
+      const size_t thread_num)
   {
     // a lambda function to keep an epoch guard
     auto create_guard = [&](std::promise<Target> p) {
@@ -293,7 +298,6 @@ class EpochBasedGCFixture : public ::testing::Test
   VerifyDefaultTarget()
   {
     EpochBasedGC gc{kGCInterval, kThreadNum};
-    gc.StartGC();
 
     for (size_t loop = 0; loop < kGarbageNumLarge; ++loop) {
       auto *target = new Target{loop};
@@ -314,43 +318,59 @@ class EpochBasedGCFixture : public ::testing::Test
  * Unit test definitions
  *############################################################################*/
 
-TEST_F(EpochBasedGCFixture, DestructorWithSingleThreadReleaseAllGarbage)
-{  //
+TEST_F(  //
+    EpochBasedGCFixture,
+    DestructorWithSingleThreadReleaseAllGarbage)
+{
   VerifyDestructor(1);
 }
 
-TEST_F(EpochBasedGCFixture, DestructorWithMultiThreadsReleaseAllGarbage)
-{  //
+TEST_F(  //
+    EpochBasedGCFixture,
+    DestructorWithMultiThreadsReleaseAllGarbage)
+{
   VerifyDestructor(kThreadNum);
 }
 
-TEST_F(EpochBasedGCFixture, StopGCWithSingleThreadReleaseAllGarbage)
-{  //
+TEST_F(  //
+    EpochBasedGCFixture,
+    StopGCWithSingleThreadReleaseAllGarbage)
+{
   VerifyStopGC(1);
 }
 
-TEST_F(EpochBasedGCFixture, StopGCWithMultiThreadsReleaseAllGarbage)
-{  //
+TEST_F(  //
+    EpochBasedGCFixture,
+    StopGCWithMultiThreadsReleaseAllGarbage)
+{
   VerifyStopGC(kThreadNum);
 }
 
-TEST_F(EpochBasedGCFixture, CreateEpochGuardWithSingleThreadProtectGarbage)
+TEST_F(  //
+    EpochBasedGCFixture,
+    CreateEpochGuardWithSingleThreadProtectGarbage)
 {
   VerifyCreateEpochGuard(1);
 }
 
-TEST_F(EpochBasedGCFixture, CreateEpochGuardWithMultiThreadsProtectGarbage)
+TEST_F(  //
+    EpochBasedGCFixture,
+    CreateEpochGuardWithMultiThreadsProtectGarbage)
 {
   VerifyCreateEpochGuard(kThreadNum);
 }
 
-TEST_F(EpochBasedGCFixture, ReusePageIfPossibleWithMultiThreadsReleasePageOnlyOnce)
-{  //
+TEST_F(  //
+    EpochBasedGCFixture,
+    ReusePageIfPossibleWithMultiThreadsReleasePageOnlyOnce)
+{
   VerifyReusePageIfPossible();
 }
 
-TEST_F(EpochBasedGCFixture, EmptyDeclarationActAsGCOnlyMode)
-{  //
+TEST_F(  //
+    EpochBasedGCFixture,
+    EmptyDeclarationActAsGCOnlyMode)
+{
   VerifyDefaultTarget();
 }
 
