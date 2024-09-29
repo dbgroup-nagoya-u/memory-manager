@@ -22,6 +22,7 @@
 #include <chrono>
 #include <cstddef>
 #include <memory>
+#include <random>
 #include <thread>
 #include <tuple>
 #include <vector>
@@ -279,11 +280,16 @@ class EpochBasedGC
   {
     using ListsPtr = std::unique_ptr<GarbageList<Target>[]>;
     thread_local std::vector<void *> reuse_pages{};
+    thread_local std::uniform_int_distribution<size_t> dist{0, ::dbgroup::thread::kMaxThreadNum};
+    thread_local std::mt19937_64 rand{std::random_device{}()};
 
     auto &lists = std::get<ListsPtr>(garbage_lists_);
     auto no_garbage = true;
-    for (size_t i = 0; i < ::dbgroup::thread::kMaxThreadNum; ++i) {
-      no_garbage &= lists[i].ClearGarbage(protected_epoch, reuse_capacity_, reuse_pages);
+    for (size_t i = 0, pos = dist(rand); i < ::dbgroup::thread::kMaxThreadNum; ++i) {
+      if (++pos >= ::dbgroup::thread::kMaxThreadNum) {
+        pos = 0;
+      }
+      no_garbage &= lists[pos].ClearGarbage(protected_epoch, reuse_capacity_, reuse_pages);
     }
     for (auto *page : reuse_pages) {
       Release<Target>(page);
