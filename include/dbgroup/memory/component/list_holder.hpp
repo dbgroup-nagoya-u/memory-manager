@@ -25,6 +25,7 @@
 #include <memory>
 
 // external libraries
+#include "dbgroup/constants.hpp"
 #include "dbgroup/lock/common.hpp"
 #include "dbgroup/thread/id_manager.hpp"
 

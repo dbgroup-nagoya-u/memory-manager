@@ -24,6 +24,9 @@
 #include <functional>
 #include <utility>
 
+// external libraries
+#include "dbgroup/constants.hpp"
+
 // local sources
 #include "dbgroup/memory/utility.hpp"
 
@@ -40,7 +43,7 @@ class alignas(kVMPageSize) MappingTable
    * Public constants
    *##########################################################################*/
 
-  /// @brief The begin bit position of colmun IDs.
+  /// @brief The begin bit position of column IDs.
   static constexpr size_t kColShift = 1;
 
   /// @brief The begin bit position of row IDs.

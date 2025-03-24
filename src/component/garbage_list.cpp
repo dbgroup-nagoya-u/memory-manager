@@ -26,6 +26,7 @@
 #include <utility>
 
 // external libraries
+#include "dbgroup/constants.hpp"
 #include "dbgroup/lock/common.hpp"
 
 // local sources

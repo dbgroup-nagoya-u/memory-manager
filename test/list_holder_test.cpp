@@ -28,7 +28,6 @@
 
 // external libraries
 #include "dbgroup/lock/common.hpp"
-#include "dbgroup/thread/common.hpp"
 #include "gtest/gtest.h"
 
 // library sources
@@ -258,7 +257,7 @@ TEST_F(  //
     GarbageListFixture,
     AddGarbageWithManyCleaner)
 {
-  VerifyGCWithMultiThreads(::dbgroup::thread::kMaxThreadNum);
+  VerifyGCWithMultiThreads(kMaxThreadNum);
 }
 
 }  // namespace dbgroup::memory::component::test

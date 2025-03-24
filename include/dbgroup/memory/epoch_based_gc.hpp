@@ -28,6 +28,7 @@
 #include <vector>
 
 // external libraries
+#include "dbgroup/constants.hpp"
 #include "dbgroup/thread/epoch_guard.hpp"
 #include "dbgroup/thread/epoch_manager.hpp"
 #include "dbgroup/thread/id_manager.hpp"
@@ -221,7 +222,7 @@ class EpochBasedGC
     using ListsPtr = std::unique_ptr<GarbageList<Target>[]>;
 
     auto &lists = std::get<ListsPtr>(garbage_lists_);
-    lists.reset(new GarbageList<Target>[::dbgroup::thread::kMaxThreadNum]);
+    lists.reset(new GarbageList<Target>[kMaxThreadNum]);
 
     if constexpr (sizeof...(Tails) > 0) {
       InitializeGarbageLists<Tails...>();
@@ -280,13 +281,13 @@ class EpochBasedGC
   {
     using ListsPtr = std::unique_ptr<GarbageList<Target>[]>;
     thread_local std::vector<void *> reuse_pages{};
-    thread_local std::uniform_int_distribution<size_t> dist{0, ::dbgroup::thread::kMaxThreadNum};
+    thread_local std::uniform_int_distribution<size_t> dist{0, kMaxThreadNum};
     thread_local std::mt19937_64 rand{std::random_device{}()};
 
     auto &lists = std::get<ListsPtr>(garbage_lists_);
     auto no_garbage = true;
-    for (size_t i = 0, pos = dist(rand); i < ::dbgroup::thread::kMaxThreadNum; ++i) {
-      if (++pos >= ::dbgroup::thread::kMaxThreadNum) {
+    for (size_t i = 0, pos = dist(rand); i < kMaxThreadNum; ++i) {
+      if (++pos >= kMaxThreadNum) {
         pos = 0;
       }
       no_garbage &= lists[pos].ClearGarbage(protected_epoch, reuse_capacity_, reuse_pages);

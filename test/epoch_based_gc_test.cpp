@@ -31,7 +31,6 @@
 #include <vector>
 
 // external libraries
-#include "dbgroup/thread/common.hpp"
 #include "gtest/gtest.h"
 
 // library sources
@@ -69,7 +68,7 @@ class EpochBasedGCFixture : public ::testing::Test
    * Internal constants
    *##########################################################################*/
 
-  static constexpr size_t kThreadNum = ::dbgroup::thread::kMaxThreadNum / 2;
+  static constexpr size_t kThreadNum = kMaxThreadNum / 2;
   static constexpr size_t kGCInterval = 10000;
   static constexpr size_t kGarbageNumLarge = 1E6;
 
