@@ -2,7 +2,7 @@
 
 [![Ubuntu 24.04](https://github.com/dbgroup-nagoya-u/memory-manager/actions/workflows/ubuntu_24.yaml/badge.svg)](https://github.com/dbgroup-nagoya-u/memory-manager/actions/workflows/ubuntu_24.yaml) [![Ubuntu 22.04](https://github.com/dbgroup-nagoya-u/memory-manager/actions/workflows/ubuntu_22.yaml/badge.svg)](https://github.com/dbgroup-nagoya-u/memory-manager/actions/workflows/ubuntu_22.yaml) [![Ubuntu 20.04](https://github.com/dbgroup-nagoya-u/memory-manager/actions/workflows/ubuntu_20.yaml/badge.svg)](https://github.com/dbgroup-nagoya-u/memory-manager/actions/workflows/ubuntu_20.yaml) [![macOS](https://github.com/dbgroup-nagoya-u/memory-manager/actions/workflows/mac.yaml/badge.svg)](https://github.com/dbgroup-nagoya-u/memory-manager/actions/workflows/mac.yaml)
 
-This repository is an open source implementation of epoch-based garbage collection for reseach use.
+This repository is an open source implementation of epoch-based garbage collection for research use.
 
 - [Build](#build)
     - [Prerequisites](#prerequisites)
@@ -171,7 +171,7 @@ main(  //
         {
           const auto &guard = gc.CreateEpochGuard();
 
-          // create a shared pointer as gabage pages
+          // create a shared pointer as garbage pages
           auto *page = ::dbgroup::memory::Allocate<std::shared_ptr<size_t>>();
           auto *garbage = new (page) std::shared_ptr<size_t>{new size_t{loop}};
           {

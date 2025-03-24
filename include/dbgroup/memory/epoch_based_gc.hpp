@@ -371,7 +371,7 @@ class EpochBasedGC
 };
 
 /**
- * @brief A class for construcing an object.
+ * @brief A class for constructing an object.
  *
  * @tparam GCTargets Classes for representing target garbage.
  */

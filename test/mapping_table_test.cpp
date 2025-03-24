@@ -136,7 +136,7 @@ class MappingTableFixture : public testing::Test
     auto &&actual_end = std::unique(ids.begin(), ids.end());
     EXPECT_EQ(ids.end(), actual_end);
 
-    // load the sotred values
+    // load the sorted values
     for (auto &&pid : ids) {
       auto *val = table_->Load<size_t>(pid);
       EXPECT_EQ(pid, reinterpret_cast<size_t>(val));

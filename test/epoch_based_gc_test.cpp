@@ -214,7 +214,7 @@ class EpochBasedGCFixture : public ::testing::Test
     // GC deletes all targets during its deconstruction
     gc_.reset(nullptr);
 
-    // check there is no referece to target pointers
+    // check there is no reference to target pointers
     for (auto &&target_weak : target_weak_ptrs) {
       EXPECT_TRUE(target_weak.expired());
     }
@@ -268,7 +268,7 @@ class EpochBasedGCFixture : public ::testing::Test
     auto target_weak_ptrs = TestReuse(thread_num);
     gc_->StopGC();
 
-    // check there is no referece to target pointers
+    // check there is no reference to target pointers
     for (auto &&target_weak : target_weak_ptrs) {
       EXPECT_TRUE(target_weak.expired());
     }
