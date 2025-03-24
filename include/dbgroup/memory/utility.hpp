@@ -19,12 +19,13 @@
 
 // C++ standard libraries
 #include <atomic>
+#include <bit>
 #include <cstddef>
 #include <new>
 
 namespace dbgroup::memory
 {
-/*##############################################################################
+/*############################################################################*
  * Global constants
  *############################################################################*/
 
@@ -40,29 +41,7 @@ constexpr size_t kDefaultReusePageCapacity = 32;
 /// @brief The default alignment size for dynamically allocated instances.
 constexpr size_t kDefaultAlignment = __STDCPP_DEFAULT_NEW_ALIGNMENT__;
 
-/// @brief An alias of the acquire memory order.
-constexpr std::memory_order kAcquire = std::memory_order_acquire;
-
-/// @brief An alias of the release memory order.
-constexpr std::memory_order kRelease = std::memory_order_release;
-
-/// @brief An alias of the relaxed memory order.
-constexpr std::memory_order kRelaxed = std::memory_order_relaxed;
-
-/*##############################################################################
- * Turning parameters
- *############################################################################*/
-
-/// @brief The page size of virtual memory addresses.
-constexpr size_t kVMPageSize = 4096;
-
-/// @brief The size of words.
-constexpr size_t kWordSize = 8;
-
-/// @brief The expected cache line size.
-constexpr size_t kCacheLineSize = 64;
-
-/*##############################################################################
+/*############################################################################*
  * Utility classes
  *############################################################################*/
 
@@ -78,7 +57,7 @@ struct DefaultTarget {
   static constexpr bool kReusePages = false;
 };
 
-/*##############################################################################
+/*############################################################################*
  * Utility functions
  *############################################################################*/
 
@@ -96,9 +75,9 @@ Allocate(                     //
     -> T *
 {
   if constexpr (alignof(T) <= kDefaultAlignment) {
-    return reinterpret_cast<T *>(::operator new(size));
+    return std::bit_cast<T *>(::operator new(size));
   } else {
-    return reinterpret_cast<T *>(::operator new(size, static_cast<std::align_val_t>(alignof(T))));
+    return std::bit_cast<T *>(::operator new(size, static_cast<std::align_val_t>(alignof(T))));
   }
 }
 

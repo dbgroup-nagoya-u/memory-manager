@@ -19,10 +19,14 @@
 
 // C++ standard libraries
 #include <atomic>
+#include <bit>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <utility>
+
+// external libraries
+#include "dbgroup/constants.hpp"
 
 // local sources
 #include "dbgroup/memory/utility.hpp"
@@ -36,11 +40,11 @@ namespace dbgroup::memory
 class alignas(kVMPageSize) MappingTable
 {
  public:
-  /*############################################################################
+  /*##########################################################################*
    * Public constants
    *##########################################################################*/
 
-  /// @brief The begin bit position of colmun IDs.
+  /// @brief The begin bit position of column IDs.
   static constexpr size_t kColShift = 1;
 
   /// @brief The begin bit position of row IDs.
@@ -61,7 +65,7 @@ class alignas(kVMPageSize) MappingTable
   /// @brief The capacity of each array (rows and columns).
   static constexpr size_t kSheetNum = (kVMPageSize - kCacheLineSize) / kWordSize;
 
-  /*############################################################################
+  /*##########################################################################*
    * Public constructors and assignment operators
    *##########################################################################*/
 
@@ -78,7 +82,7 @@ class alignas(kVMPageSize) MappingTable
   auto operator=(const MappingTable &) -> MappingTable & = delete;
   auto operator=(MappingTable &&) -> MappingTable & = delete;
 
-  /*############################################################################
+  /*##########################################################################*
    * Public destructors
    *##########################################################################*/
 
@@ -89,7 +93,7 @@ class alignas(kVMPageSize) MappingTable
    */
   ~MappingTable();
 
-  /*############################################################################
+  /*##########################################################################*
    * Public APIs
    *##########################################################################*/
 
@@ -124,7 +128,7 @@ class alignas(kVMPageSize) MappingTable
   [[nodiscard]] auto GetMemoryUsage() const  //
       -> std::pair<size_t, size_t>;
 
-  /*############################################################################
+  /*##########################################################################*
    * Public APIs for modifying table contents
    *##########################################################################*/
 
@@ -143,7 +147,7 @@ class alignas(kVMPageSize) MappingTable
       -> T *
   {
     const auto &cell = const_cast<MappingTable *>(this)->GetCell(pid);
-    return reinterpret_cast<T *>(cell.load(kAcquire));
+    return std::bit_cast<T *>(cell.load(kAcquire));
   }
 
   /**
@@ -190,7 +194,7 @@ class alignas(kVMPageSize) MappingTable
       -> bool;
 
  private:
-  /*############################################################################
+  /*##########################################################################*
    * Internal classes
    *##########################################################################*/
 
@@ -202,7 +206,7 @@ class alignas(kVMPageSize) MappingTable
     std::atomic<Row *> rows[kVMPageSize / kWordSize] = {};
   };
 
-  /*############################################################################
+  /*##########################################################################*
    * Internal constants
    *##########################################################################*/
 
@@ -223,7 +227,7 @@ class alignas(kVMPageSize) MappingTable
                                     | ((kRowNum - 1) << kRowShift)    //
                                     | (kColNum - 1) | kLPIDFlag};
 
-  /*############################################################################
+  /*##########################################################################*
    * Internal utilities
    *##########################################################################*/
 
@@ -245,7 +249,7 @@ class alignas(kVMPageSize) MappingTable
       uint64_t cur_id)    //
       -> uint64_t;
 
-  /*############################################################################
+  /*##########################################################################*
    * Internal member variables
    *##########################################################################*/
 

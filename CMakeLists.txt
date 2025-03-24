@@ -8,7 +8,7 @@ endif()
 # project information
 project(
   memory_manager
-  VERSION "0.3.0"
+  VERSION "0.4.0"
   DESCRIPTION "A memory management library."
   LANGUAGES "CXX"
 )
@@ -28,7 +28,7 @@ if(NOT TARGET dbgroup::${PROJECT_NAME})
   FetchContent_Declare(
     cpp-utility
     GIT_REPOSITORY "https://github.com/dbgroup-nagoya-u/cpp-utility.git"
-    GIT_TAG "0336b0448a7bb0ba2d2e78e6c32e8d9b785a317f"
+    GIT_TAG "b4620d29176676577211aed3b49c3f40f535e291"
   )
   FetchContent_MakeAvailable(cpp-utility)
 
@@ -43,7 +43,13 @@ if(NOT TARGET dbgroup::${PROJECT_NAME})
   )
   add_library(dbgroup::${PROJECT_NAME} ALIAS ${PROJECT_NAME})
   target_compile_features(${PROJECT_NAME} PUBLIC
-    "cxx_std_17"
+    "cxx_std_20"
+  )
+  target_compile_options(${PROJECT_NAME} PUBLIC
+    $<$<STREQUAL:"${CMAKE_BUILD_TYPE}","Release">:-march=native>
+    $<$<STREQUAL:"${CMAKE_BUILD_TYPE}","Debug">:-g3>
+    -Wall
+    -Wextra
   )
   target_include_directories(${PROJECT_NAME} PUBLIC
     "${CMAKE_CURRENT_SOURCE_DIR}/include"

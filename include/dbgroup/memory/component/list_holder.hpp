@@ -19,12 +19,14 @@
 
 // C++ standard libraries
 #include <atomic>
+#include <bit>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
 #include <memory>
 
 // external libraries
+#include "dbgroup/constants.hpp"
 #include "dbgroup/lock/common.hpp"
 #include "dbgroup/thread/id_manager.hpp"
 
@@ -44,13 +46,13 @@ template <class Target>
 class alignas(kCacheLineSize) ListHolder
 {
  public:
-  /*############################################################################
+  /*##########################################################################*
    * Type aliases
    *##########################################################################*/
 
   using IDManager = ::dbgroup::thread::IDManager;
 
-  /*############################################################################
+  /*##########################################################################*
    * Public constructors and assignment operators
    *##########################################################################*/
 
@@ -58,12 +60,12 @@ class alignas(kCacheLineSize) ListHolder
   {
     auto *glist = new GarbageList{};
     cl_glist_.store(glist, kRelease);
-    gc_glist_.store(reinterpret_cast<uintptr_t>(glist), kRelease);
+    gc_glist_.store(std::bit_cast<uintptr_t>(glist), kRelease);
 
     if constexpr (Target::kReusePages) {
       auto *rlist = new ReuseList{};
       cl_rlist_.store(rlist, kRelease);
-      gc_rlist_.store(reinterpret_cast<uintptr_t>(rlist), kRelease);
+      gc_rlist_.store(std::bit_cast<uintptr_t>(rlist), kRelease);
     }
   }
 
@@ -73,7 +75,7 @@ class alignas(kCacheLineSize) ListHolder
   auto operator=(const ListHolder &) -> ListHolder & = delete;
   auto operator=(ListHolder &&) -> ListHolder & = delete;
 
-  /*############################################################################
+  /*##########################################################################*
    * Public destructors
    *##########################################################################*/
 
@@ -83,7 +85,7 @@ class alignas(kCacheLineSize) ListHolder
    */
   ~ListHolder()
   {
-    auto *glist = reinterpret_cast<GarbageList *>(gc_glist_.load(kRelaxed));
+    auto *glist = std::bit_cast<GarbageList *>(gc_glist_.load(kRelaxed));
     delete glist;
 
     if constexpr (Target::kReusePages) {
@@ -92,7 +94,7 @@ class alignas(kCacheLineSize) ListHolder
     }
   }
 
-  /*############################################################################
+  /*##########################################################################*
    * Public APIs for clients
    *##########################################################################*/
 
@@ -125,7 +127,7 @@ class alignas(kCacheLineSize) ListHolder
     return ReuseList::GetPage(&cl_rlist_);
   }
 
-  /*############################################################################
+  /*##########################################################################*
    * Public APIs for cleaners
    *##########################################################################*/
 
@@ -162,7 +164,7 @@ class alignas(kCacheLineSize) ListHolder
   }
 
  private:
-  /*############################################################################
+  /*##########################################################################*
    * Internal utilities
    *##########################################################################*/
 
@@ -178,7 +180,7 @@ class alignas(kCacheLineSize) ListHolder
     fence_.clear(kRelease);
   }
 
-  /*############################################################################
+  /*##########################################################################*
    * Internal member variables
    *##########################################################################*/
 

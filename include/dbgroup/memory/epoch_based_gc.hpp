@@ -28,6 +28,7 @@
 #include <vector>
 
 // external libraries
+#include "dbgroup/constants.hpp"
 #include "dbgroup/thread/epoch_guard.hpp"
 #include "dbgroup/thread/epoch_manager.hpp"
 #include "dbgroup/thread/id_manager.hpp"
@@ -46,7 +47,7 @@ namespace dbgroup::memory
 template <class... GCTargets>
 class EpochBasedGC
 {
-  /*############################################################################
+  /*##########################################################################*
    * Type aliases
    *##########################################################################*/
 
@@ -59,7 +60,7 @@ class EpochBasedGC
   using GarbageList = component::ListHolder<Target>;
 
  public:
-  /*############################################################################
+  /*##########################################################################*
    * Public constructors and assignment operators
    *##########################################################################*/
 
@@ -85,7 +86,7 @@ class EpochBasedGC
   auto operator=(const EpochBasedGC &) -> EpochBasedGC & = delete;
   auto operator=(EpochBasedGC &&) -> EpochBasedGC & = delete;
 
-  /*############################################################################
+  /*##########################################################################*
    * Public destructors
    *##########################################################################*/
 
@@ -96,7 +97,7 @@ class EpochBasedGC
    */
   ~EpochBasedGC() { StopGC(); }
 
-  /*############################################################################
+  /*##########################################################################*
    * Public utility functions
    *##########################################################################*/
 
@@ -144,7 +145,7 @@ class EpochBasedGC
     return GetGarbageList<Target>()->GetPageIfPossible();
   }
 
-  /*############################################################################
+  /*##########################################################################*
    * Public GC control functions
    *##########################################################################*/
 
@@ -185,7 +186,7 @@ class EpochBasedGC
   }
 
  private:
-  /*############################################################################
+  /*##########################################################################*
    * Internal utilities for initialization and finalization
    *##########################################################################*/
 
@@ -221,7 +222,7 @@ class EpochBasedGC
     using ListsPtr = std::unique_ptr<GarbageList<Target>[]>;
 
     auto &lists = std::get<ListsPtr>(garbage_lists_);
-    lists.reset(new GarbageList<Target>[::dbgroup::thread::kMaxThreadNum]);
+    lists.reset(new GarbageList<Target>[kMaxThreadNum]);
 
     if constexpr (sizeof...(Tails) > 0) {
       InitializeGarbageLists<Tails...>();
@@ -248,7 +249,7 @@ class EpochBasedGC
     }
   }
 
-  /*############################################################################
+  /*##########################################################################*
    * Internal utility functions
    *##########################################################################*/
 
@@ -280,13 +281,13 @@ class EpochBasedGC
   {
     using ListsPtr = std::unique_ptr<GarbageList<Target>[]>;
     thread_local std::vector<void *> reuse_pages{};
-    thread_local std::uniform_int_distribution<size_t> dist{0, ::dbgroup::thread::kMaxThreadNum};
+    thread_local std::uniform_int_distribution<size_t> dist{0, kMaxThreadNum};
     thread_local std::mt19937_64 rand{std::random_device{}()};
 
     auto &lists = std::get<ListsPtr>(garbage_lists_);
     auto no_garbage = true;
-    for (size_t i = 0, pos = dist(rand); i < ::dbgroup::thread::kMaxThreadNum; ++i) {
-      if (++pos >= ::dbgroup::thread::kMaxThreadNum) {
+    for (size_t i = 0, pos = dist(rand); i < kMaxThreadNum; ++i) {
+      if (++pos >= kMaxThreadNum) {
         pos = 0;
       }
       no_garbage &= lists[pos].ClearGarbage(protected_epoch, reuse_capacity_, reuse_pages);
@@ -340,7 +341,7 @@ class EpochBasedGC
     cleaner_threads_.clear();
   }
 
-  /*############################################################################
+  /*##########################################################################*
    * Internal member variables
    *##########################################################################*/
 
@@ -371,21 +372,21 @@ class EpochBasedGC
 };
 
 /**
- * @brief A class for construcing an object.
+ * @brief A class for constructing an object.
  *
  * @tparam GCTargets Classes for representing target garbage.
  */
 template <class... GCTargets>
 class Builder
 {
-  /*############################################################################
+  /*##########################################################################*
    * Type aliases
    *##########################################################################*/
 
   using GC_t = EpochBasedGC<GCTargets...>;
 
  public:
-  /*############################################################################
+  /*##########################################################################*
    * Public constructors and assignment operators
    *##########################################################################*/
 
@@ -397,13 +398,13 @@ class Builder
   constexpr Builder &operator=(const Builder &) = default;
   constexpr Builder &operator=(Builder &&) noexcept = default;
 
-  /*############################################################################
+  /*##########################################################################*
    * Public destructor
    *##########################################################################*/
 
   ~Builder() = default;
 
-  /*############################################################################
+  /*##########################################################################*
    * Public utilities
    *##########################################################################*/
 
@@ -419,7 +420,7 @@ class Builder
     return std::make_unique<GC_t>(gc_interval_, gc_thread_num_, reuse_capacity_);
   }
 
-  /*############################################################################
+  /*##########################################################################*
    * Public setters
    *##########################################################################*/
 
@@ -463,7 +464,7 @@ class Builder
   }
 
  private:
-  /*############################################################################
+  /*##########################################################################*
    * Internal member variables
    *##########################################################################*/
 

@@ -26,6 +26,7 @@
 #include <utility>
 
 // external libraries
+#include "dbgroup/constants.hpp"
 #include "dbgroup/lock/common.hpp"
 
 // local sources
@@ -33,7 +34,7 @@
 
 namespace dbgroup::memory
 {
-/*##############################################################################
+/*############################################################################*
  * Public constructors destructors
  *############################################################################*/
 
@@ -51,8 +52,6 @@ MappingTable::MappingTable(  //
 MappingTable::~MappingTable()
 {
   try {
-    const auto cur_id = cnt_.load(kAcquire);
-    const auto table_id = (cur_id >> kSheetShift) & kIDMask;
     for (size_t i = 0; i < kSheetNum; ++i) {
       auto *sheet = sheets_[i].load(kRelaxed);
       if (sheet == nullptr) continue;
@@ -73,7 +72,7 @@ MappingTable::~MappingTable()
   }
 }
 
-/*##############################################################################
+/*############################################################################*
  * Public APIs
  *############################################################################*/
 
@@ -127,7 +126,7 @@ MappingTable::GetMemoryUsage() const  //
   return {used, reserved};
 }
 
-/*##############################################################################
+/*############################################################################*
  * Public APIs for modifying table contents
  *############################################################################*/
 
@@ -162,7 +161,7 @@ MappingTable::CASStrong(  //
   return cell.compare_exchange_strong(expected, const_cast<void *>(desired), kRelease, kAcquire);
 }
 
-/*##############################################################################
+/*############################################################################*
  * Internal utilities
  *############################################################################*/
 

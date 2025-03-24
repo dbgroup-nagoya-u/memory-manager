@@ -31,7 +31,6 @@
 #include <vector>
 
 // external libraries
-#include "dbgroup/thread/common.hpp"
 #include "gtest/gtest.h"
 
 // library sources
@@ -39,13 +38,13 @@
 
 namespace dbgroup::memory::test
 {
-/*##############################################################################
+/*############################################################################*
  * Global type aliases
  *############################################################################*/
 
 using Target = uint64_t;
 
-/*##############################################################################
+/*############################################################################*
  * Global classes
  *############################################################################*/
 
@@ -57,7 +56,7 @@ struct SharedPtrTarget : public DefaultTarget {
 class EpochBasedGCFixture : public ::testing::Test
 {
  protected:
-  /*############################################################################
+  /*##########################################################################*
    * Type aliases
    *##########################################################################*/
 
@@ -65,15 +64,15 @@ class EpochBasedGCFixture : public ::testing::Test
   using GCBuilder = Builder<SharedPtrTarget>;
   using GarbageRef = std::vector<std::weak_ptr<Target>>;
 
-  /*############################################################################
+  /*##########################################################################*
    * Internal constants
    *##########################################################################*/
 
-  static constexpr size_t kThreadNum = ::dbgroup::thread::kMaxThreadNum / 2;
+  static constexpr size_t kThreadNum = kMaxThreadNum / 2;
   static constexpr size_t kGCInterval = 10000;
   static constexpr size_t kGarbageNumLarge = 1E6;
 
-  /*############################################################################
+  /*##########################################################################*
    * Test setup/teardown
    *##########################################################################*/
 
@@ -88,7 +87,7 @@ class EpochBasedGCFixture : public ::testing::Test
     gc_.reset();
   }
 
-  /*############################################################################
+  /*##########################################################################*
    * Internal utility functions
    *##########################################################################*/
 
@@ -198,7 +197,7 @@ class EpochBasedGCFixture : public ::testing::Test
     return target_weak_ptrs;
   }
 
-  /*############################################################################
+  /*##########################################################################*
    * Functions for verification
    *##########################################################################*/
 
@@ -214,7 +213,7 @@ class EpochBasedGCFixture : public ::testing::Test
     // GC deletes all targets during its deconstruction
     gc_.reset(nullptr);
 
-    // check there is no referece to target pointers
+    // check there is no reference to target pointers
     for (auto &&target_weak : target_weak_ptrs) {
       EXPECT_TRUE(target_weak.expired());
     }
@@ -268,7 +267,7 @@ class EpochBasedGCFixture : public ::testing::Test
     auto target_weak_ptrs = TestReuse(thread_num);
     gc_->StopGC();
 
-    // check there is no referece to target pointers
+    // check there is no reference to target pointers
     for (auto &&target_weak : target_weak_ptrs) {
       EXPECT_TRUE(target_weak.expired());
     }
@@ -285,7 +284,7 @@ class EpochBasedGCFixture : public ::testing::Test
     }
   }
 
-  /*############################################################################
+  /*##########################################################################*
    * Internal member variables
    *##########################################################################*/
 
@@ -294,7 +293,7 @@ class EpochBasedGCFixture : public ::testing::Test
   std::mutex mtx_{};
 };
 
-/*##############################################################################
+/*############################################################################*
  * Unit test definitions
  *############################################################################*/
 

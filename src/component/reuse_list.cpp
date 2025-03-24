@@ -19,12 +19,14 @@
 
 // C++ standard libraries
 #include <atomic>
+#include <bit>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <utility>
 
 // external libraries
+#include "dbgroup/constants.hpp"
 #include "dbgroup/lock/common.hpp"
 
 // local sources
@@ -32,7 +34,7 @@
 
 namespace dbgroup::memory::component
 {
-/*##############################################################################
+/*############################################################################*
  * Public APIs for clients
  *############################################################################*/
 
@@ -45,7 +47,7 @@ ReuseList::AddPages(  //
   auto uptr = tail_addr->load(kAcquire);
   if (!tail_addr->compare_exchange_strong(uptr, uptr + kCntUnit, kRelaxed, kRelaxed)) return;
 
-  auto *list = reinterpret_cast<ReuseList *>(uptr & kPtrMask);
+  auto *list = std::bit_cast<ReuseList *>(uptr & kPtrMask);
   auto tail = list->tail_.load(kRelaxed);
   while (!pages.empty() && tail < kReuseListCapacity
          && (tail - list->head_.load(kRelaxed)) < reuse_capacity) {
@@ -79,9 +81,9 @@ ReuseList::AddPages(  //
 
     // update the tail list on a list holder
     for (uptr = tail_addr->load(kRelaxed); true;) {
-      auto *cur = reinterpret_cast<ReuseList *>(uptr & kPtrMask);
+      auto *cur = std::bit_cast<ReuseList *>(uptr & kPtrMask);
       if (cur != list) goto end;
-      const auto next_ptr = reinterpret_cast<uintptr_t>(next) + (uptr & ~kPtrMask);
+      const auto next_ptr = std::bit_cast<uintptr_t>(next) + (uptr & ~kPtrMask);
       if (tail_addr->compare_exchange_weak(uptr, next_ptr, kRelease, kRelaxed)) break;
     }
     list->tail_.store(kReuseListCapacity, kRelease);

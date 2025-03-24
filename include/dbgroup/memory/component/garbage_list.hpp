@@ -19,9 +19,13 @@
 
 // C++ standard libraries
 #include <atomic>
+#include <bit>
 #include <cstddef>
 #include <utility>
 #include <vector>
+
+// external libraries
+#include "dbgroup/constants.hpp"
 
 // local sources
 #include "dbgroup/memory/utility.hpp"
@@ -35,7 +39,7 @@ namespace dbgroup::memory::component
 class alignas(kVMPageSize) GarbageList
 {
  public:
-  /*############################################################################
+  /*##########################################################################*
    * Public constructors and assignment operators
    *##########################################################################*/
 
@@ -47,13 +51,13 @@ class alignas(kVMPageSize) GarbageList
   auto operator=(const GarbageList &) -> GarbageList & = delete;
   auto operator=(GarbageList &&) -> GarbageList & = delete;
 
-  /*############################################################################
+  /*##########################################################################*
    * Public destructors
    *##########################################################################*/
 
   ~GarbageList() = default;
 
-  /*############################################################################
+  /*##########################################################################*
    * Public APIs for clients
    *##########################################################################*/
 
@@ -71,7 +75,7 @@ class alignas(kVMPageSize) GarbageList
       size_t epoch,
       void *garbage);
 
-  /*############################################################################
+  /*##########################################################################*
    * Public APIs for cleaners
    *##########################################################################*/
 
@@ -101,7 +105,7 @@ class alignas(kVMPageSize) GarbageList
       return false;  // the thread cannot read this list, so work pessimistically
     }
 
-    auto *list = reinterpret_cast<GarbageList *>(uptr & kPtrMask);
+    auto *list = std::bit_cast<GarbageList *>(uptr & kPtrMask);
     uptr = (uptr & kPtrMask) | kCntUnit;
     while (true) {
       tail = list->tail_.load(kAcquire);
@@ -112,7 +116,7 @@ class alignas(kVMPageSize) GarbageList
         }
         auto *page = list->garbage_[head].ptr;
         if constexpr (!std::is_same_v<T, void>) {
-          reinterpret_cast<T *>(page)->~T();
+          std::bit_cast<T *>(page)->~T();
         }
         if (reuse_pages != nullptr) {
           reuse_pages->emplace_back(page);
@@ -122,7 +126,7 @@ class alignas(kVMPageSize) GarbageList
       }
       if (head < kGarbageListCapacity || list->next_ == nullptr) goto end;
 
-      const auto next_ptr = reinterpret_cast<uintptr_t>(list->next_) | kCntUnit;
+      const auto next_ptr = std::bit_cast<uintptr_t>(list->next_) | kCntUnit;
       if (head_addr->load(kRelaxed) != uptr
           || !head_addr->compare_exchange_strong(uptr, next_ptr, kRelease, kRelaxed)) {
         uptr = next_ptr;
@@ -144,7 +148,7 @@ class alignas(kVMPageSize) GarbageList
   }
 
  private:
-  /*############################################################################
+  /*##########################################################################*
    * Internal constants
    *##########################################################################*/
 
@@ -160,7 +164,7 @@ class alignas(kVMPageSize) GarbageList
   /// @brief A flag for indicating client threads have already used a pointer.
   static constexpr uintptr_t kPtrMask = kCntUnit - 1UL;
 
-  /*############################################################################
+  /*##########################################################################*
    * Internal classes
    *##########################################################################*/
 
@@ -176,7 +180,7 @@ class alignas(kVMPageSize) GarbageList
     void *ptr;
   };
 
-  /*############################################################################
+  /*##########################################################################*
    * Internal member variables
    *##########################################################################*/
 

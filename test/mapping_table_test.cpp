@@ -19,6 +19,7 @@
 
 // C++ standard libraries
 #include <algorithm>
+#include <bit>
 #include <cstddef>
 #include <cstdint>
 #include <future>
@@ -33,7 +34,7 @@
 
 namespace dbgroup::memory::test
 {
-/*##############################################################################
+/*############################################################################*
  * Global constants
  *############################################################################*/
 
@@ -41,20 +42,20 @@ constexpr size_t kOverSheetCapacity = MappingTable::kColNum * MappingTable::kRow
 constexpr size_t kThreadNum = DBGROUP_TEST_THREAD_NUM;
 constexpr bool kUseCASWeak = true;
 
-/*##############################################################################
+/*############################################################################*
  * Fixture class definition
  *############################################################################*/
 
 class MappingTableFixture : public testing::Test
 {
-  /*############################################################################
+  /*##########################################################################*
    * Type aliases
    *##########################################################################*/
 
   using PIDContainer = std::vector<uint64_t>;
 
  protected:
-  /*############################################################################
+  /*##########################################################################*
    * Setup/Teardown
    *##########################################################################*/
 
@@ -69,7 +70,7 @@ class MappingTableFixture : public testing::Test
   {
   }
 
-  /*############################################################################
+  /*##########################################################################*
    * Utility functions
    *##########################################################################*/
 
@@ -85,7 +86,7 @@ class MappingTableFixture : public testing::Test
       const auto pid = table_->ReservePageID();
       EXPECT_TRUE(MappingTable::IsPageID(pid));
       EXPECT_EQ(table_->Load(pid), nullptr);
-      table_->Store(pid, reinterpret_cast<void *>(pid));
+      table_->Store(pid, std::bit_cast<void *>(pid));
       ids.emplace_back(pid);
     }
 
@@ -123,7 +124,7 @@ class MappingTableFixture : public testing::Test
     return ids;
   }
 
-  /*############################################################################
+  /*##########################################################################*
    * Functions for verification
    *##########################################################################*/
 
@@ -136,10 +137,10 @@ class MappingTableFixture : public testing::Test
     auto &&actual_end = std::unique(ids.begin(), ids.end());
     EXPECT_EQ(ids.end(), actual_end);
 
-    // load the sotred values
+    // load the sorted values
     for (auto &&pid : ids) {
       auto *val = table_->Load<size_t>(pid);
-      EXPECT_EQ(pid, reinterpret_cast<size_t>(val));
+      EXPECT_EQ(pid, std::bit_cast<size_t>(val));
       table_->Store(pid, nullptr);
     }
   }
@@ -157,7 +158,7 @@ class MappingTableFixture : public testing::Test
         for (size_t j = 0; j < kRepeatNum; ++j) {
           auto *expected = table_->Load(pid);
           while (true) {
-            auto *desired = reinterpret_cast<void *>(reinterpret_cast<size_t>(expected) + 1);
+            auto *desired = std::bit_cast<void *>(std::bit_cast<size_t>(expected) + 1);
             if ((use_cas_weak && table_->CAS(pid, expected, desired))
                 || (!use_cas_weak && table_->CASStrong(pid, expected, desired))) {
               break;
@@ -171,19 +172,19 @@ class MappingTableFixture : public testing::Test
       t.join();
     }
 
-    auto sum = reinterpret_cast<size_t>(table_->Load(pid));
+    auto sum = std::bit_cast<size_t>(table_->Load(pid));
     EXPECT_EQ(sum, kThreadNum * kRepeatNum);
     table_->Store(pid, nullptr);
   }
 
-  /*############################################################################
+  /*##########################################################################*
    * Internal member variables
    *##########################################################################*/
 
   std::unique_ptr<MappingTable> table_{nullptr};
 };
 
-/*##############################################################################
+/*############################################################################*
  * Unit test definitions
  *############################################################################*/
 
