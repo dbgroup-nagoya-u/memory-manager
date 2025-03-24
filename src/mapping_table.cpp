@@ -51,8 +51,6 @@ MappingTable::MappingTable(  //
 MappingTable::~MappingTable()
 {
   try {
-    const auto cur_id = cnt_.load(kAcquire);
-    const auto table_id = (cur_id >> kSheetShift) & kIDMask;
     for (size_t i = 0; i < kSheetNum; ++i) {
       auto *sheet = sheets_[i].load(kRelaxed);
       if (sheet == nullptr) continue;
