@@ -19,6 +19,7 @@
 
 // C++ standard libraries
 #include <atomic>
+#include <bit>
 #include <cstddef>
 #include <utility>
 #include <vector>
@@ -104,7 +105,7 @@ class alignas(kVMPageSize) GarbageList
       return false;  // the thread cannot read this list, so work pessimistically
     }
 
-    auto *list = reinterpret_cast<GarbageList *>(uptr & kPtrMask);
+    auto *list = std::bit_cast<GarbageList *>(uptr & kPtrMask);
     uptr = (uptr & kPtrMask) | kCntUnit;
     while (true) {
       tail = list->tail_.load(kAcquire);
@@ -115,7 +116,7 @@ class alignas(kVMPageSize) GarbageList
         }
         auto *page = list->garbage_[head].ptr;
         if constexpr (!std::is_same_v<T, void>) {
-          reinterpret_cast<T *>(page)->~T();
+          std::bit_cast<T *>(page)->~T();
         }
         if (reuse_pages != nullptr) {
           reuse_pages->emplace_back(page);
@@ -125,7 +126,7 @@ class alignas(kVMPageSize) GarbageList
       }
       if (head < kGarbageListCapacity || list->next_ == nullptr) goto end;
 
-      const auto next_ptr = reinterpret_cast<uintptr_t>(list->next_) | kCntUnit;
+      const auto next_ptr = std::bit_cast<uintptr_t>(list->next_) | kCntUnit;
       if (head_addr->load(kRelaxed) != uptr
           || !head_addr->compare_exchange_strong(uptr, next_ptr, kRelease, kRelaxed)) {
         uptr = next_ptr;

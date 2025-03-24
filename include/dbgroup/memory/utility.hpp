@@ -19,6 +19,7 @@
 
 // C++ standard libraries
 #include <atomic>
+#include <bit>
 #include <cstddef>
 #include <new>
 
@@ -74,9 +75,9 @@ Allocate(                     //
     -> T *
 {
   if constexpr (alignof(T) <= kDefaultAlignment) {
-    return reinterpret_cast<T *>(::operator new(size));
+    return std::bit_cast<T *>(::operator new(size));
   } else {
-    return reinterpret_cast<T *>(::operator new(size, static_cast<std::align_val_t>(alignof(T))));
+    return std::bit_cast<T *>(::operator new(size, static_cast<std::align_val_t>(alignof(T))));
   }
 }
 

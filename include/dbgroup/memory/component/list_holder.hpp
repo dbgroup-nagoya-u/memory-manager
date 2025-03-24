@@ -19,6 +19,7 @@
 
 // C++ standard libraries
 #include <atomic>
+#include <bit>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
@@ -59,12 +60,12 @@ class alignas(kCacheLineSize) ListHolder
   {
     auto *glist = new GarbageList{};
     cl_glist_.store(glist, kRelease);
-    gc_glist_.store(reinterpret_cast<uintptr_t>(glist), kRelease);
+    gc_glist_.store(std::bit_cast<uintptr_t>(glist), kRelease);
 
     if constexpr (Target::kReusePages) {
       auto *rlist = new ReuseList{};
       cl_rlist_.store(rlist, kRelease);
-      gc_rlist_.store(reinterpret_cast<uintptr_t>(rlist), kRelease);
+      gc_rlist_.store(std::bit_cast<uintptr_t>(rlist), kRelease);
     }
   }
 
@@ -84,7 +85,7 @@ class alignas(kCacheLineSize) ListHolder
    */
   ~ListHolder()
   {
-    auto *glist = reinterpret_cast<GarbageList *>(gc_glist_.load(kRelaxed));
+    auto *glist = std::bit_cast<GarbageList *>(gc_glist_.load(kRelaxed));
     delete glist;
 
     if constexpr (Target::kReusePages) {

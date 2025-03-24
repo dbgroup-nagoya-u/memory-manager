@@ -19,6 +19,7 @@
 
 // C++ standard libraries
 #include <atomic>
+#include <bit>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
@@ -146,7 +147,7 @@ class alignas(kVMPageSize) MappingTable
       -> T *
   {
     const auto &cell = const_cast<MappingTable *>(this)->GetCell(pid);
-    return reinterpret_cast<T *>(cell.load(kAcquire));
+    return std::bit_cast<T *>(cell.load(kAcquire));
   }
 
   /**
