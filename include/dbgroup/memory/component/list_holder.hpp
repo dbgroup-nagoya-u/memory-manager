@@ -27,7 +27,7 @@
 
 // external libraries
 #include "dbgroup/constants.hpp"
-#include "dbgroup/lock/common.hpp"
+#include "dbgroup/lock/utility.hpp"
 #include "dbgroup/thread/id_manager.hpp"
 
 // local sources
