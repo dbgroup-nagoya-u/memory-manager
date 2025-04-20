@@ -102,6 +102,25 @@ class EpochBasedGC
    *##########################################################################*/
 
   /**
+   * @tparam Target A class for representing target garbage.
+   * @retval true if GC includes a given class as a target.
+   * @retval false otherwise.
+   */
+  template <class Target>
+  static constexpr auto
+  HasTarget()  //
+      -> bool
+  {
+    if constexpr (sizeof...(GCTargets) == 0) {
+      return false;
+    } else if constexpr (sizeof...(GCTargets) == 1) {
+      return std::is_same_v<Target, GCTargets...>;
+    } else {
+      return HasTargetRecursive<Target, GCTargets...>();
+    }
+  }
+
+  /**
    * @brief Create a guard instance to protect garbage based on the scoped
    * locking pattern.
    *
@@ -189,6 +208,27 @@ class EpochBasedGC
   /*##########################################################################*
    * Internal utilities for initialization and finalization
    *##########################################################################*/
+
+  /**
+   * @tparam Target A class for representing target garbage.
+   * @tparam T The current garbage class.
+   * @tparam Tails The remaining garbage classes.
+   * @retval true if the current class is same with a given one.
+   * @retval false otherwise.
+   */
+  template <class Target, class T, class... Tails>
+  static constexpr auto
+  HasTargetRecursive()  //
+      -> bool
+  {
+    if constexpr (std::is_same_v<Target, T>) {
+      return true;
+    } else if (sizeof...(Tails) >= 2) {
+      return HasTargetRecursive<Target, Tails...>();
+    } else {
+      return std::is_same_v<Target, Tails...>;
+    }
+  }
 
   /**
    * @brief A dummy function for creating type aliases.

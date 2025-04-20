@@ -21,7 +21,11 @@
 #include <atomic>
 #include <bit>
 #include <cstddef>
+#include <cstring>
 #include <new>
+
+// external libraries
+#include "dbgroup/constants.hpp"
 
 namespace dbgroup::memory
 {
@@ -55,6 +59,34 @@ struct DefaultTarget {
 
   /// @brief Do not reuse pages after GC (release immediately).
   static constexpr bool kReusePages = false;
+};
+
+/**
+ * @brief A dummy struct for representing fixed-length pages.
+ *
+ * @tparam kPageSize A target page size.
+ */
+template <size_t kPageSize>
+struct alignas(kPageSize < kVMPageSize ? kPageSize : kVMPageSize) PageTarget {
+  /// @brief Call a self destructor (zero filling).
+  using T = PageTarget;
+
+  /// @brief Reuse pages after GC.
+  static constexpr bool kReusePages = true;
+
+  constexpr PageTarget() noexcept = default;
+
+  constexpr PageTarget(const PageTarget &) noexcept = default;
+  constexpr PageTarget(PageTarget &&) noexcept = default;
+
+  constexpr auto operator=(const PageTarget &) noexcept -> PageTarget & = default;
+  constexpr auto operator=(PageTarget &&) noexcept -> PageTarget & = default;
+
+  /// @brief Fill this page with zeros.
+  ~PageTarget() { std::memset(std::bit_cast<void *>(this), 0, kPageSize); }
+
+  /// @brief A data buffer.
+  std::byte buf[kPageSize]{};
 };
 
 /*############################################################################*
