@@ -8,7 +8,7 @@ endif()
 # project information
 project(
   memory_manager
-  VERSION "0.4.0"
+  VERSION "0.4.1"
   DESCRIPTION "A memory management library."
   LANGUAGES "CXX"
 )
