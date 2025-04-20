@@ -79,6 +79,8 @@ class EpochBasedGCFixture : public ::testing::Test
   void
   SetUp() override
   {
+    static_assert(EpochBasedGC_t::HasTarget<SharedPtrTarget>());
+    static_assert(!EpochBasedGC_t::HasTarget<void>());
   }
 
   void
