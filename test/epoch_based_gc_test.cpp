@@ -68,8 +68,8 @@ class EpochBasedGCFixture : public ::testing::Test
    * Internal constants
    *##########################################################################*/
 
-  static constexpr size_t kThreadNum = kMaxThreadNum / 2;
-  static constexpr size_t kGCInterval = 10000;
+  static constexpr size_t kThreadNum = kLogicalCoreNum;
+  static constexpr size_t kGCInterval = 1;
   static constexpr size_t kGarbageNumLarge = 1E6;
 
   /*##########################################################################*

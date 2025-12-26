@@ -29,6 +29,7 @@
 #include "dbgroup/constants.hpp"
 #include "dbgroup/lock/utility.hpp"
 #include "dbgroup/thread/id_manager.hpp"
+#include "dbgroup/types.hpp"
 
 // local sources
 #include "dbgroup/memory/component/garbage_list.hpp"
@@ -106,7 +107,7 @@ class alignas(kCacheLineSize) ListHolder
    */
   void
   AddGarbage(  //
-      const size_t epoch,
+      const Serial64_t epoch,
       void *garbage)
   {
     AssignCurrentThreadIfNeeded();
@@ -142,7 +143,7 @@ class alignas(kCacheLineSize) ListHolder
    */
   auto
   ClearGarbage(  //
-      const size_t min_epoch,
+      const Serial64_t min_epoch,
       const size_t reuse_capacity,
       std::vector<void *> &reuse_pages)  //
       -> bool

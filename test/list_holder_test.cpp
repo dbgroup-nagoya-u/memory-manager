@@ -28,6 +28,7 @@
 
 // external libraries
 #include "dbgroup/lock/utility.hpp"
+#include "dbgroup/types.hpp"
 #include "gtest/gtest.h"
 
 // library sources
@@ -46,7 +47,7 @@ using Target = uint64_t;
  *############################################################################*/
 
 constexpr size_t kLargeNum = 1024;
-constexpr size_t kMaxLong = std::numeric_limits<size_t>::max();
+constexpr Serial64_t kMaxLong{std::numeric_limits<uint64_t>::max() / 2 - 1};
 constexpr size_t kReusablePageNum = 32;
 
 /*############################################################################*
@@ -78,7 +79,7 @@ class GarbageListFixture : public ::testing::Test
   void
   SetUp() override
   {
-    current_epoch_ = 1;
+    current_epoch_ = Serial64_t{1};
     list_ = std::make_unique<GarbageList_t>();
   }
 
@@ -140,7 +141,7 @@ class GarbageListFixture : public ::testing::Test
     std::atomic_bool is_running = true;
 
     AddGarbage(loop_num);
-    current_epoch_.fetch_add(1);
+    current_epoch_.store(current_epoch_.load(kRelaxed) + 1);
 
     std::thread loader{[&]() {
       while (!has_prepared) {
@@ -148,7 +149,7 @@ class GarbageListFixture : public ::testing::Test
       }
       for (size_t i = 0; i < loop_num; ++i) {
         AddGarbage(1);
-        current_epoch_.fetch_add(1);
+        current_epoch_.store(current_epoch_.load(kRelaxed) + 1);
       }
     }};
 
@@ -160,7 +161,7 @@ class GarbageListFixture : public ::testing::Test
         }
         thread_local std::vector<void *> reuse_pages{};
         while (is_running) {
-          list_->ClearGarbage(current_epoch_ - 1, kReusablePageNum, reuse_pages);
+          list_->ClearGarbage(current_epoch_.load(kRelaxed) - 1, kReusablePageNum, reuse_pages);
           for (auto *page : reuse_pages) {
             Release<SharedPtrTarget>(page);
           }
@@ -187,7 +188,7 @@ class GarbageListFixture : public ::testing::Test
    * Internal member variables
    *##########################################################################*/
 
-  std::atomic_size_t current_epoch_{};
+  std::atomic<Serial64_t> current_epoch_{};
 
   std::vector<std::weak_ptr<Target>> references_{};
 
@@ -214,7 +215,7 @@ TEST_F(  //
     GarbageListFixture,
     ClearGarbageWithProtectedEpochKeepProtectedGarbage)
 {
-  const size_t protected_epoch = current_epoch_.load() + 1;
+  const Serial64_t protected_epoch = current_epoch_.load() + 1;
 
   AddGarbage(kLargeNum);
   current_epoch_ = protected_epoch;
@@ -257,7 +258,7 @@ TEST_F(  //
     GarbageListFixture,
     AddGarbageWithManyCleaner)
 {
-  VerifyGCWithMultiThreads(kMaxThreadNum);
+  VerifyGCWithMultiThreads(kLogicalCoreNum);
 }
 
 }  // namespace dbgroup::memory::component::test

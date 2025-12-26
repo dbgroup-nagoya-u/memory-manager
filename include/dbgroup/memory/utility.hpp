@@ -33,8 +33,8 @@ namespace dbgroup::memory
  * Global constants
  *############################################################################*/
 
-/// @brief The default time interval for garbage collection (10 ms).
-constexpr size_t kDefaultGCTime = 10000;
+/// @brief The default time interval for garbage collection (100 ms).
+constexpr size_t kDefaultGCTime = 100;
 
 /// @brief The default number of worker threads for garbage collection.
 constexpr size_t kDefaultGCThreadNum = 1;

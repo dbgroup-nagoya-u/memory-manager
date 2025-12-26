@@ -32,6 +32,7 @@
 #include "dbgroup/thread/epoch_guard.hpp"
 #include "dbgroup/thread/epoch_manager.hpp"
 #include "dbgroup/thread/id_manager.hpp"
+#include "dbgroup/types.hpp"
 
 // local sources
 #include "dbgroup/memory/component/list_holder.hpp"
@@ -53,8 +54,8 @@ class EpochBasedGC
 
   using IDManager = ::dbgroup::thread::IDManager;
   using EpochGuard = ::dbgroup::thread::EpochGuard;
-  using EpochManager = ::dbgroup::thread::EpochManager;
-  using Clock_t = ::std::chrono::high_resolution_clock;
+  using EpochManager = ::dbgroup::thread::EpochManager<Serial64_t>;
+  using Clock_t = ::std::chrono::system_clock;
 
   template <class Target>
   using GarbageList = component::ListHolder<Target>;
@@ -67,15 +68,18 @@ class EpochBasedGC
   /**
    * @brief Construct a new instance.
    *
-   * @param gc_interval_us The interval of garbage collection in micro seconds.
+   * @param gc_interval_ms The interval of garbage collection in milli seconds.
    * @param gc_thread_num The maximum number of cleaner threads.
    * @param reuse_capacity The maximum number of reusable pages for each thread.
    */
   explicit EpochBasedGC(  //
-      const size_t gc_interval_us = kDefaultGCTime,
+      const size_t gc_interval_ms = kDefaultGCTime,
       const size_t gc_thread_num = kDefaultGCThreadNum,
       const size_t reuse_capacity = kDefaultReusePageCapacity)
-      : gc_interval_{gc_interval_us}, gc_thread_num_{gc_thread_num}, reuse_capacity_{reuse_capacity}
+      : gc_interval_{gc_interval_ms},
+        gc_thread_num_{gc_thread_num},
+        reuse_capacity_{reuse_capacity},
+        epoch_manager_{gc_interval_ms}
   {
     StartGC();
   }
@@ -178,11 +182,27 @@ class EpochBasedGC
   StartGC()  //
       -> bool
   {
-    if (gc_is_running_.load(kRelaxed)) return false;
+    if (running_.load(kRelaxed)) return false;
 
     InitializeGarbageLists<DefaultTarget, GCTargets...>();
-    gc_is_running_.store(true, kRelaxed);
-    gc_thread_ = std::thread{&EpochBasedGC::RunGC, this};
+
+    // create cleaner threads
+    running_.store(true, kRelaxed);
+    for (size_t i = 0; i < gc_thread_num_; ++i) {
+      cleaner_threads_.emplace_back([this]() {
+        auto wake_time = Clock_t::now();
+        auto min_epoch = epoch_manager_.GetMinEpoch();
+        while (true) {
+          wake_time += gc_interval_;
+          if (const auto new_min = epoch_manager_.GetMinEpoch(); new_min != min_epoch) {
+            min_epoch = new_min;
+            const auto no_garbage = ClearGarbage<DefaultTarget, GCTargets...>(min_epoch);
+            if (!running_.load(kRelaxed) && no_garbage) break;
+          }
+          std::this_thread::sleep_until(wake_time);
+        }
+      });
+    }
     return true;
   }
 
@@ -196,10 +216,15 @@ class EpochBasedGC
   StopGC()  //
       -> bool
   {
-    if (!gc_is_running_.load(kRelaxed)) return false;
+    if (!running_.load(kRelaxed)) return false;
 
-    gc_is_running_.store(false, kRelaxed);
-    gc_thread_.join();
+    // wait all the cleaner threads return
+    running_.store(false, kRelaxed);
+    for (auto &&t : cleaner_threads_) {
+      t.join();
+    }
+    cleaner_threads_.clear();
+
     DestroyGarbageLists<DefaultTarget, GCTargets...>();
     return true;
   }
@@ -311,12 +336,12 @@ class EpochBasedGC
    *
    * @tparam Target The current class in garbage targets.
    * @tparam Tails The remaining classes in garbage targets.
-   * @param protected_epoch An epoch to check whether garbage can be freed.
+   * @param min_epoch An epoch to check whether garbage can be freed.
    */
   template <class Target, class... Tails>
   auto
-  ClearGarbage(                      //
-      const size_t protected_epoch)  //
+  ClearGarbage(                    //
+      const Serial64_t min_epoch)  //
       -> bool
   {
     using ListsPtr = std::unique_ptr<GarbageList<Target>[]>;
@@ -330,7 +355,7 @@ class EpochBasedGC
       if (++pos >= kMaxThreadNum) {
         pos = 0;
       }
-      no_garbage &= lists[pos].ClearGarbage(protected_epoch, reuse_capacity_, reuse_pages);
+      no_garbage &= lists[pos].ClearGarbage(min_epoch, reuse_capacity_, reuse_pages);
     }
     for (auto *page : reuse_pages) {
       Release<Target>(page);
@@ -338,55 +363,17 @@ class EpochBasedGC
     reuse_pages.clear();
 
     if constexpr (sizeof...(Tails) > 0) {
-      return no_garbage && ClearGarbage<Tails...>(protected_epoch);
+      return no_garbage && ClearGarbage<Tails...>(min_epoch);
     }
     return no_garbage;
-  }
-
-  /**
-   * @brief Create and run cleaner threads for garbage collection.
-   *
-   */
-  void
-  RunGC()
-  {
-    // create cleaner threads
-    std::atomic_size_t exited_num{0};
-    auto cleaner = [&]() {
-      for (auto wake_time = Clock_t::now() + gc_interval_; true; wake_time += gc_interval_) {
-        auto no_garbage = ClearGarbage<DefaultTarget, GCTargets...>(epoch_manager_.GetMinEpoch());
-        if (!gc_is_running_.load(kRelaxed) && no_garbage) break;
-        std::this_thread::sleep_until(wake_time);
-      }
-      exited_num.fetch_add(1, kRelaxed);
-    };
-    for (size_t i = 0; i < gc_thread_num_; ++i) {
-      cleaner_threads_.emplace_back(cleaner);
-    }
-
-    // manage the global epoch
-    for (auto wake_time = Clock_t::now() + gc_interval_;  //
-         exited_num.load(kRelaxed) < gc_thread_num_;      //
-         wake_time += gc_interval_)                       //
-    {
-      // wait until the next epoch
-      std::this_thread::sleep_until(wake_time);
-      epoch_manager_.ForwardGlobalEpoch();
-    }
-
-    // wait all the cleaner threads return
-    for (auto &&t : cleaner_threads_) {
-      t.join();
-    }
-    cleaner_threads_.clear();
   }
 
   /*##########################################################################*
    * Internal member variables
    *##########################################################################*/
 
-  /// @brief The interval of garbage collection in micro seconds.
-  std::chrono::microseconds gc_interval_{};
+  /// @brief The interval of garbage collection in milli seconds.
+  std::chrono::milliseconds gc_interval_{};
 
   /// @brief The maximum number of cleaner threads.
   size_t gc_thread_num_{};
@@ -397,14 +384,11 @@ class EpochBasedGC
   /// @brief An epoch manager.
   EpochManager epoch_manager_{};
 
-  /// @brief A thread for managing garbage collection.
-  std::thread gc_thread_{};
-
   /// @brief Worker threads for releasing garbage.
   std::vector<std::thread> cleaner_threads_{};
 
   /// @brief A flag for checking if garbage collection is running.
-  std::atomic_bool gc_is_running_{false};
+  std::atomic_bool running_{};
 
   /// @brief A tuple containing the garbage lists of each GC target.
   decltype(ConvToTuple<DefaultTarget, GCTargets...>()) garbage_lists_ =
@@ -465,15 +449,15 @@ class Builder
    *##########################################################################*/
 
   /**
-   * @param gc_interval_us The interval of garbage collection in micro seconds.
+   * @param gc_interval_ms The interval of garbage collection in milli seconds.
    * @return Oneself.
    */
   constexpr auto
   SetGCInterval(                    //
-      const size_t gc_interval_us)  //
+      const size_t gc_interval_ms)  //
       -> Builder &
   {
-    gc_interval_ = gc_interval_us;
+    gc_interval_ = gc_interval_ms;
     return *this;
   }
 
@@ -508,7 +492,7 @@ class Builder
    * Internal member variables
    *##########################################################################*/
 
-  /// @brief The interval of garbage collection in micro seconds.
+  /// @brief The interval of garbage collection in milli seconds.
   size_t gc_interval_{kDefaultGCTime};
 
   /// @brief The maximum number of cleaner threads.
