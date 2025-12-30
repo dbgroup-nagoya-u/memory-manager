@@ -69,7 +69,7 @@ class EpochBasedGC
    * @brief Construct a new instance.
    *
    * @param gc_interval_ms The interval of garbage collection in milli seconds.
-   * @param gc_thread_num The maximum number of cleaner threads.
+   * @param gc_thread_num The number of cleaner threads.
    * @param reuse_capacity The maximum number of reusable pages for each thread.
    */
   explicit EpochBasedGC(  //
@@ -287,7 +287,7 @@ class EpochBasedGC
     using ListsPtr = std::unique_ptr<GarbageList<Target>[]>;
 
     auto &lists = std::get<ListsPtr>(garbage_lists_);
-    lists.reset(new GarbageList<Target>[kMaxThreadNum]);
+    lists.reset(new GarbageList<Target>[thread_num_]);
 
     if constexpr (sizeof...(Tails) > 0) {
       InitializeGarbageLists<Tails...>();
@@ -346,13 +346,13 @@ class EpochBasedGC
   {
     using ListsPtr = std::unique_ptr<GarbageList<Target>[]>;
     thread_local std::vector<void *> reuse_pages{};
-    thread_local std::uniform_int_distribution<size_t> dist{0, kMaxThreadNum};
+    thread_local std::uniform_int_distribution<size_t> dist{0, thread_num_};
     thread_local std::mt19937_64 rand{std::random_device{}()};
 
     auto &lists = std::get<ListsPtr>(garbage_lists_);
     auto no_garbage = true;
-    for (size_t i = 0, pos = dist(rand); i < kMaxThreadNum; ++i) {
-      if (++pos >= kMaxThreadNum) {
+    for (size_t i = 0, pos = dist(rand); i < thread_num_; ++i) {
+      if (++pos >= thread_num_) {
         pos = 0;
       }
       no_garbage &= lists[pos].ClearGarbage(min_epoch, reuse_capacity_, reuse_pages);
@@ -375,7 +375,10 @@ class EpochBasedGC
   /// @brief The interval of garbage collection in milli seconds.
   std::chrono::milliseconds gc_interval_{};
 
-  /// @brief The maximum number of cleaner threads.
+  /// @brief The maximum number of worker threads.
+  size_t thread_num_{IDManager::GetMaxThreadNum()};
+
+  /// @brief The number of cleaner threads.
   size_t gc_thread_num_{};
 
   /// @brief The maximum number of reusable pages for each thread.
@@ -462,7 +465,7 @@ class Builder
   }
 
   /**
-   * @param gc_thread_num The maximum number of cleaner threads.
+   * @param gc_thread_num The number of cleaner threads.
    * @return Oneself.
    */
   constexpr auto
@@ -495,7 +498,7 @@ class Builder
   /// @brief The interval of garbage collection in milli seconds.
   size_t gc_interval_{kDefaultGCTime};
 
-  /// @brief The maximum number of cleaner threads.
+  /// @brief The number of cleaner threads.
   size_t gc_thread_num_{kDefaultGCThreadNum};
 
   /// @brief The maximum number of reusable pages for each thread.
