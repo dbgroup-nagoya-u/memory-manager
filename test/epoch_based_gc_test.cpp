@@ -68,8 +68,8 @@ class EpochBasedGCFixture : public ::testing::Test
    * Internal constants
    *##########################################################################*/
 
-  static constexpr size_t kThreadNum = kMaxThreadNum / 2;
-  static constexpr size_t kGCInterval = 10000;
+  static constexpr size_t kThreadNum = kLogicalCoreNum;
+  static constexpr size_t kGCInterval = 1;
   static constexpr size_t kGarbageNumLarge = 1E6;
 
   /*##########################################################################*
@@ -346,6 +346,22 @@ TEST_F(  //
     EmptyDeclarationActAsGCOnlyMode)
 {
   VerifyDefaultTarget();
+}
+
+TEST_F(  //
+    EpochBasedGCFixture,
+    GCManageCommonPageSizes)
+{
+  auto &&gc = GCBuilder{}.SetGCInterval(kGCInterval).Build();
+  for (size_t page_size = k512; page_size <= k64Ki; page_size <<= 1UL) {
+    auto *page = ::operator new(page_size, GetAlignValOnVirtualPages(page_size));
+    gc->AddGarbage(page, page_size);
+    do {
+      page = gc->GetPageIfPossible(page_size);
+    } while (!page);
+  }
+  EXPECT_EQ(gc->GetPageIfPossible(0), nullptr);
+  EXPECT_THROW(gc->AddGarbage(nullptr, 0), std::runtime_error);
 }
 
 }  // namespace dbgroup::memory::test

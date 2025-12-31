@@ -41,7 +41,7 @@ namespace dbgroup::memory::component
 void
 GarbageList::AddGarbage(  //
     std::atomic<GarbageList *> *tail_addr,
-    const size_t epoch,
+    const Serial64_t epoch,
     void *garbage)
 {
   auto *list = tail_addr->load(kAcquire);

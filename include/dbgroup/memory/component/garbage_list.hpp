@@ -26,6 +26,7 @@
 
 // external libraries
 #include "dbgroup/constants.hpp"
+#include "dbgroup/types.hpp"
 
 // local sources
 #include "dbgroup/memory/utility.hpp"
@@ -72,7 +73,7 @@ class alignas(kVMPageSize) GarbageList
    */
   static void AddGarbage(  //
       std::atomic<GarbageList *> *tail_addr,
-      size_t epoch,
+      Serial64_t epoch,
       void *garbage);
 
   /*##########################################################################*
@@ -93,7 +94,7 @@ class alignas(kVMPageSize) GarbageList
   static auto
   Clear(  //
       std::atomic_uintptr_t *head_addr,
-      const size_t min_epoch,
+      const Serial64_t min_epoch,
       std::vector<void *> *reuse_pages = nullptr)  //
       -> bool
   {
@@ -174,7 +175,7 @@ class alignas(kVMPageSize) GarbageList
    */
   struct alignas(2 * kWordSize) Garbage {
     /// @brief An epoch when garbage is registered.
-    uint64_t epoch;
+    Serial64_t epoch;
 
     /// @brief A registered garbage pointer.
     void *ptr;
