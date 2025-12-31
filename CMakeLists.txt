@@ -8,7 +8,7 @@ endif()
 # project information
 project(
   memory_manager
-  VERSION "0.4.1"
+  VERSION "0.5.0"
   DESCRIPTION "A memory management library."
   LANGUAGES "CXX"
 )
@@ -28,7 +28,7 @@ if(NOT TARGET dbgroup::${PROJECT_NAME})
   FetchContent_Declare(
     cpp-utility
     GIT_REPOSITORY "https://github.com/dbgroup-nagoya-u/cpp-utility.git"
-    GIT_TAG "618347b32382c271440f4b1dcb3f0ec576c1043b" # v0.14.2
+    GIT_TAG "e84570a6d1d89c9afdbf71f007789da952103866" # v0.14.3
   )
   FetchContent_MakeAvailable(cpp-utility)
 
