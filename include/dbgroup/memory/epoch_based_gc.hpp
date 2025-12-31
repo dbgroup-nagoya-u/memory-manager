@@ -21,6 +21,7 @@
 #include <atomic>
 #include <chrono>
 #include <cstddef>
+#include <iostream>
 #include <memory>
 #include <random>
 #include <thread>
@@ -37,6 +38,10 @@
 // local sources
 #include "dbgroup/memory/component/list_holder.hpp"
 #include "dbgroup/memory/utility.hpp"
+
+// alias for garbage definitions
+#define DBGROUP_MEMORY_EPOCH_BASED_GC_GARBAGE_TYPES \
+  DefaultTarget, DBGROUP_MEMORY_PAGE_TYPES, GCTargets...
 
 namespace dbgroup::memory
 {
@@ -153,6 +158,66 @@ class EpochBasedGC
   }
 
   /**
+   * @brief Add a new garbage page.
+   *
+   * @param garbage_ptr A pointer to target garbage.
+   * @param page_size The size of a garbage page.
+   * @exception `std::runtime_error` if illegal `page_size` is given.
+   */
+  void
+  AddGarbage(  //
+      const void *garbage_ptr,
+      const size_t page_size)
+  {
+    const auto epoch = epoch_manager_.GetCurrentEpoch();
+    switch (page_size) {
+      case k512: {
+        auto *ptr = static_cast<Page512 *>(const_cast<void *>(garbage_ptr));
+        GetGarbageList<Page512>()->AddGarbage(epoch, ptr);
+        break;
+      }
+      case k1Ki: {
+        auto *ptr = static_cast<Page1Ki *>(const_cast<void *>(garbage_ptr));
+        GetGarbageList<Page1Ki>()->AddGarbage(epoch, ptr);
+        break;
+      }
+      case k2Ki: {
+        auto *ptr = static_cast<Page2Ki *>(const_cast<void *>(garbage_ptr));
+        GetGarbageList<Page2Ki>()->AddGarbage(epoch, ptr);
+        break;
+      }
+      case k4Ki: {
+        auto *ptr = static_cast<Page4Ki *>(const_cast<void *>(garbage_ptr));
+        GetGarbageList<Page4Ki>()->AddGarbage(epoch, ptr);
+        break;
+      }
+      case k8Ki: {
+        auto *ptr = static_cast<Page8Ki *>(const_cast<void *>(garbage_ptr));
+        GetGarbageList<Page8Ki>()->AddGarbage(epoch, ptr);
+        break;
+      }
+      case k16Ki: {
+        auto *ptr = static_cast<Page16Ki *>(const_cast<void *>(garbage_ptr));
+        GetGarbageList<Page16Ki>()->AddGarbage(epoch, ptr);
+        break;
+      }
+      case k32Ki: {
+        auto *ptr = static_cast<Page32Ki *>(const_cast<void *>(garbage_ptr));
+        GetGarbageList<Page32Ki>()->AddGarbage(epoch, ptr);
+        break;
+      }
+      case k64Ki: {
+        auto *ptr = static_cast<Page64Ki *>(const_cast<void *>(garbage_ptr));
+        GetGarbageList<Page64Ki>()->AddGarbage(epoch, ptr);
+        break;
+      }
+      default:
+        const auto &err = "The illegal page size " + std::to_string(page_size) + " was given.";
+        throw std::runtime_error{err};
+    }
+  }
+
+  /**
    * @brief Reuse a destructed page if exist.
    *
    * @tparam Target A class for representing target garbage.
@@ -166,6 +231,42 @@ class EpochBasedGC
   {
     static_assert(Target::kReusePages);
     return GetGarbageList<Target>()->GetPageIfPossible();
+  }
+
+  /**
+   * @brief Reuse a destructed page if exist.
+   *
+   * @param page_size The size of a garbage page.
+   * @retval A memory page if exist.
+   * @retval nullptr otherwise.
+   */
+  auto
+  GetPageIfPossible(           //
+      const size_t page_size)  //
+      -> void *
+  {
+    switch (page_size) {
+      case k512:
+        return GetGarbageList<Page512>()->GetPageIfPossible();
+      case k1Ki:
+        return GetGarbageList<Page1Ki>()->GetPageIfPossible();
+      case k2Ki:
+        return GetGarbageList<Page2Ki>()->GetPageIfPossible();
+      case k4Ki:
+        return GetGarbageList<Page4Ki>()->GetPageIfPossible();
+      case k8Ki:
+        return GetGarbageList<Page8Ki>()->GetPageIfPossible();
+      case k16Ki:
+        return GetGarbageList<Page16Ki>()->GetPageIfPossible();
+      case k32Ki:
+        return GetGarbageList<Page32Ki>()->GetPageIfPossible();
+      case k64Ki:
+        return GetGarbageList<Page64Ki>()->GetPageIfPossible();
+      default:
+        std::cerr << "[WARN] The illegal page size " << std::to_string(page_size)
+                  << " was given.\n";
+        return nullptr;
+    }
   }
 
   /*##########################################################################*
@@ -184,7 +285,7 @@ class EpochBasedGC
   {
     if (running_.load(kRelaxed)) return false;
 
-    InitializeGarbageLists<DefaultTarget, GCTargets...>();
+    InitializeGarbageLists<DBGROUP_MEMORY_EPOCH_BASED_GC_GARBAGE_TYPES>();
 
     // create cleaner threads
     running_.store(true, kRelaxed);
@@ -196,7 +297,8 @@ class EpochBasedGC
           wake_time += gc_interval_;
           if (const auto new_min = epoch_manager_.GetMinEpoch(); new_min != min_epoch) {
             min_epoch = new_min;
-            const auto no_garbage = ClearGarbage<DefaultTarget, GCTargets...>(min_epoch);
+            const auto no_garbage =
+                ClearGarbage<DBGROUP_MEMORY_EPOCH_BASED_GC_GARBAGE_TYPES>(min_epoch);
             if (!running_.load(kRelaxed) && no_garbage) break;
           }
           std::this_thread::sleep_until(wake_time);
@@ -225,7 +327,7 @@ class EpochBasedGC
     }
     cleaner_threads_.clear();
 
-    DestroyGarbageLists<DefaultTarget, GCTargets...>();
+    DestroyGarbageLists<DBGROUP_MEMORY_EPOCH_BASED_GC_GARBAGE_TYPES>();
     return true;
   }
 
@@ -394,8 +496,8 @@ class EpochBasedGC
   std::atomic_bool running_{};
 
   /// @brief A tuple containing the garbage lists of each GC target.
-  decltype(ConvToTuple<DefaultTarget, GCTargets...>()) garbage_lists_ =
-      ConvToTuple<DefaultTarget, GCTargets...>();
+  decltype(ConvToTuple<DBGROUP_MEMORY_EPOCH_BASED_GC_GARBAGE_TYPES>()) garbage_lists_ =
+      ConvToTuple<DBGROUP_MEMORY_EPOCH_BASED_GC_GARBAGE_TYPES>();
 };
 
 /**
