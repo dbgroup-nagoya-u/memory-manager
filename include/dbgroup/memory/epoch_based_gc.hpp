@@ -81,10 +81,7 @@ class EpochBasedGC
       const size_t gc_interval_ms = kDefaultGCTime,
       const size_t gc_thread_num = kDefaultGCThreadNum,
       const size_t reuse_capacity = kDefaultReusePageCapacity)
-      : gc_interval_{gc_interval_ms},
-        gc_thread_num_{gc_thread_num},
-        reuse_capacity_{reuse_capacity},
-        epoch_manager_{gc_interval_ms}
+      : gc_interval_{gc_interval_ms}, gc_thread_num_{gc_thread_num}, reuse_capacity_{reuse_capacity}
   {
     StartGC();
   }
@@ -475,19 +472,19 @@ class EpochBasedGC
    *##########################################################################*/
 
   /// @brief The interval of garbage collection in milli seconds.
-  std::chrono::milliseconds gc_interval_{};
+  std::chrono::milliseconds gc_interval_{kDefaultGCTime};
 
   /// @brief The maximum number of worker threads.
   size_t thread_num_{IDManager::GetMaxThreadNum()};
 
   /// @brief The number of cleaner threads.
-  size_t gc_thread_num_{};
+  size_t gc_thread_num_{kDefaultGCThreadNum};
 
   /// @brief The maximum number of reusable pages for each thread.
-  size_t reuse_capacity_{};
+  size_t reuse_capacity_{kDefaultReusePageCapacity};
 
   /// @brief An epoch manager.
-  EpochManager epoch_manager_{};
+  EpochManager epoch_manager_{kDefaultGCTime};
 
   /// @brief Worker threads for releasing garbage.
   std::vector<std::thread> cleaner_threads_{};
