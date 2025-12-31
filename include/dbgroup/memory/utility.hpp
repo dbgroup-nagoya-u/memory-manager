@@ -67,7 +67,7 @@ struct DefaultTarget {
  * @tparam kPageSize A target page size.
  */
 template <size_t kPageSize>
-struct alignas(GetAlignValOnVirtualPages(kPageSize)) Page {
+struct alignas(static_cast<size_t>(GetAlignValOnVirtualPages(kPageSize))) Page {
   /*##########################################################################*
    * GC settings
    *##########################################################################*/
