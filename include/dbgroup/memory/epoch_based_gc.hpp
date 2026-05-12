@@ -81,7 +81,10 @@ class EpochBasedGC
       const size_t gc_interval_ms = kDefaultGCTime,
       const size_t gc_thread_num = kDefaultGCThreadNum,
       const size_t reuse_capacity = kDefaultReusePageCapacity)
-      : gc_interval_{gc_interval_ms}, gc_thread_num_{gc_thread_num}, reuse_capacity_{reuse_capacity}
+      : gc_interval_{gc_interval_ms},
+        gc_thread_num_{gc_thread_num},
+        reuse_capacity_{reuse_capacity},
+        epoch_manager_{gc_interval_ms}
   {
     StartGC();
   }
