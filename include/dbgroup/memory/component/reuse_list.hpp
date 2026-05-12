@@ -20,11 +20,10 @@
 // C++ standard libraries
 #include <atomic>
 #include <cstddef>
-#include <utility>
 #include <vector>
 
 // external libraries
-#include "dbgroup/constants.hpp"
+#include <dbgroup/constants.hpp>
 
 // local sources
 #include "dbgroup/memory/utility.hpp"

@@ -29,8 +29,9 @@
 #include <vector>
 
 // external libraries
-#include "dbgroup/lock/utility.hpp"
-#include "gtest/gtest.h"
+#include <gtest/gtest.h>
+
+#include <dbgroup/lock/utility.hpp>
 
 namespace dbgroup::memory::test
 {
