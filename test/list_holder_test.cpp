@@ -27,9 +27,10 @@
 #include <vector>
 
 // external libraries
-#include "dbgroup/lock/utility.hpp"
-#include "dbgroup/types.hpp"
-#include "gtest/gtest.h"
+#include <gtest/gtest.h>
+
+#include <dbgroup/lock/utility.hpp>
+#include <dbgroup/types.hpp>
 
 // library sources
 #include "dbgroup/memory/utility.hpp"

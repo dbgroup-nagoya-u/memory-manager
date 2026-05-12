@@ -18,14 +18,13 @@
 #define MEMORY_MANAGER_DBGROUP_MEMORY_UTILITY_HPP_
 
 // C++ standard libraries
-#include <atomic>
 #include <bit>
 #include <cstddef>
 #include <cstring>
 #include <new>
 
 // external libraries
-#include "dbgroup/constants.hpp"
+#include <dbgroup/constants.hpp>
 
 namespace dbgroup::memory
 {

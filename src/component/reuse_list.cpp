@@ -22,15 +22,9 @@
 #include <bit>
 #include <cstddef>
 #include <cstdint>
-#include <memory>
-#include <utility>
 
 // external libraries
-#include "dbgroup/constants.hpp"
-#include "dbgroup/lock/utility.hpp"
-
-// local sources
-#include "dbgroup/memory/utility.hpp"
+#include <dbgroup/constants.hpp>
 
 namespace dbgroup::memory::component
 {

@@ -31,7 +31,7 @@
 #include <vector>
 
 // external libraries
-#include "gtest/gtest.h"
+#include <gtest/gtest.h>
 
 // library sources
 #include "dbgroup/memory/utility.hpp"

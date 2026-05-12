@@ -22,19 +22,16 @@
 #include <bit>
 #include <cstddef>
 #include <cstdint>
-#include <limits>
 #include <memory>
 
 // external libraries
-#include "dbgroup/constants.hpp"
-#include "dbgroup/lock/utility.hpp"
-#include "dbgroup/thread/id_manager.hpp"
-#include "dbgroup/types.hpp"
+#include <dbgroup/constants.hpp>
+#include <dbgroup/thread/id_manager.hpp>
+#include <dbgroup/types.hpp>
 
 // local sources
 #include "dbgroup/memory/component/garbage_list.hpp"
 #include "dbgroup/memory/component/reuse_list.hpp"
-#include "dbgroup/memory/utility.hpp"
 
 namespace dbgroup::memory::component
 {

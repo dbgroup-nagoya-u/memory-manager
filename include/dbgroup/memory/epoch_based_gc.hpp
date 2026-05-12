@@ -29,11 +29,11 @@
 #include <vector>
 
 // external libraries
-#include "dbgroup/constants.hpp"
-#include "dbgroup/thread/epoch_guard.hpp"
-#include "dbgroup/thread/epoch_manager.hpp"
-#include "dbgroup/thread/id_manager.hpp"
-#include "dbgroup/types.hpp"
+#include <dbgroup/constants.hpp>
+#include <dbgroup/thread/epoch_guard.hpp>
+#include <dbgroup/thread/epoch_manager.hpp>
+#include <dbgroup/thread/id_manager.hpp>
+#include <dbgroup/types.hpp>
 
 // local sources
 #include "dbgroup/memory/component/list_holder.hpp"

@@ -21,12 +21,11 @@
 #include <atomic>
 #include <bit>
 #include <cstddef>
-#include <utility>
 #include <vector>
 
 // external libraries
-#include "dbgroup/constants.hpp"
-#include "dbgroup/types.hpp"
+#include <dbgroup/constants.hpp>
+#include <dbgroup/types.hpp>
 
 // local sources
 #include "dbgroup/memory/utility.hpp"
