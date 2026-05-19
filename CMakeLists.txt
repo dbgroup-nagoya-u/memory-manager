@@ -28,7 +28,7 @@ if(NOT TARGET dbgroup::${PROJECT_NAME})
   FetchContent_Declare(
     cpp-utility
     GIT_REPOSITORY "https://github.com/dbgroup-nagoya-u/cpp-utility.git"
-    GIT_TAG "e84570a6d1d89c9afdbf71f007789da952103866" # v0.14.3
+    GIT_TAG "e00883c3d14da4a0f6e68691c45f7e9a558e4bec" # v0.16.0
   )
   FetchContent_MakeAvailable(cpp-utility)
 
