@@ -81,19 +81,19 @@ class EpochBasedGC
       const size_t gc_interval_ms = kDefaultGCTime,
       const size_t gc_thread_num = kDefaultGCThreadNum,
       const size_t reuse_capacity = kDefaultReusePageCapacity)
-      : gc_interval_{gc_interval_ms},
-        gc_thread_num_{gc_thread_num},
-        reuse_capacity_{reuse_capacity},
-        epoch_manager_{gc_interval_ms}
+      : gc_interval_{gc_interval_ms}
+      , gc_thread_num_{gc_thread_num}
+      , reuse_capacity_{reuse_capacity}
+      , epoch_manager_{gc_interval_ms}
   {
     StartGC();
   }
 
-  EpochBasedGC(const EpochBasedGC &) = delete;
-  EpochBasedGC(EpochBasedGC &&) = delete;
+  EpochBasedGC(const EpochBasedGC&) = delete;
+  EpochBasedGC(EpochBasedGC&&) = delete;
 
-  auto operator=(const EpochBasedGC &) -> EpochBasedGC & = delete;
-  auto operator=(EpochBasedGC &&) -> EpochBasedGC & = delete;
+  auto operator=(const EpochBasedGC&) -> EpochBasedGC& = delete;
+  auto operator=(EpochBasedGC&&) -> EpochBasedGC& = delete;
 
   /*##########################################################################*
    * Public destructors
@@ -151,9 +151,9 @@ class EpochBasedGC
   template <class Target = DefaultTarget>
   void
   AddGarbage(  //
-      const void *garbage_ptr)
+      const void* const garbage_ptr)
   {
-    auto *ptr = static_cast<typename Target::T *>(const_cast<void *>(garbage_ptr));
+    auto* const ptr = static_cast<typename Target::T*>(const_cast<void*>(garbage_ptr));
     GetGarbageList<Target>()->AddGarbage(epoch_manager_.GetCurrentEpoch(), ptr);
   }
 
@@ -166,53 +166,53 @@ class EpochBasedGC
    */
   void
   AddGarbage(  //
-      const void *garbage_ptr,
+      const void* const garbage_ptr,
       const size_t page_size)
   {
     const auto epoch = epoch_manager_.GetCurrentEpoch();
     switch (page_size) {
       case k512: {
-        auto *ptr = static_cast<Page512 *>(const_cast<void *>(garbage_ptr));
+        auto* const ptr = static_cast<Page512*>(const_cast<void*>(garbage_ptr));
         GetGarbageList<Page512>()->AddGarbage(epoch, ptr);
         break;
       }
       case k1Ki: {
-        auto *ptr = static_cast<Page1Ki *>(const_cast<void *>(garbage_ptr));
+        auto* const ptr = static_cast<Page1Ki*>(const_cast<void*>(garbage_ptr));
         GetGarbageList<Page1Ki>()->AddGarbage(epoch, ptr);
         break;
       }
       case k2Ki: {
-        auto *ptr = static_cast<Page2Ki *>(const_cast<void *>(garbage_ptr));
+        auto* const ptr = static_cast<Page2Ki*>(const_cast<void*>(garbage_ptr));
         GetGarbageList<Page2Ki>()->AddGarbage(epoch, ptr);
         break;
       }
       case k4Ki: {
-        auto *ptr = static_cast<Page4Ki *>(const_cast<void *>(garbage_ptr));
+        auto* const ptr = static_cast<Page4Ki*>(const_cast<void*>(garbage_ptr));
         GetGarbageList<Page4Ki>()->AddGarbage(epoch, ptr);
         break;
       }
       case k8Ki: {
-        auto *ptr = static_cast<Page8Ki *>(const_cast<void *>(garbage_ptr));
+        auto* const ptr = static_cast<Page8Ki*>(const_cast<void*>(garbage_ptr));
         GetGarbageList<Page8Ki>()->AddGarbage(epoch, ptr);
         break;
       }
       case k16Ki: {
-        auto *ptr = static_cast<Page16Ki *>(const_cast<void *>(garbage_ptr));
+        auto* const ptr = static_cast<Page16Ki*>(const_cast<void*>(garbage_ptr));
         GetGarbageList<Page16Ki>()->AddGarbage(epoch, ptr);
         break;
       }
       case k32Ki: {
-        auto *ptr = static_cast<Page32Ki *>(const_cast<void *>(garbage_ptr));
+        auto* const ptr = static_cast<Page32Ki*>(const_cast<void*>(garbage_ptr));
         GetGarbageList<Page32Ki>()->AddGarbage(epoch, ptr);
         break;
       }
       case k64Ki: {
-        auto *ptr = static_cast<Page64Ki *>(const_cast<void *>(garbage_ptr));
+        auto* const ptr = static_cast<Page64Ki*>(const_cast<void*>(garbage_ptr));
         GetGarbageList<Page64Ki>()->AddGarbage(epoch, ptr);
         break;
       }
       default:
-        const auto &err = "The illegal page size " + std::to_string(page_size) + " was given.";
+        const auto& err = "The illegal page size " + std::to_string(page_size) + " was given.";
         throw std::runtime_error{err};
     }
   }
@@ -227,7 +227,7 @@ class EpochBasedGC
   template <class Target = DefaultTarget>
   auto
   GetPageIfPossible()  //
-      -> void *
+      -> void*
   {
     static_assert(Target::kReusePages);
     return GetGarbageList<Target>()->GetPageIfPossible();
@@ -243,7 +243,7 @@ class EpochBasedGC
   auto
   GetPageIfPossible(           //
       const size_t page_size)  //
-      -> void *
+      -> void*
   {
     switch (page_size) {
       case k512:
@@ -322,7 +322,7 @@ class EpochBasedGC
 
     // wait all the cleaner threads return
     running_.store(false, kRelaxed);
-    for (auto &&t : cleaner_threads_) {
+    for (auto&& t : cleaner_threads_) {
       t.join();
     }
     cleaner_threads_.clear();
@@ -388,7 +388,7 @@ class EpochBasedGC
   {
     using ListsPtr = std::unique_ptr<GarbageList<Target>[]>;
 
-    auto &lists = std::get<ListsPtr>(garbage_lists_);
+    auto& lists = std::get<ListsPtr>(garbage_lists_);
     lists.reset(new GarbageList<Target>[thread_num_]);
 
     if constexpr (sizeof...(Tails) > 0) {
@@ -408,7 +408,7 @@ class EpochBasedGC
   {
     using ListsPtr = std::unique_ptr<GarbageList<Target>[]>;
 
-    auto &lists = std::get<ListsPtr>(garbage_lists_);
+    auto& lists = std::get<ListsPtr>(garbage_lists_);
     lists.reset(nullptr);
 
     if constexpr (sizeof...(Tails) > 0) {
@@ -447,11 +447,11 @@ class EpochBasedGC
       -> bool
   {
     using ListsPtr = std::unique_ptr<GarbageList<Target>[]>;
-    thread_local std::vector<void *> reuse_pages{};
+    thread_local std::vector<void*> reuse_pages{};
     thread_local std::uniform_int_distribution<size_t> dist{0, thread_num_};
     thread_local std::mt19937_64 rand{std::random_device{}()};
 
-    auto &lists = std::get<ListsPtr>(garbage_lists_);
+    auto& lists = std::get<ListsPtr>(garbage_lists_);
     auto no_garbage = true;
     for (size_t i = 0, pos = dist(rand); i < thread_num_; ++i) {
       if (++pos >= thread_num_) {
@@ -459,7 +459,7 @@ class EpochBasedGC
       }
       no_garbage &= lists[pos].ClearGarbage(min_epoch, reuse_capacity_, reuse_pages);
     }
-    for (auto *page : reuse_pages) {
+    for (auto* const page : reuse_pages) {
       Release<Target>(page);
     }
     reuse_pages.clear();
@@ -521,11 +521,11 @@ class Builder
 
   constexpr Builder() = default;
 
-  constexpr Builder(const Builder &) = default;
-  constexpr Builder(Builder &&) noexcept = default;
+  constexpr Builder(const Builder&) = default;
+  constexpr Builder(Builder&&) noexcept = default;
 
-  constexpr Builder &operator=(const Builder &) = default;
-  constexpr Builder &operator=(Builder &&) noexcept = default;
+  constexpr Builder& operator=(const Builder&) = default;
+  constexpr Builder& operator=(Builder&&) noexcept = default;
 
   /*##########################################################################*
    * Public destructor
@@ -560,7 +560,7 @@ class Builder
   constexpr auto
   SetGCInterval(                    //
       const size_t gc_interval_ms)  //
-      -> Builder &
+      -> Builder&
   {
     gc_interval_ = gc_interval_ms;
     return *this;
@@ -573,7 +573,7 @@ class Builder
   constexpr auto
   SetGCThreadNum(                  //
       const size_t gc_thread_num)  //
-      -> Builder &
+      -> Builder&
   {
     gc_thread_num_ = gc_thread_num;
     return *this;
@@ -586,7 +586,7 @@ class Builder
   constexpr auto
   SetReusablePageNum(               //
       const size_t reuse_capacity)  //
-      -> Builder &
+      -> Builder&
   {
     reuse_capacity_ = reuse_capacity;
     return *this;

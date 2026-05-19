@@ -39,7 +39,8 @@ namespace dbgroup::memory::test
  * Global constants
  *############################################################################*/
 
-constexpr size_t kOverSheetCapacity = MappingTable::kColNum * MappingTable::kRowNum * 1.1;
+constexpr size_t kOverSheetCapacity =
+    static_cast<size_t>(MappingTable::kColNum * MappingTable::kRowNum * 1.1);
 constexpr size_t kThreadNum = DBGROUP_TEST_THREAD_NUM;
 constexpr bool kUseCASWeak = true;
 
@@ -87,7 +88,7 @@ class MappingTableFixture : public testing::Test
       const auto pid = table_->ReservePageID();
       EXPECT_TRUE(MappingTable::IsPageID(pid));
       EXPECT_EQ(table_->Load(pid), nullptr);
-      table_->Store(pid, std::bit_cast<void *>(pid));
+      table_->Store(pid, std::bit_cast<void*>(pid));
       ids.emplace_back(pid);
     }
 
@@ -101,7 +102,7 @@ class MappingTableFixture : public testing::Test
   {
     // lambda function to run tests with multi threads
     auto f = [&](std::promise<PIDContainer> p, const size_t id_num) {
-      auto &&lids = GetPageIDs(id_num);
+      auto&& lids = GetPageIDs(id_num);
       p.set_value(std::move(lids));
     };
 
@@ -117,8 +118,8 @@ class MappingTableFixture : public testing::Test
     // gather results
     PIDContainer ids{};
     ids.reserve(id_num * kThreadNum);
-    for (auto &&future : futures) {
-      auto &&ids_per_thread = future.get();
+    for (auto&& future : futures) {
+      auto&& ids_per_thread = future.get();
       ids.insert(ids.end(), ids_per_thread.begin(), ids_per_thread.end());
     }
 
@@ -131,16 +132,16 @@ class MappingTableFixture : public testing::Test
 
   void
   VerifyPageIDs(  //
-      PIDContainer &ids)
+      PIDContainer& ids)
   {
     // reserved PIDs are unique
     std::sort(ids.begin(), ids.end());
-    auto &&actual_end = std::unique(ids.begin(), ids.end());
+    auto&& actual_end = std::unique(ids.begin(), ids.end());
     EXPECT_EQ(ids.end(), actual_end);
 
     // load the sorted values
-    for (auto &&pid : ids) {
-      auto *val = table_->Load<size_t>(pid);
+    for (auto&& pid : ids) {
+      auto* val = table_->Load<size_t>(pid);
       EXPECT_EQ(pid, std::bit_cast<size_t>(val));
       table_->Store(pid, nullptr);
     }
@@ -157,9 +158,9 @@ class MappingTableFixture : public testing::Test
     for (size_t i = 0; i < kThreadNum; ++i) {
       threads.emplace_back([&]() {
         for (size_t j = 0; j < kRepeatNum; ++j) {
-          auto *expected = table_->Load(pid);
+          auto* expected = table_->Load(pid);
           while (true) {
-            auto *desired = std::bit_cast<void *>(std::bit_cast<size_t>(expected) + 1);
+            auto* desired = std::bit_cast<void*>(std::bit_cast<size_t>(expected) + 1);
             if ((use_cas_weak && table_->CAS(pid, expected, desired))
                 || (!use_cas_weak && table_->CASStrong(pid, expected, desired))) {
               break;
@@ -169,7 +170,7 @@ class MappingTableFixture : public testing::Test
         }
       });
     }
-    for (auto &&t : threads) {
+    for (auto&& t : threads) {
       t.join();
     }
 
@@ -191,25 +192,25 @@ class MappingTableFixture : public testing::Test
 
 TEST_F(MappingTableFixture, ReservePageIDsInRowReturnUniqueIDs)
 {
-  auto &&ids = GetPageIDs(MappingTable::kColNum - 1);
+  auto&& ids = GetPageIDs(MappingTable::kColNum - 1);
   VerifyPageIDs(ids);
 }
 
 TEST_F(MappingTableFixture, ReservePageIDsOverSheetsReturnUniqueIDs)
 {
-  auto &&ids = GetPageIDs(kOverSheetCapacity);
+  auto&& ids = GetPageIDs(kOverSheetCapacity);
   VerifyPageIDs(ids);
 }
 
 TEST_F(MappingTableFixture, ReservePageIDsInRowWithMultiThreadsReturnUniqueIDs)
 {
-  auto &&ids = GetPageIDsWithMultiThreads((MappingTable::kColNum / kThreadNum) - 1);
+  auto&& ids = GetPageIDsWithMultiThreads((MappingTable::kColNum / kThreadNum) - 1);
   VerifyPageIDs(ids);
 }
 
 TEST_F(MappingTableFixture, ReservePageIDsOverSheetsWithMultiThreadsReturnUniqueIDs)
 {
-  auto &&ids = GetPageIDsWithMultiThreads(kOverSheetCapacity);
+  auto&& ids = GetPageIDsWithMultiThreads(kOverSheetCapacity);
   VerifyPageIDs(ids);
 }
 

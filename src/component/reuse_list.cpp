@@ -34,20 +34,20 @@ namespace dbgroup::memory::component
 
 void
 ReuseList::AddPages(  //
-    std::atomic_uintptr_t *tail_addr,
-    std::vector<void *> &pages,
+    std::atomic_uintptr_t* const tail_addr,
+    std::vector<void*>& pages,
     const size_t reuse_capacity)
 {
   auto uptr = tail_addr->load(kAcquire);
   if (!tail_addr->compare_exchange_strong(uptr, uptr + kCntUnit, kRelaxed, kRelaxed)) return;
 
-  auto *list = std::bit_cast<ReuseList *>(uptr & kPtrMask);
+  auto* list = std::bit_cast<ReuseList*>(uptr & kPtrMask);
   auto tail = list->tail_.load(kRelaxed);
   while (!pages.empty() && tail < kReuseListCapacity
          && (tail - list->head_.load(kRelaxed)) < reuse_capacity) {
     // add reusable pages
-    auto &dest = list->pages_[tail];
-    auto *cur_page = dest.load(kRelaxed);
+    auto& dest = list->pages_[tail];
+    auto* cur_page = dest.load(kRelaxed);
     if (cur_page == nullptr
         && dest.compare_exchange_strong(cur_page, pages.back(), kRelaxed, kRelaxed)) {
       pages.pop_back();
@@ -63,9 +63,9 @@ ReuseList::AddPages(  //
     }
 
     // if the list has been full, go to the next list
-    auto *next = list->next_.load(kAcquire);
+    auto* next = list->next_.load(kAcquire);
     if (next == nullptr) {
-      auto *new_next = new ReuseList{list};
+      auto* const new_next = new ReuseList{list};
       if (!list->next_.compare_exchange_strong(next, new_next, kRelease, kRelaxed)) {
         delete new_next;
         goto end;
@@ -75,7 +75,7 @@ ReuseList::AddPages(  //
 
     // update the tail list on a list holder
     for (uptr = tail_addr->load(kRelaxed); true;) {
-      auto *cur = std::bit_cast<ReuseList *>(uptr & kPtrMask);
+      auto* cur = std::bit_cast<ReuseList*>(uptr & kPtrMask);
       if (cur != list) goto end;
       const auto next_ptr = std::bit_cast<uintptr_t>(next) + (uptr & ~kPtrMask);
       if (tail_addr->compare_exchange_weak(uptr, next_ptr, kRelease, kRelaxed)) break;
@@ -89,7 +89,7 @@ ReuseList::AddPages(  //
 
   // delete the head list if needed
   if ((tail_addr->load(kAcquire) >> kCntShift) == 1 && list->prev_ != nullptr) {
-    auto *prev = list->prev_;
+    auto* prev = list->prev_;
     while (prev->prev_ != nullptr) {
       list = prev;
       prev = prev->prev_;
@@ -104,12 +104,12 @@ end:
 }
 
 auto
-ReuseList::GetPage(                       //
-    std::atomic<ReuseList *> *head_addr)  //
-    -> void *
+ReuseList::GetPage(                      //
+    std::atomic<ReuseList*>* head_addr)  //
+    -> void*
 {
-  void *page = nullptr;
-  auto *list = head_addr->load(kRelaxed);
+  void* page = nullptr;
+  auto* const list = head_addr->load(kRelaxed);
   auto head = list->head_.load(kRelaxed);
   if (head < list->tail_.load(kAcquire)) {
     page = list->pages_[head].load(kRelaxed);

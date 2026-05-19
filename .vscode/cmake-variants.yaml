@@ -6,20 +6,22 @@ buildType:
       short: Debug
       long: Include debugging information without optimizations
       buildType: Debug
-      settings:
-        MEMORY_MANAGER_BUILD_TESTS: ON
-        DBGROUP_TEST_THREAD_NUM: 8
     relWithDebInfo:
       short: RelWithDebInfo
       long: Perform optimizations and include debugging informatin
       buildType: RelWithDebInfo
-      settings:
-        MEMORY_MANAGER_BUILD_TESTS: ON
-        DBGROUP_TEST_THREAD_NUM: 8
     release:
       short: Release
       long: Perform optimizations and omit debugging informatin
       buildType: Release
+
+defaltSettings:
+  default: default
+  description: ""
+  choices:
+    default:
+      short: "w/Test"
+      long: ""
       settings:
         MEMORY_MANAGER_BUILD_TESTS: ON
         DBGROUP_TEST_THREAD_NUM: 8
