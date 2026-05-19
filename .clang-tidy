@@ -1,26 +1,26 @@
---- # cSpell:disable
+---
 Checks: '
 -*,
 clang-diagnostic-*,
 bugprone-*,
 -bugprone-easily-swappable-parameters,
 cert-*,
--cert-err58-cpp,
--cert-msc32-c,
--cert-msc51-cpp,
 cppcoreguidelines-*,
 -cppcoreguidelines-avoid-c-arrays,
+-cppcoreguidelines-avoid-do-while,
+-cppcoreguidelines-avoid-goto,
+-cppcoreguidelines-init-variables,
 -cppcoreguidelines-non-private-member-variables-in-classes,
 -cppcoreguidelines-owning-memory,
 -cppcoreguidelines-pro-bounds-constant-array-index,
 -cppcoreguidelines-pro-type-const-cast,
--cppcoreguidelines-pro-type-reinterpret-cast,
 concurrency-*,
 google-*,
 -google-runtime-references,
 hicpp-*,
--hicpp-braces-around-statements,
 -hicpp-avoid-c-arrays,
+-hicpp-avoid-goto,
+-hicpp-braces-around-statements,
 llvm-*,
 -llvm-header-guard,
 misc-*,
@@ -30,14 +30,15 @@ modernize-*,
 -modernize-loop-convert,
 -modernize-use-trailing-return-type,
 readability-*,
--readability-avoid-const-params-in-decls,
 -readability-braces-around-statements,
+-readability-function-cognitive-complexity,
 -readability-identifier-length,
+-readability-implicit-bool-conversion,
+-readability-inconsistent-declaration-parameter-name,
+-readability-redundant-member-init,
 performance-*,'
--performance-no-int-to-ptr,
 WarningsAsErrors: ''
 HeaderFilterRegex: '.*include/.*'
-AnalyzeTemporaryDtors: false
 FormatStyle:     none
 CheckOptions:
   - key:             readability-identifier-naming.ClassCase
@@ -58,9 +59,13 @@ CheckOptions:
     value:           _
   - key:             readability-identifier-naming.ParameterCase
     value:           lower_case
+  - key:             readability-identifier-naming.PublicMemberCase
+    value:           lower_case
   - key:             readability-identifier-naming.UnionCase
     value:           CamelCase
   - key:             readability-identifier-naming.VariableCase
+    value:           lower_case
+  - key:             readability-identifier-naming.StaticVariableCase
     value:           lower_case
   - key:             cert-dcl16-c.NewSuffixes
     value:           'L;LL;LU;LLU'

@@ -47,16 +47,16 @@ class alignas(kVMPageSize) ReuseList
    * @param prev The previous reusable page list.
    */
   constexpr explicit ReuseList(  //
-      ReuseList *prev = nullptr)
+      ReuseList* prev = nullptr)
       : prev_{prev}
   {
   }
 
-  ReuseList(const ReuseList &) = delete;
-  ReuseList(ReuseList &&) = delete;
+  ReuseList(const ReuseList&) = delete;
+  ReuseList(ReuseList&&) = delete;
 
-  auto operator=(const ReuseList &) -> ReuseList & = delete;
-  auto operator=(ReuseList &&) -> ReuseList & = delete;
+  auto operator=(const ReuseList&) -> ReuseList& = delete;
+  auto operator=(ReuseList&&) -> ReuseList& = delete;
 
   /*##########################################################################*
    * Public destructors
@@ -78,8 +78,8 @@ class alignas(kVMPageSize) ReuseList
    * @param reuse_capacity The maximum number of reusable pages for each thread.
    */
   static void AddPages(  //
-      std::atomic_uintptr_t *tail_addr,
-      std::vector<void *> &pages,
+      std::atomic_uintptr_t* tail_addr,
+      std::vector<void*>& pages,
       size_t reuse_capacity);
 
   /**
@@ -89,9 +89,9 @@ class alignas(kVMPageSize) ReuseList
    * @retval A memory page if exist.
    * @retval nullptr otherwise.
    */
-  static auto GetPage(                      //
-      std::atomic<ReuseList *> *head_addr)  //
-      -> void *;
+  static auto GetPage(                     //
+      std::atomic<ReuseList*>* head_addr)  //
+      -> void*;
 
   /*##########################################################################*
    * Public APIs for destruction
@@ -108,14 +108,14 @@ class alignas(kVMPageSize) ReuseList
   template <class Target>
   static void
   DestroyPages(  //
-      ReuseList *list)
+      ReuseList* list)
   {
     while (list != nullptr) {
       const auto tail = list->tail_.load(kAcquire);
       for (size_t i = list->head_.load(kRelaxed); i < tail; ++i) {
         Release<Target>(list->pages_[i].load(kRelaxed));
       }
-      auto *next = list->next_.load(kAcquire);
+      auto* next = list->next_.load(kAcquire);
       delete list;
       list = next;
     }
@@ -146,16 +146,16 @@ class alignas(kVMPageSize) ReuseList
   std::atomic_uint64_t head_{};
 
   /// @brief The previous reusable page list.
-  ReuseList *prev_{};
+  ReuseList* prev_{};
 
   /// @brief A reusable page buffer.
-  std::atomic<void *> pages_[kReuseListCapacity] = {};
+  std::atomic<void*> pages_[kReuseListCapacity] = {};
 
   /// @brief The end position of registered pages.
   std::atomic_uint64_t tail_{};
 
   /// @brief The next reusable page list.
-  std::atomic<ReuseList *> next_{};
+  std::atomic<ReuseList*> next_{};
 };
 
 }  // namespace dbgroup::memory::component

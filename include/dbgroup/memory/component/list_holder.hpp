@@ -56,22 +56,22 @@ class alignas(kCacheLineSize) ListHolder
 
   ListHolder()
   {
-    auto *glist = new GarbageList{};
+    auto* glist = new GarbageList{};
     cl_glist_.store(glist, kRelease);
     gc_glist_.store(std::bit_cast<uintptr_t>(glist), kRelease);
 
     if constexpr (Target::kReusePages) {
-      auto *rlist = new ReuseList{};
+      auto* rlist = new ReuseList{};
       cl_rlist_.store(rlist, kRelease);
       gc_rlist_.store(std::bit_cast<uintptr_t>(rlist), kRelease);
     }
   }
 
-  ListHolder(const ListHolder &) = delete;
-  ListHolder(ListHolder &&) = delete;
+  ListHolder(const ListHolder&) = delete;
+  ListHolder(ListHolder&&) = delete;
 
-  auto operator=(const ListHolder &) -> ListHolder & = delete;
-  auto operator=(ListHolder &&) -> ListHolder & = delete;
+  auto operator=(const ListHolder&) -> ListHolder& = delete;
+  auto operator=(ListHolder&&) -> ListHolder& = delete;
 
   /*##########################################################################*
    * Public destructors
@@ -83,11 +83,11 @@ class alignas(kCacheLineSize) ListHolder
    */
   ~ListHolder()
   {
-    auto *glist = std::bit_cast<GarbageList *>(gc_glist_.load(kRelaxed));
+    auto* glist = std::bit_cast<GarbageList*>(gc_glist_.load(kRelaxed));
     delete glist;
 
     if constexpr (Target::kReusePages) {
-      auto *rlist = cl_rlist_.load(kAcquire);
+      auto* rlist = cl_rlist_.load(kAcquire);
       ReuseList::DestroyPages<Target>(rlist);
     }
   }
@@ -105,7 +105,7 @@ class alignas(kCacheLineSize) ListHolder
   void
   AddGarbage(  //
       const Serial64_t epoch,
-      void *garbage)
+      void* garbage)
   {
     AssignCurrentThreadIfNeeded();
     GarbageList::AddGarbage(&cl_glist_, epoch, garbage);
@@ -119,7 +119,7 @@ class alignas(kCacheLineSize) ListHolder
    */
   auto
   GetPageIfPossible()  //
-      -> void *
+      -> void*
   {
     AssignCurrentThreadIfNeeded();
     return ReuseList::GetPage(&cl_rlist_);
@@ -142,7 +142,7 @@ class alignas(kCacheLineSize) ListHolder
   ClearGarbage(  //
       const Serial64_t min_epoch,
       const size_t reuse_capacity,
-      std::vector<void *> &reuse_pages)  //
+      std::vector<void*>& reuse_pages)  //
       -> bool
   {
     fence_.test_and_set(kAcquire);
@@ -186,10 +186,10 @@ class alignas(kCacheLineSize) ListHolder
   std::weak_ptr<size_t> heartbeat_{};
 
   /// @brief A garbage list for a client thread.
-  std::atomic<GarbageList *> cl_glist_{};
+  std::atomic<GarbageList*> cl_glist_{};
 
   /// @brief A reusable page list for a client thread.
-  std::atomic<ReuseList *> cl_rlist_{};
+  std::atomic<ReuseList*> cl_rlist_{};
 
   /// @brief A padding region for cache line alignment.
   uint64_t padding_[4] = {};

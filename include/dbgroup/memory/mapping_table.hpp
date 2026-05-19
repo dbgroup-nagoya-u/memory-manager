@@ -54,7 +54,7 @@ class alignas(kVMPageSize) MappingTable
   static constexpr size_t kSheetShift = 32;
 
   /// @brief A flag for indicating page IDs.
-  static constexpr uint64_t kLPIDFlag = 1UL << 63;
+  static constexpr uint64_t kLPIDFlag = 1UL << 63UL;
 
   /// @brief The capacity of each array (rows and columns).
   static constexpr size_t kColNum = kVMPageSize / kWordSize;
@@ -74,13 +74,13 @@ class alignas(kVMPageSize) MappingTable
    *
    */
   explicit MappingTable(  //
-      std::function<void(void *)> deleter = Release<void>);
+      std::function<void(void*)> deleter = Release<void>);
 
-  MappingTable(const MappingTable &) = delete;
-  MappingTable(MappingTable &&) = delete;
+  MappingTable(const MappingTable&) = delete;
+  MappingTable(MappingTable&&) = delete;
 
-  auto operator=(const MappingTable &) -> MappingTable & = delete;
-  auto operator=(MappingTable &&) -> MappingTable & = delete;
+  auto operator=(const MappingTable&) -> MappingTable& = delete;
+  auto operator=(MappingTable&&) -> MappingTable& = delete;
 
   /*##########################################################################*
    * Public destructors
@@ -144,10 +144,10 @@ class alignas(kVMPageSize) MappingTable
   [[nodiscard]] auto
   Load(                          //
       const uint64_t pid) const  //
-      -> T *
+      -> T*
   {
-    const auto &cell = const_cast<MappingTable *>(this)->GetCell(pid);
-    return std::bit_cast<T *>(cell.load(kAcquire));
+    const auto& cell = const_cast<MappingTable*>(this)->GetCell(pid);
+    return std::bit_cast<T*>(cell.load(kAcquire));
   }
 
   /**
@@ -159,7 +159,7 @@ class alignas(kVMPageSize) MappingTable
    */
   void Store(  //
       uint64_t pid,
-      const void *page);
+      const void* page);
 
   /**
    * @brief Compare-and-swap given pages on the slot of a given page ID.
@@ -173,8 +173,8 @@ class alignas(kVMPageSize) MappingTable
    */
   auto CAS(  //
       uint64_t pid,
-      void *&expected,
-      const void *desired)  //
+      void*& expected,
+      const void* desired)  //
       -> bool;
 
   /**
@@ -189,8 +189,8 @@ class alignas(kVMPageSize) MappingTable
    */
   auto CASStrong(  //
       uint64_t pid,
-      void *&expected,
-      const void *desired)  //
+      void*& expected,
+      const void* desired)  //
       -> bool;
 
  private:
@@ -199,11 +199,11 @@ class alignas(kVMPageSize) MappingTable
    *##########################################################################*/
 
   struct alignas(kVMPageSize) Row {
-    std::atomic<void *> cols[kVMPageSize / kWordSize] = {};
+    std::atomic<void*> cols[kVMPageSize / kWordSize] = {};
   };
 
   struct alignas(kVMPageSize) Sheet {
-    std::atomic<Row *> rows[kVMPageSize / kWordSize] = {};
+    std::atomic<Row*> rows[kVMPageSize / kWordSize] = {};
   };
 
   /*##########################################################################*
@@ -237,7 +237,7 @@ class alignas(kVMPageSize) MappingTable
    */
   auto GetCell(      //
       uint64_t pid)  //
-      -> std::atomic<void *> &;
+      -> std::atomic<void*>&;
 
   /**
    * @brief Allocate a new row (and a new sheet if needed).
@@ -257,13 +257,10 @@ class alignas(kVMPageSize) MappingTable
   std::atomic_uint64_t cnt_{};
 
   /// @brief A function to release stored pages.
-  std::function<void(void *)> deleter_{};
-
-  /// @brief Padding space for the cache line alignment.
-  std::byte padding_[kCacheLineSize - 40] = {};
+  std::function<void(void*)> deleter_{};
 
   /// @brief Mapping tables.
-  std::atomic<Sheet *> sheets_[kSheetNum] = {};
+  alignas(kCacheLineSize) std::atomic<Sheet*> sheets_[kSheetNum] = {};
 };
 
 }  // namespace dbgroup::memory

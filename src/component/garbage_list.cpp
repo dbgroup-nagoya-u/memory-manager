@@ -31,15 +31,15 @@ namespace dbgroup::memory::component
 
 void
 GarbageList::AddGarbage(  //
-    std::atomic<GarbageList *> *tail_addr,
+    std::atomic<GarbageList*>* tail_addr,
     const Serial64_t epoch,
-    void *garbage)
+    void* garbage)
 {
-  auto *list = tail_addr->load(kAcquire);
+  auto* list = tail_addr->load(kAcquire);
   const auto tail = list->tail_.load(kRelaxed);
   list->garbage_[tail] = {epoch, garbage};
   if (tail >= kGarbageListCapacity - 1) {
-    auto *next = new GarbageList{};
+    auto* next = new GarbageList{};
     tail_addr->store(next, kRelease);
     list->next_ = next;
   }

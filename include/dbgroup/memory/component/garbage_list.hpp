@@ -45,11 +45,11 @@ class alignas(kVMPageSize) GarbageList
 
   constexpr GarbageList() = default;
 
-  GarbageList(const GarbageList &) = delete;
-  GarbageList(GarbageList &&) = delete;
+  GarbageList(const GarbageList&) = delete;
+  GarbageList(GarbageList&&) = delete;
 
-  auto operator=(const GarbageList &) -> GarbageList & = delete;
-  auto operator=(GarbageList &&) -> GarbageList & = delete;
+  auto operator=(const GarbageList&) -> GarbageList& = delete;
+  auto operator=(GarbageList&&) -> GarbageList& = delete;
 
   /*##########################################################################*
    * Public destructors
@@ -71,9 +71,9 @@ class alignas(kVMPageSize) GarbageList
    * @param garbage A new garbage instance.
    */
   static void AddGarbage(  //
-      std::atomic<GarbageList *> *tail_addr,
+      std::atomic<GarbageList*>* tail_addr,
       Serial64_t epoch,
-      void *garbage);
+      void* garbage);
 
   /*##########################################################################*
    * Public APIs for cleaners
@@ -92,9 +92,9 @@ class alignas(kVMPageSize) GarbageList
   template <class Target>
   static auto
   Clear(  //
-      std::atomic_uintptr_t *head_addr,
+      std::atomic_uintptr_t* head_addr,
       const Serial64_t min_epoch,
-      std::vector<void *> *reuse_pages = nullptr)  //
+      std::vector<void*>* reuse_pages = nullptr)  //
       -> bool
   {
     using T = typename Target::T;
@@ -105,7 +105,7 @@ class alignas(kVMPageSize) GarbageList
       return false;  // the thread cannot read this list, so work pessimistically
     }
 
-    auto *list = std::bit_cast<GarbageList *>(uptr & kPtrMask);
+    auto* list = std::bit_cast<GarbageList*>(uptr & kPtrMask);
     uptr = (uptr & kPtrMask) | kCntUnit;
     while (true) {
       tail = list->tail_.load(kAcquire);
@@ -114,9 +114,9 @@ class alignas(kVMPageSize) GarbageList
         if (!list->head_.compare_exchange_strong(head, head + 1, kRelaxed, kRelaxed)) {
           goto end;
         }
-        auto *page = list->garbage_[head].ptr;
+        auto* page = list->garbage_[head].ptr;
         if constexpr (!std::is_same_v<T, void>) {
-          std::bit_cast<T *>(page)->~T();
+          std::bit_cast<T*>(page)->~T();
         }
         if (reuse_pages != nullptr) {
           reuse_pages->emplace_back(page);
@@ -134,7 +134,7 @@ class alignas(kVMPageSize) GarbageList
         continue;
       }
 
-      auto *next = list->next_;
+      auto* next = list->next_;
       delete list;
       uptr = next_ptr;
       list = next;
@@ -177,7 +177,7 @@ class alignas(kVMPageSize) GarbageList
     Serial64_t epoch;
 
     /// @brief A registered garbage pointer.
-    void *ptr;
+    void* ptr;
   };
 
   /*##########################################################################*
@@ -194,7 +194,7 @@ class alignas(kVMPageSize) GarbageList
   std::atomic_uint64_t head_{};
 
   /// @brief The previous garbage list.
-  GarbageList *next_{};
+  GarbageList* next_{};
 };
 
 }  // namespace dbgroup::memory::component

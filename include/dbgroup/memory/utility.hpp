@@ -83,11 +83,11 @@ struct alignas(static_cast<size_t>(GetAlignValOnVirtualPages(kPageSize))) Page {
 
   constexpr Page() noexcept = default;
 
-  constexpr Page(const Page &) noexcept = default;
-  constexpr Page(Page &&) noexcept = default;
+  constexpr Page(const Page&) noexcept = default;
+  constexpr Page(Page&&) noexcept = default;
 
-  constexpr auto operator=(const Page &) noexcept -> Page & = default;
-  constexpr auto operator=(Page &&) noexcept -> Page & = default;
+  constexpr auto operator=(const Page&) noexcept -> Page& = default;
+  constexpr auto operator=(Page&&) noexcept -> Page& = default;
 
   /*##########################################################################*
    * Public destructors
@@ -96,7 +96,7 @@ struct alignas(static_cast<size_t>(GetAlignValOnVirtualPages(kPageSize))) Page {
   /// @brief Fill this page with zeros.
   ~Page()
   {  //
-    static_cast<void>(std::memset(static_cast<void *>(this), 0, kPageSize));
+    static_cast<void>(std::memset(static_cast<void*>(this), 0, kPageSize));
   }
 
   /*##########################################################################*
@@ -150,12 +150,12 @@ template <class T>
 inline auto
 Allocate(                           //
     const size_t size = sizeof(T))  //
-    -> T *
+    -> T*
 {
   if constexpr (alignof(T) <= kDefaultAlignment) {
-    return std::bit_cast<T *>(::operator new(size));
+    return std::bit_cast<T*>(::operator new(size));
   } else {
-    return std::bit_cast<T *>(::operator new(size, static_cast<std::align_val_t>(alignof(T))));
+    return std::bit_cast<T*>(::operator new(size, static_cast<std::align_val_t>(alignof(T))));
   }
 }
 
@@ -168,7 +168,7 @@ Allocate(                           //
 template <class T = void>
 inline void
 Release(  //
-    void *ptr)
+    void* ptr)
 {
   if constexpr (std::is_same_v<T, void>) {
     ::operator delete(ptr);
