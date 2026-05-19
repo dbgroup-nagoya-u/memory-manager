@@ -42,8 +42,8 @@ MappingTable::MappingTable(  //
     std::function<void(void*)> deleter)
     : deleter_{std::move(deleter)}
 {
-  auto* row = new (Allocate<Row>()) Row{};
-  auto* sheet = new (Allocate<Sheet>()) Sheet{};
+  auto* const row = new (Allocate<Row>()) Row{};
+  auto* const sheet = new (Allocate<Sheet>()) Sheet{};
   sheet->rows[0].store(row, kRelaxed);
   sheets_[0].store(sheet, kRelaxed);
   cnt_.store(kLPIDFlag, kRelaxed);
@@ -53,13 +53,13 @@ MappingTable::~MappingTable()
 {
   try {
     for (size_t i = 0; i < kSheetNum; ++i) {
-      auto* sheet = sheets_[i].load(kRelaxed);
+      auto* const sheet = sheets_[i].load(kRelaxed);
       if (sheet == nullptr) continue;
       for (size_t j = 0; j < kRowNum; ++j) {
-        auto* row = sheet->rows[j].load(kRelaxed);
+        auto* const row = sheet->rows[j].load(kRelaxed);
         if (row == nullptr) continue;
         for (size_t k = 0; k < kColNum; ++k) {
-          auto* page = row->cols[k].load(kRelaxed);
+          auto* const page = row->cols[k].load(kRelaxed);
           if (page == nullptr) continue;
           deleter_(page);
         }
@@ -133,7 +133,7 @@ MappingTable::GetMemoryUsage() const  //
 void
 MappingTable::Store(  //
     const uint64_t pid,
-    const void* page)
+    const void* const page)
 {
   auto& cell = GetCell(pid);
   cell.store(const_cast<void*>(page), kRelease);
@@ -143,7 +143,7 @@ auto
 MappingTable::CAS(  //
     const uint64_t pid,
     void*& expected,
-    const void* desired)  //
+    const void* const desired)  //
     -> bool
 {
   auto& cell = GetCell(pid);
@@ -154,7 +154,7 @@ auto
 MappingTable::CASStrong(  //
     const uint64_t pid,
     void*& expected,
-    const void* desired)  //
+    const void* const desired)  //
     -> bool
 {
   auto& cell = GetCell(pid);
@@ -177,8 +177,8 @@ MappingTable::GetCell(   //
     throw std::runtime_error{"The process accessed the invalid page ID."};
   }
 
-  auto* sheet = sheets_[sheet_id].load(kRelaxed);
-  auto* row = sheet->rows[row_id].load(kRelaxed);
+  auto* const sheet = sheets_[sheet_id].load(kRelaxed);
+  auto* const row = sheet->rows[row_id].load(kRelaxed);
   return row->cols[col_id];
 }
 
@@ -210,7 +210,7 @@ MappingTable::AllocateNewSpace(  //
   auto& row_ref = sheet->rows[row_id];
   auto* expected = row_ref.load(kRelaxed);
   if (expected != nullptr) return cnt_.load(kRelaxed);
-  auto* row = new (Allocate<Row>()) Row{};
+  auto* const row = new (Allocate<Row>()) Row{};
   if (!row_ref.compare_exchange_strong(expected, row, kRelaxed, kRelaxed)) {
     Release<Row>(row);
     return cnt_.load(kRelaxed);

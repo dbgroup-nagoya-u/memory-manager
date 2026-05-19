@@ -168,15 +168,15 @@ Allocate(                           //
 template <class T = void>
 inline void
 Release(  //
-    void* ptr)
+    const void* const ptr)
 {
   if constexpr (std::is_same_v<T, void>) {
-    ::operator delete(ptr);
+    ::operator delete(const_cast<void*>(ptr));
   } else {
     if constexpr (alignof(T) <= kDefaultAlignment) {
-      ::operator delete(ptr);
+      ::operator delete(const_cast<void*>(ptr));
     } else {
-      ::operator delete(ptr, static_cast<std::align_val_t>(alignof(T)));
+      ::operator delete(const_cast<void*>(ptr), static_cast<std::align_val_t>(alignof(T)));
     }
   }
 }

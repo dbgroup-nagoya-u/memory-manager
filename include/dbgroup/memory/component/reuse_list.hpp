@@ -47,7 +47,7 @@ class alignas(kVMPageSize) ReuseList
    * @param prev The previous reusable page list.
    */
   constexpr explicit ReuseList(  //
-      ReuseList* prev = nullptr)
+      ReuseList* const prev = nullptr)
       : prev_{prev}
   {
   }
@@ -115,7 +115,7 @@ class alignas(kVMPageSize) ReuseList
       for (size_t i = list->head_.load(kRelaxed); i < tail; ++i) {
         Release<Target>(list->pages_[i].load(kRelaxed));
       }
-      auto* next = list->next_.load(kAcquire);
+      auto* const next = list->next_.load(kAcquire);
       delete list;
       list = next;
     }

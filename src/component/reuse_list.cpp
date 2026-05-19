@@ -34,7 +34,7 @@ namespace dbgroup::memory::component
 
 void
 ReuseList::AddPages(  //
-    std::atomic_uintptr_t* tail_addr,
+    std::atomic_uintptr_t* const tail_addr,
     std::vector<void*>& pages,
     const size_t reuse_capacity)
 {
@@ -65,7 +65,7 @@ ReuseList::AddPages(  //
     // if the list has been full, go to the next list
     auto* next = list->next_.load(kAcquire);
     if (next == nullptr) {
-      auto* new_next = new ReuseList{list};
+      auto* const new_next = new ReuseList{list};
       if (!list->next_.compare_exchange_strong(next, new_next, kRelease, kRelaxed)) {
         delete new_next;
         goto end;
@@ -109,7 +109,7 @@ ReuseList::GetPage(                      //
     -> void*
 {
   void* page = nullptr;
-  auto* list = head_addr->load(kRelaxed);
+  auto* const list = head_addr->load(kRelaxed);
   auto head = list->head_.load(kRelaxed);
   if (head < list->tail_.load(kAcquire)) {
     page = list->pages_[head].load(kRelaxed);

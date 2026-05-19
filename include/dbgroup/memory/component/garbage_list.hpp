@@ -92,7 +92,7 @@ class alignas(kVMPageSize) GarbageList
   template <class Target>
   static auto
   Clear(  //
-      std::atomic_uintptr_t* head_addr,
+      std::atomic_uintptr_t* const head_addr,
       const Serial64_t min_epoch,
       std::vector<void*>* reuse_pages = nullptr)  //
       -> bool
@@ -114,7 +114,7 @@ class alignas(kVMPageSize) GarbageList
         if (!list->head_.compare_exchange_strong(head, head + 1, kRelaxed, kRelaxed)) {
           goto end;
         }
-        auto* page = list->garbage_[head].ptr;
+        auto* const page = list->garbage_[head].ptr;
         if constexpr (!std::is_same_v<T, void>) {
           std::bit_cast<T*>(page)->~T();
         }
@@ -134,7 +134,7 @@ class alignas(kVMPageSize) GarbageList
         continue;
       }
 
-      auto* next = list->next_;
+      auto* const next = list->next_;
       delete list;
       uptr = next_ptr;
       list = next;

@@ -56,12 +56,12 @@ class alignas(kCacheLineSize) ListHolder
 
   ListHolder()
   {
-    auto* glist = new GarbageList{};
+    auto* const glist = new GarbageList{};
     cl_glist_.store(glist, kRelease);
     gc_glist_.store(std::bit_cast<uintptr_t>(glist), kRelease);
 
     if constexpr (Target::kReusePages) {
-      auto* rlist = new ReuseList{};
+      auto* const rlist = new ReuseList{};
       cl_rlist_.store(rlist, kRelease);
       gc_rlist_.store(std::bit_cast<uintptr_t>(rlist), kRelease);
     }
@@ -83,11 +83,11 @@ class alignas(kCacheLineSize) ListHolder
    */
   ~ListHolder()
   {
-    auto* glist = std::bit_cast<GarbageList*>(gc_glist_.load(kRelaxed));
+    auto* const glist = std::bit_cast<GarbageList*>(gc_glist_.load(kRelaxed));
     delete glist;
 
     if constexpr (Target::kReusePages) {
-      auto* rlist = cl_rlist_.load(kAcquire);
+      auto* const rlist = cl_rlist_.load(kAcquire);
       ReuseList::DestroyPages<Target>(rlist);
     }
   }
@@ -105,7 +105,7 @@ class alignas(kCacheLineSize) ListHolder
   void
   AddGarbage(  //
       const Serial64_t epoch,
-      void* garbage)
+      void* const garbage)
   {
     AssignCurrentThreadIfNeeded();
     GarbageList::AddGarbage(&cl_glist_, epoch, garbage);
