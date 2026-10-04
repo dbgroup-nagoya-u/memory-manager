@@ -143,6 +143,26 @@ class EpochBasedGC
   }
 
   /**
+   * @return The current epoch.
+   */
+  [[nodiscard]] auto
+  GetCurrentEpoch() const noexcept  //
+      -> Serial64_t
+  {
+    return epoch_manager_.GetCurrentEpoch();
+  }
+
+  /**
+   * @return The current minimum (i.e., protected) epoch.
+   */
+  [[nodiscard]] auto
+  GetMinEpoch() const noexcept  //
+      -> Serial64_t
+  {
+    return epoch_manager_.GetMinEpoch();
+  }
+
+  /**
    * @brief Add a new garbage instance.
    *
    * @tparam Target A class for representing target garbage.
