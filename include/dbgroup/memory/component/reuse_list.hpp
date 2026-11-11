@@ -20,6 +20,7 @@
 // C++ standard libraries
 #include <atomic>
 #include <cstddef>
+#include <cstdint>
 #include <vector>
 
 // external libraries

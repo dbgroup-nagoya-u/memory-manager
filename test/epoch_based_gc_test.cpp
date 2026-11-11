@@ -25,13 +25,17 @@
 #include <future>
 #include <memory>
 #include <mutex>
+#include <new>
 #include <random>
+#include <stdexcept>
 #include <thread>
 #include <utility>
 #include <vector>
 
 // external libraries
 #include <gtest/gtest.h>
+
+#include <dbgroup/constants.hpp>
 
 // library sources
 #include "dbgroup/memory/utility.hpp"
@@ -99,9 +103,9 @@ class EpochBasedGCFixture : public ::testing::Test
   {
     GarbageRef target_weak_ptrs;
     for (size_t loop = 0; loop < kGarbageNumLarge; ++loop) {
-      auto *target = new Target{loop};
-      auto *page = gc_->GetPageIfPossible<SharedPtrTarget>();
-      auto *target_shared = (page == nullptr) ? new std::shared_ptr<Target>{target}
+      auto* target = new Target{loop};
+      auto* page = gc_->GetPageIfPossible<SharedPtrTarget>();
+      auto* target_shared = (page == nullptr) ? new std::shared_ptr<Target>{target}
                                               : new (page) std::shared_ptr<Target>{target};
 
       target_weak_ptrs.emplace_back(*target_shared);
@@ -124,7 +128,7 @@ class EpochBasedGCFixture : public ::testing::Test
     }
 
     GarbageRef target_weak_ptrs;
-    for (auto &&future : futures) {
+    for (auto&& future : futures) {
       auto weak_ptrs = future.get();
       target_weak_ptrs.insert(target_weak_ptrs.end(), weak_ptrs.begin(), weak_ptrs.end());
     }
@@ -138,8 +142,8 @@ class EpochBasedGCFixture : public ::testing::Test
       -> GarbageRef
   {
     // an array for embedding reserved pages
-    std::array<std::atomic<std::shared_ptr<Target> *>, kThreadNum> arr{};
-    for (auto &&page : arr) {
+    std::array<std::atomic<std::shared_ptr<Target>*>, kThreadNum> arr{};
+    for (auto&& page : arr) {
       page.store(nullptr, std::memory_order_release);
     }
 
@@ -154,15 +158,15 @@ class EpochBasedGCFixture : public ::testing::Test
         const auto guard = gc_->CreateEpochGuard();
 
         // prepare a page for embedding
-        auto *target = new Target{loop};
-        auto *page = gc_->GetPageIfPossible<SharedPtrTarget>();
-        auto *target_shared =  //
+        auto* target = new Target{loop};
+        auto* page = gc_->GetPageIfPossible<SharedPtrTarget>();
+        auto* target_shared =  //
             (page == nullptr) ? new std::shared_ptr<Target>{target}
                               : new (page) std::shared_ptr<Target>{target};
 
         // embed the page
         const auto pos = id_dist(rand_engine);
-        auto *expected = arr.at(pos).load(std::memory_order_acquire);
+        auto* expected = arr.at(pos).load(std::memory_order_acquire);
         while (!arr.at(pos).compare_exchange_weak(expected, target_shared,  //
                                                   std::memory_order_acq_rel)) {
           // continue until embedding succeeds
@@ -185,14 +189,14 @@ class EpochBasedGCFixture : public ::testing::Test
 
     // gather weak pointers of GC targets
     GarbageRef target_weak_ptrs;
-    for (auto &&future : futures) {
+    for (auto&& future : futures) {
       auto weak_ptrs = future.get();
       target_weak_ptrs.insert(target_weak_ptrs.end(), weak_ptrs.begin(), weak_ptrs.end());
     }
 
     // delete remaining instances
-    for (auto &&page : arr) {
-      auto *shared_p = page.load(std::memory_order_acquire);
+    for (auto&& page : arr) {
+      auto* shared_p = page.load(std::memory_order_acquire);
       delete shared_p;
     }
 
@@ -216,7 +220,7 @@ class EpochBasedGCFixture : public ::testing::Test
     gc_.reset(nullptr);
 
     // check there is no reference to target pointers
-    for (auto &&target_weak : target_weak_ptrs) {
+    for (auto&& target_weak : target_weak_ptrs) {
       EXPECT_TRUE(target_weak.expired());
     }
   }
@@ -251,7 +255,7 @@ class EpochBasedGCFixture : public ::testing::Test
       auto target_weak_ptrs = TestGC(thread_num);
 
       // check target pointers remain
-      for (auto &&target_weak : target_weak_ptrs) {
+      for (auto&& target_weak : target_weak_ptrs) {
         EXPECT_FALSE(target_weak.expired());
       }
     }
@@ -270,7 +274,7 @@ class EpochBasedGCFixture : public ::testing::Test
     gc_->StopGC();
 
     // check there is no reference to target pointers
-    for (auto &&target_weak : target_weak_ptrs) {
+    for (auto&& target_weak : target_weak_ptrs) {
       EXPECT_TRUE(target_weak.expired());
     }
   }
@@ -278,10 +282,10 @@ class EpochBasedGCFixture : public ::testing::Test
   static void
   VerifyDefaultTarget()
   {
-    auto &&gc = GCBuilder{}.SetGCInterval(kGCInterval).SetGCThreadNum(kThreadNum).Build();
+    auto&& gc = GCBuilder{}.SetGCInterval(kGCInterval).SetGCThreadNum(kThreadNum).Build();
 
     for (size_t loop = 0; loop < kGarbageNumLarge; ++loop) {
-      auto *target = new Target{loop};
+      auto* target = new Target{loop};
       gc->AddGarbage(target);
     }
   }
@@ -352,9 +356,9 @@ TEST_F(  //
     EpochBasedGCFixture,
     GCManageCommonPageSizes)
 {
-  auto &&gc = GCBuilder{}.SetGCInterval(kGCInterval).Build();
+  auto&& gc = GCBuilder{}.SetGCInterval(kGCInterval).Build();
   for (size_t page_size = k512; page_size <= k64Ki; page_size <<= 1UL) {
-    auto *page = ::operator new(page_size, GetAlignValOnVirtualPages(page_size));
+    auto* page = ::operator new(page_size, GetAlignValOnVirtualPages(page_size));
     gc->AddGarbage(page, page_size);
     do {
       page = gc->GetPageIfPossible(page_size);
