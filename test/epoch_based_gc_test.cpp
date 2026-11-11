@@ -363,6 +363,7 @@ TEST_F(  //
     do {
       page = gc->GetPageIfPossible(page_size);
     } while (!page);
+    ::operator delete(page, GetAlignValOnVirtualPages(page_size));
   }
   EXPECT_EQ(gc->GetPageIfPossible(0), nullptr);
   EXPECT_THROW(gc->AddGarbage(nullptr, 0), std::runtime_error);

@@ -102,15 +102,21 @@ class alignas(kVMPageSize) ReuseList
    * @brief Destroy all the linked list and their contents.
    *
    * @tparam Target A class for representing target garbage.
-   * @param list The head list of a linked list.
+   * @param list A list in a linked list.
    * @note This function is not lock-free. Only a single thread must call this
    * function.
+   * @note Lists before a given one may remain if client threads have consumed
+   * them but cleaner threads have not deleted them yet, so this function
+   * rewinds to the oldest list before destruction.
    */
   template <class Target>
   static void
   DestroyPages(  //
       ReuseList* list)
   {
+    while (list != nullptr && list->prev_ != nullptr) {
+      list = list->prev_;
+    }
     while (list != nullptr) {
       const auto tail = list->tail_.load(kAcquire);
       for (size_t i = list->head_.load(kRelaxed); i < tail; ++i) {
