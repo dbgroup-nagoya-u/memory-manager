@@ -6,14 +6,26 @@ buildType:
       short: Debug
       long: Include debugging information without optimizations
       buildType: Debug
-    relWithDebInfo:
-      short: RelWithDebInfo
-      long: Perform optimizations and include debugging informatin
+      settings:
+        MEMORY_MANAGER_TEST_SANITIZER: none
+    tsan:
+      short: RelWithDebInfo+TSan
+      long: Perform optimizations with ThreadSanitizer
       buildType: RelWithDebInfo
+      settings:
+        MEMORY_MANAGER_TEST_SANITIZER: thread
+    asan:
+      short: RelWithDebInfo+ASan/UBSan
+      long: Perform optimizations with AddressSanitizer and UndefinedBehaviorSanitizer
+      buildType: RelWithDebInfo
+      settings:
+        MEMORY_MANAGER_TEST_SANITIZER: address
     release:
       short: Release
       long: Perform optimizations and omit debugging informatin
       buildType: Release
+      settings:
+        MEMORY_MANAGER_TEST_SANITIZER: none
 
 defaltSettings:
   default: default
