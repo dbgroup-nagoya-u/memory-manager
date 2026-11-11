@@ -27,8 +27,8 @@ if(NOT TARGET dbgroup::${PROJECT_NAME})
   # use our thread ID manager
   FetchContent_Declare(
     cpp-utility
-    GIT_REPOSITORY "https://github.com/dbgroup-nagoya-u/cpp-utility.git"
-    GIT_TAG "e00883c3d14da4a0f6e68691c45f7e9a558e4bec" # v0.16.0
+    GIT_REPOSITORY "https://github.com/dbgroup-nagoya-u/cpp-utility"
+    GIT_TAG "3dca32b930df72e61ceb193939a26130b04f8001" # v0.18.1
   )
   FetchContent_MakeAvailable(cpp-utility)
 
