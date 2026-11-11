@@ -101,7 +101,7 @@ class alignas(kVMPageSize) GarbageList
     uint64_t tail;
 
     auto uptr = head_addr->load(kAcquire);
-    if (!head_addr->compare_exchange_strong(uptr, uptr + kCntUnit, kRelaxed, kRelaxed)) {
+    if (!head_addr->compare_exchange_strong(uptr, uptr + kCntUnit, kAcquire, kRelaxed)) {
       return false;  // the thread cannot read this list, so work pessimistically
     }
 
@@ -124,25 +124,25 @@ class alignas(kVMPageSize) GarbageList
           Release<Target>(page);
         }
       }
-      if (head < kGarbageListCapacity || list->next_ == nullptr) goto end;
+      auto* const next = list->next_.load(kAcquire);
+      if (head < kGarbageListCapacity || next == nullptr) goto end;
 
-      const auto next_ptr = std::bit_cast<uintptr_t>(list->next_) | kCntUnit;
+      const auto next_ptr = std::bit_cast<uintptr_t>(next) | kCntUnit;
       if (head_addr->load(kRelaxed) != uptr
-          || !head_addr->compare_exchange_strong(uptr, next_ptr, kRelease, kRelaxed)) {
+          || !head_addr->compare_exchange_strong(uptr, next_ptr, kAcqRel, kRelaxed)) {
         uptr = next_ptr;
-        list = list->next_;
+        list = next;
         continue;
       }
 
-      auto* const next = list->next_;
       delete list;
       uptr = next_ptr;
       list = next;
     }
 
   end:
-    const auto no_garbage =
-        list->next_ == nullptr && (tail == 0 || list->garbage_[tail - 1].epoch < min_epoch);
+    const auto no_garbage = list->next_.load(kAcquire) == nullptr
+                            && (tail == 0 || list->garbage_[tail - 1].epoch < min_epoch);
     head_addr->fetch_sub(kCntUnit, kRelease);
     return no_garbage;
   }
@@ -193,8 +193,8 @@ class alignas(kVMPageSize) GarbageList
   /// @brief The begin position of not freed garbage.
   std::atomic_uint64_t head_{};
 
-  /// @brief The previous garbage list.
-  GarbageList* next_{};
+  /// @brief The next garbage list.
+  std::atomic<GarbageList*> next_{};
 };
 
 }  // namespace dbgroup::memory::component

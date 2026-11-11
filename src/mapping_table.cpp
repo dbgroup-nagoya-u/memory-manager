@@ -177,8 +177,8 @@ MappingTable::GetCell(   //
     throw std::runtime_error{"The process accessed the invalid page ID."};
   }
 
-  auto* const sheet = sheets_[sheet_id].load(kRelaxed);
-  auto* const row = sheet->rows[row_id].load(kRelaxed);
+  auto* const sheet = sheets_[sheet_id].load(kAcquire);
+  auto* const row = sheet->rows[row_id].load(kAcquire);
   return row->cols[col_id];
 }
 
@@ -191,7 +191,7 @@ MappingTable::AllocateNewSpace(  //
   auto row_id = (new_id >> kRowShift) & kIDMask;
   Sheet* sheet;
   if (row_id < kRowNum) {
-    sheet = sheets_[(new_id >> kSheetShift) & kIDMask].load(kRelaxed);
+    sheet = sheets_[(new_id >> kSheetShift) & kIDMask].load(kAcquire);
   } else {
     // create a new sheet
     row_id = 0;
@@ -200,7 +200,7 @@ MappingTable::AllocateNewSpace(  //
     auto* expected = sheet_ref.load(kRelaxed);
     if (expected != nullptr) return cnt_.load(kRelaxed);
     sheet = new (Allocate<Sheet>()) Sheet{};
-    if (!sheet_ref.compare_exchange_strong(expected, sheet, kRelaxed, kRelaxed)) {
+    if (!sheet_ref.compare_exchange_strong(expected, sheet, kRelease, kRelaxed)) {
       Release<Sheet>(sheet);
       return cnt_.load(kRelaxed);
     };
@@ -211,7 +211,7 @@ MappingTable::AllocateNewSpace(  //
   auto* expected = row_ref.load(kRelaxed);
   if (expected != nullptr) return cnt_.load(kRelaxed);
   auto* const row = new (Allocate<Row>()) Row{};
-  if (!row_ref.compare_exchange_strong(expected, row, kRelaxed, kRelaxed)) {
+  if (!row_ref.compare_exchange_strong(expected, row, kRelease, kRelaxed)) {
     Release<Row>(row);
     return cnt_.load(kRelaxed);
   }

@@ -41,7 +41,7 @@ GarbageList::AddGarbage(  //
   if (tail >= kGarbageListCapacity - 1) {
     auto* const next = new GarbageList{};
     tail_addr->store(next, kRelease);
-    list->next_ = next;
+    list->next_.store(next, kRelease);
   }
   list->tail_.fetch_add(1, kRelease);
 }

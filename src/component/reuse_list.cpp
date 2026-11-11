@@ -39,7 +39,7 @@ ReuseList::AddPages(  //
     const size_t reuse_capacity)
 {
   auto uptr = tail_addr->load(kAcquire);
-  if (!tail_addr->compare_exchange_strong(uptr, uptr + kCntUnit, kRelaxed, kRelaxed)) return;
+  if (!tail_addr->compare_exchange_strong(uptr, uptr + kCntUnit, kAcquire, kRelaxed)) return;
 
   auto* list = std::bit_cast<ReuseList*>(uptr & kPtrMask);
   auto tail = list->tail_.load(kRelaxed);
@@ -49,7 +49,7 @@ ReuseList::AddPages(  //
     auto& dest = list->pages_[tail];
     auto* cur_page = dest.load(kRelaxed);
     if (cur_page == nullptr
-        && dest.compare_exchange_strong(cur_page, pages.back(), kRelaxed, kRelaxed)) {
+        && dest.compare_exchange_strong(cur_page, pages.back(), kRelease, kRelaxed)) {
       pages.pop_back();
     }
     if (list->tail_.load(kRelaxed) != tail) goto end;
@@ -112,7 +112,7 @@ ReuseList::GetPage(                      //
   auto* const list = head_addr->load(kRelaxed);
   auto head = list->head_.load(kRelaxed);
   if (head < list->tail_.load(kAcquire)) {
-    page = list->pages_[head].load(kRelaxed);
+    page = list->pages_[head].load(kAcquire);
     if (head == kReuseListCapacity - 1) {
       head_addr->store(list->next_.load(kRelaxed), kRelaxed);
     }
