@@ -22,6 +22,7 @@
 
 // external libraries
 #include <dbgroup/constants.hpp>
+#include <dbgroup/types.hpp>
 
 namespace dbgroup::memory::component
 {

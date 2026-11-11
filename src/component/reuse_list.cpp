@@ -22,6 +22,7 @@
 #include <bit>
 #include <cstddef>
 #include <cstdint>
+#include <vector>
 
 // external libraries
 #include <dbgroup/constants.hpp>
