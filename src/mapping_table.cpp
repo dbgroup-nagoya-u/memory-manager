@@ -57,13 +57,13 @@ MappingTable::~MappingTable()
   try {
     for (size_t i = 0; i < kSheetNum; ++i) {
       auto* const sheet = sheets_[i].load(kRelaxed);
-      if (sheet == nullptr) continue;
+      if (!sheet) continue;
       for (size_t j = 0; j < kRowNum; ++j) {
         auto* const row = sheet->rows[j].load(kRelaxed);
-        if (row == nullptr) continue;
+        if (!row) continue;
         for (size_t k = 0; k < kColNum; ++k) {
           auto* const page = row->cols[k].load(kRelaxed);
-          if (page == nullptr) continue;
+          if (!page) continue;
           deleter_(page);
         }
         Release<Row>(row);
@@ -201,7 +201,7 @@ MappingTable::AllocateNewSpace(  //
     new_id = (new_id + kSheetUnit) & ~(kIDMask << kRowShift);
     auto& sheet_ref = sheets_[(new_id >> kSheetShift) & kIDMask];
     auto* expected = sheet_ref.load(kRelaxed);
-    if (expected != nullptr) return cnt_.load(kRelaxed);
+    if (expected) return cnt_.load(kRelaxed);
     sheet = new (Allocate<Sheet>()) Sheet{};
     if (!sheet_ref.compare_exchange_strong(expected, sheet, kRelease, kRelaxed)) {
       Release<Sheet>(sheet);
@@ -212,7 +212,7 @@ MappingTable::AllocateNewSpace(  //
   // create a new row
   auto& row_ref = sheet->rows[row_id];
   auto* expected = row_ref.load(kRelaxed);
-  if (expected != nullptr) return cnt_.load(kRelaxed);
+  if (expected) return cnt_.load(kRelaxed);
   auto* const row = new (Allocate<Row>()) Row{};
   if (!row_ref.compare_exchange_strong(expected, row, kRelease, kRelaxed)) {
     Release<Row>(row);

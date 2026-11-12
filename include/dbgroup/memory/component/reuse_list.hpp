@@ -117,10 +117,10 @@ class alignas(kVMPageSize) ReuseList
   DestroyPages(  //
       ReuseList* list)
   {
-    while (list != nullptr && list->prev_ != nullptr) {
+    while (list && list->prev_) {
       list = list->prev_;
     }
-    while (list != nullptr) {
+    while (list) {
       const auto tail = list->tail_.load(kAcquire);
       for (size_t i = list->head_.load(kRelaxed); i < tail; ++i) {
         Release<Target>(list->pages_[i].load(kRelaxed));

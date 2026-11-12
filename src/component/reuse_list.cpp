@@ -51,7 +51,7 @@ ReuseList::AddPages(  //
     // add reusable pages
     auto& dest = list->pages_[tail];
     auto* cur_page = dest.load(kRelaxed);
-    if (cur_page == nullptr) {
+    if (!cur_page) {
       auto* const page = pages.back();
       if (zero_fill_size > 0) {
         std::memset(page, 0, zero_fill_size);
@@ -72,7 +72,7 @@ ReuseList::AddPages(  //
 
     // if the list has been full, go to the next list
     auto* next = list->next_.load(kAcquire);
-    if (next == nullptr) {
+    if (!next) {
       auto* const new_next = new ReuseList{list};
       if (!list->next_.compare_exchange_strong(next, new_next, kRelease, kRelaxed)) {
         delete new_next;
@@ -96,9 +96,9 @@ ReuseList::AddPages(  //
   }
 
   // delete the head list if needed
-  if ((tail_addr->load(kAcquire) >> kCntShift) == 1 && list->prev_ != nullptr) {
+  if ((tail_addr->load(kAcquire) >> kCntShift) == 1 && list->prev_) {
     auto* prev = list->prev_;
-    while (prev->prev_ != nullptr) {
+    while (prev->prev_) {
       list = prev;
       prev = prev->prev_;
     }

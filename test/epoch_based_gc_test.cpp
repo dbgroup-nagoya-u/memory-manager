@@ -122,8 +122,8 @@ class EpochBasedGCFixture : public ::testing::Test
     for (size_t loop = 0; loop < kGarbageNumLarge; ++loop) {
       auto* target = new Target{loop};
       auto* page = gc_->GetPageIfPossible<SharedPtrTarget>();
-      auto* target_shared = (page == nullptr) ? new std::shared_ptr<Target>{target}
-                                              : new (page) std::shared_ptr<Target>{target};
+      auto* target_shared =
+          !page ? new std::shared_ptr<Target>{target} : new (page) std::shared_ptr<Target>{target};
 
       target_weak_ptrs.emplace_back(*target_shared);
       gc_->AddGarbage<SharedPtrTarget>(target_shared);
@@ -178,8 +178,8 @@ class EpochBasedGCFixture : public ::testing::Test
         auto* target = new Target{loop};
         auto* page = gc_->GetPageIfPossible<SharedPtrTarget>();
         auto* target_shared =  //
-            (page == nullptr) ? new std::shared_ptr<Target>{target}
-                              : new (page) std::shared_ptr<Target>{target};
+            !page ? new std::shared_ptr<Target>{target}
+                  : new (page) std::shared_ptr<Target>{target};
 
         // embed the page
         const auto pos = id_dist(rand_engine);
@@ -190,7 +190,7 @@ class EpochBasedGCFixture : public ::testing::Test
         }
 
         target_weak_ptrs.emplace_back(*target_shared);
-        if (expected != nullptr) gc_->AddGarbage<SharedPtrTarget>(expected);
+        if (expected) gc_->AddGarbage<SharedPtrTarget>(expected);
       }
 
       p.set_value(std::move(target_weak_ptrs));

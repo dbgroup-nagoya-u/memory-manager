@@ -125,7 +125,7 @@ class alignas(kVMPageSize) GarbageList
           if constexpr (!std::is_same_v<T, void>) {
             std::bit_cast<T*>(page)->~T();
           }
-          if (reuse_pages != nullptr) {
+          if (reuse_pages) {
             reuse_pages->emplace_back(page);
           } else {
             Release<Target>(page);
@@ -133,7 +133,7 @@ class alignas(kVMPageSize) GarbageList
         }
       }
       auto* const next = list->next_.load(kAcquire);
-      if (head < kGarbageListCapacity || next == nullptr) goto end;
+      if (head < kGarbageListCapacity || !next) goto end;
 
       const auto next_ptr = std::bit_cast<uintptr_t>(next) | kCntUnit;
       if (head_addr->load(kRelaxed) != uptr
@@ -149,8 +149,8 @@ class alignas(kVMPageSize) GarbageList
     }
 
   end:
-    const auto no_garbage = list->next_.load(kAcquire) == nullptr
-                            && (tail == 0 || list->garbage_[tail - 1].epoch < min_epoch);
+    const auto no_garbage =
+        !list->next_.load(kAcquire) && (tail == 0 || list->garbage_[tail - 1].epoch < min_epoch);
     head_addr->fetch_sub(kCntUnit, kRelease);
     return no_garbage;
   }
@@ -173,7 +173,7 @@ class alignas(kVMPageSize) GarbageList
   DestroyLists(  //
       GarbageList* list)
   {
-    while (list != nullptr) {
+    while (list) {
       auto* const next = list->next_.load(kAcquire);
       delete list;
       list = next;

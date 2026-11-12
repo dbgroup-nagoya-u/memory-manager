@@ -125,7 +125,7 @@ class GarbageListFixture : public ::testing::Test
       auto* target = new Target{0};
 
       auto* page = list_->GetPageIfPossible();
-      if (page == nullptr) {
+      if (!page) {
         page = Allocate<std::shared_ptr<Target>>();
       }
       auto* garbage = new (page) std::shared_ptr<Target>{target};
