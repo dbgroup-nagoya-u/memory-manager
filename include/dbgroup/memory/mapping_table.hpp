@@ -173,7 +173,8 @@ class alignas(kVMPageSize) MappingTable
    * @retval true if a given page ID is valid.
    * @retval false otherwise.
    */
-  [[nodiscard]] static constexpr auto
+  [[nodiscard]]
+  static constexpr auto
   IsPageID(                //
       const uint64_t pid)  //
       -> bool
@@ -189,7 +190,8 @@ class alignas(kVMPageSize) MappingTable
    * @note This function reuses a deleted page ID if possible, and the slot of
    * the returned page ID always contains `nullptr`.
    */
-  [[nodiscard]] auto ReservePageID()  //
+  [[nodiscard]]
+  auto ReservePageID()  //
       -> uint64_t;
 
   /**
@@ -223,7 +225,8 @@ class alignas(kVMPageSize) MappingTable
    * @return The pair of the actual and reserved usage in bytes, where the
    * actual usage excludes unused slots in reserved spaces.
    */
-  [[nodiscard]] auto GetMemoryUsage() const  //
+  [[nodiscard]]
+  auto GetMemoryUsage() const  //
       -> std::pair<size_t, size_t>;
 
   /*##########################################################################*
@@ -239,7 +242,8 @@ class alignas(kVMPageSize) MappingTable
    * @note This function sets a acquire fence.
    */
   template <class T = void>
-  [[nodiscard]] auto
+  [[nodiscard]]
+  auto
   Load(                          //
       const uint64_t pid) const  //
       -> T*

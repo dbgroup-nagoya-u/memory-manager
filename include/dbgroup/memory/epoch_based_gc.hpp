@@ -147,7 +147,8 @@ class EpochBasedGC
   /**
    * @return The current epoch.
    */
-  [[nodiscard]] auto
+  [[nodiscard]]
+  auto
   GetCurrentEpoch() const noexcept  //
       -> Serial64_t
   {
@@ -157,7 +158,8 @@ class EpochBasedGC
   /**
    * @return The current minimum (i.e., protected) epoch.
    */
-  [[nodiscard]] auto
+  [[nodiscard]]
+  auto
   GetMinEpoch() const noexcept  //
       -> Serial64_t
   {
@@ -450,7 +452,8 @@ class EpochBasedGC
    * the maximum number of threads when this GC was constructed.
    */
   template <class Target>
-  [[nodiscard]] auto
+  [[nodiscard]]
+  auto
   GetGarbageList()
   {
     using ListsPtr = std::unique_ptr<GarbageList<Target>[]>;
@@ -575,7 +578,8 @@ class Builder
    *
    * @return The @c std::unique_ptr of an object.
    */
-  [[nodiscard]] auto
+  [[nodiscard]]
+  auto
   Build() const  //
       -> std::unique_ptr<GC_t>
   {
