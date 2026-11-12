@@ -18,21 +18,26 @@
 #include "dbgroup/memory/component/list_holder.hpp"
 
 // C++ standard libraries
+#include <algorithm>
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
 #include <memory>
+#include <span>
 #include <thread>
 #include <vector>
 
 // external libraries
 #include <gtest/gtest.h>
 
+// our libraries
+#include <dbgroup/constants.hpp>
 #include <dbgroup/lock/utility.hpp>
+#include <dbgroup/thread/id_manager.hpp>
 #include <dbgroup/types.hpp>
 
-// library sources
+// local sources
 #include "dbgroup/memory/utility.hpp"
 
 namespace dbgroup::memory::component::test
@@ -65,6 +70,7 @@ class GarbageListFixture : public ::testing::Test
   struct SharedPtrTarget : public DefaultTarget {
     using T = std::shared_ptr<Target>;
     static constexpr bool kReusePages = true;
+    static constexpr size_t kZeroFillSize = sizeof(T);
   };
 
   /*##########################################################################*
@@ -72,6 +78,7 @@ class GarbageListFixture : public ::testing::Test
    *##########################################################################*/
 
   using GarbageList_t = ListHolder<SharedPtrTarget>;
+  using IDManager = ::dbgroup::thread::IDManager;
 
   /*##########################################################################*
    * Test setup/teardown
@@ -81,13 +88,14 @@ class GarbageListFixture : public ::testing::Test
   SetUp() override
   {
     current_epoch_ = Serial64_t{1};
+    id_ = IDManager::GetThreadID();  // the main thread owns the list
     list_ = std::make_unique<GarbageList_t>();
   }
 
   void
   TearDown() override
   {
-    list_->ClearGarbage(kMaxLong, kReusablePageNum, reuse_pages_);
+    list_->ClearGarbage(id_, kMaxLong, kReusablePageNum, reuse_pages_);
     for (auto* page : reuse_pages_) {
       Release<SharedPtrTarget>(page);
     }
@@ -99,6 +107,16 @@ class GarbageListFixture : public ::testing::Test
    * Internal utility functions
    *##########################################################################*/
 
+  static auto
+  IsFilledWithZeros(  //
+      const void* page,
+      const size_t size)  //
+      -> bool
+  {
+    const std::span bytes{static_cast<const std::byte*>(page), size};
+    return std::ranges::all_of(bytes, [](const std::byte b) { return b == std::byte{0}; });
+  }
+
   void
   AddGarbage(  //
       const size_t n)
@@ -107,7 +125,7 @@ class GarbageListFixture : public ::testing::Test
       auto* target = new Target{0};
 
       auto* page = list_->GetPageIfPossible();
-      if (page == nullptr) {
+      if (!page) {
         page = Allocate<std::shared_ptr<Target>>();
       }
       auto* garbage = new (page) std::shared_ptr<Target>{target};
@@ -162,13 +180,14 @@ class GarbageListFixture : public ::testing::Test
         }
         thread_local std::vector<void*> reuse_pages{};
         while (is_running) {
-          list_->ClearGarbage(current_epoch_.load(kRelaxed) - 1, kReusablePageNum, reuse_pages);
+          list_->ClearGarbage(id_, current_epoch_.load(kRelaxed) - 1, kReusablePageNum,
+                              reuse_pages);
           for (auto* page : reuse_pages) {
             Release<SharedPtrTarget>(page);
           }
           reuse_pages.clear();
         }
-        list_->ClearGarbage(kMaxLong, kReusablePageNum, reuse_pages);
+        list_->ClearGarbage(id_, kMaxLong, kReusablePageNum, reuse_pages);
         for (auto* page : reuse_pages) {
           Release<SharedPtrTarget>(page);
         }
@@ -195,6 +214,9 @@ class GarbageListFixture : public ::testing::Test
 
   std::vector<void*> reuse_pages_{};
 
+  /// @brief The thread ID that owns a target list.
+  size_t id_{};
+
   std::unique_ptr<GarbageList_t> list_{};
 };
 
@@ -207,7 +229,7 @@ TEST_F(  //
     ClearGarbageWithoutProtectedEpochReleaseAllGarbage)
 {
   AddGarbage(kLargeNum);
-  list_->ClearGarbage(kMaxLong, kReusablePageNum, reuse_pages_);
+  list_->ClearGarbage(id_, kMaxLong, kReusablePageNum, reuse_pages_);
 
   CheckGarbage(kLargeNum);
 }
@@ -221,7 +243,7 @@ TEST_F(  //
   AddGarbage(kLargeNum);
   current_epoch_ = protected_epoch;
   AddGarbage(kLargeNum);
-  list_->ClearGarbage(protected_epoch, kReusablePageNum, reuse_pages_);
+  list_->ClearGarbage(id_, protected_epoch, kReusablePageNum, reuse_pages_);
 
   CheckGarbage(kLargeNum);
 }
@@ -238,13 +260,31 @@ TEST_F(  //
     GetPageIfPossibleWithPagesReturnReusablePage)
 {
   AddGarbage(kLargeNum);
-  list_->ClearGarbage(kMaxLong, kReusablePageNum, reuse_pages_);
+  list_->ClearGarbage(id_, kMaxLong, kReusablePageNum, reuse_pages_);
 
   for (size_t i = 0; i < kReusablePageNum; ++i) {
     auto* page = list_->GetPageIfPossible();
-    EXPECT_NE(nullptr, page);
+    ASSERT_NE(nullptr, page);
+    EXPECT_TRUE(IsFilledWithZeros(page, SharedPtrTarget::kZeroFillSize));
     Release<std::shared_ptr<Target>>(page);
   }
+  EXPECT_EQ(nullptr, list_->GetPageIfPossible());
+}
+
+TEST_F(  //
+    GarbageListFixture,
+    ClearGarbageWithoutOwnerReleaseGarbageWithoutReuse)
+{
+  // reserve and release a thread ID by a temporary thread
+  size_t id{};
+  std::thread{[&id] { id = IDManager::GetThreadID(); }}.join();
+  ASSERT_FALSE(IDManager::IsReserved(id));
+
+  AddGarbage(kLargeNum);
+  list_->ClearGarbage(id, kMaxLong, kReusablePageNum, reuse_pages_);
+
+  CheckGarbage(kLargeNum);
+  EXPECT_TRUE(reuse_pages_.empty());
   EXPECT_EQ(nullptr, list_->GetPageIfPossible());
 }
 

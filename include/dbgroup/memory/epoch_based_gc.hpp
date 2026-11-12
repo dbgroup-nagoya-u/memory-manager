@@ -24,11 +24,13 @@
 #include <iostream>
 #include <memory>
 #include <random>
+#include <stdexcept>
+#include <string>
 #include <thread>
 #include <tuple>
 #include <vector>
 
-// external libraries
+// our libraries
 #include <dbgroup/constants.hpp>
 #include <dbgroup/thread/epoch_guard.hpp>
 #include <dbgroup/thread/epoch_manager.hpp>
@@ -60,7 +62,7 @@ class EpochBasedGC
   using IDManager = ::dbgroup::thread::IDManager;
   using EpochGuard = ::dbgroup::thread::EpochGuard;
   using EpochManager = ::dbgroup::thread::EpochManager<Serial64_t>;
-  using Clock_t = ::std::chrono::system_clock;
+  using Clock_t = ::std::chrono::steady_clock;
 
   template <class Target>
   using GarbageList = component::ListHolder<Target>;
@@ -167,13 +169,15 @@ class EpochBasedGC
    *
    * @tparam Target A class for representing target garbage.
    * @param garbage_ptr A pointer to target garbage.
+   * @exception `std::out_of_range` if the ID of the current thread is not less than
+   * the maximum number of threads when this GC was constructed.
    */
   template <class Target = DefaultTarget>
   void
   AddGarbage(  //
       const void* const garbage_ptr)
   {
-    auto* const ptr = static_cast<typename Target::T*>(const_cast<void*>(garbage_ptr));
+    auto* const ptr = const_cast<void*>(garbage_ptr);
     GetGarbageList<Target>()->AddGarbage(epoch_manager_.GetCurrentEpoch(), ptr);
   }
 
@@ -183,6 +187,8 @@ class EpochBasedGC
    * @param garbage_ptr A pointer to target garbage.
    * @param page_size The size of a garbage page.
    * @exception `std::runtime_error` if illegal `page_size` is given.
+   * @exception `std::out_of_range` if the ID of the current thread is not less than
+   * the maximum number of threads when this GC was constructed.
    */
   void
   AddGarbage(  //
@@ -192,43 +198,35 @@ class EpochBasedGC
     const auto epoch = epoch_manager_.GetCurrentEpoch();
     switch (page_size) {
       case k512: {
-        auto* const ptr = static_cast<Page512*>(const_cast<void*>(garbage_ptr));
-        GetGarbageList<Page512>()->AddGarbage(epoch, ptr);
+        GetGarbageList<Page512>()->AddGarbage(epoch, const_cast<void*>(garbage_ptr));
         break;
       }
       case k1Ki: {
-        auto* const ptr = static_cast<Page1Ki*>(const_cast<void*>(garbage_ptr));
-        GetGarbageList<Page1Ki>()->AddGarbage(epoch, ptr);
+        GetGarbageList<Page1Ki>()->AddGarbage(epoch, const_cast<void*>(garbage_ptr));
         break;
       }
       case k2Ki: {
-        auto* const ptr = static_cast<Page2Ki*>(const_cast<void*>(garbage_ptr));
-        GetGarbageList<Page2Ki>()->AddGarbage(epoch, ptr);
+        GetGarbageList<Page2Ki>()->AddGarbage(epoch, const_cast<void*>(garbage_ptr));
         break;
       }
       case k4Ki: {
-        auto* const ptr = static_cast<Page4Ki*>(const_cast<void*>(garbage_ptr));
-        GetGarbageList<Page4Ki>()->AddGarbage(epoch, ptr);
+        GetGarbageList<Page4Ki>()->AddGarbage(epoch, const_cast<void*>(garbage_ptr));
         break;
       }
       case k8Ki: {
-        auto* const ptr = static_cast<Page8Ki*>(const_cast<void*>(garbage_ptr));
-        GetGarbageList<Page8Ki>()->AddGarbage(epoch, ptr);
+        GetGarbageList<Page8Ki>()->AddGarbage(epoch, const_cast<void*>(garbage_ptr));
         break;
       }
       case k16Ki: {
-        auto* const ptr = static_cast<Page16Ki*>(const_cast<void*>(garbage_ptr));
-        GetGarbageList<Page16Ki>()->AddGarbage(epoch, ptr);
+        GetGarbageList<Page16Ki>()->AddGarbage(epoch, const_cast<void*>(garbage_ptr));
         break;
       }
       case k32Ki: {
-        auto* const ptr = static_cast<Page32Ki*>(const_cast<void*>(garbage_ptr));
-        GetGarbageList<Page32Ki>()->AddGarbage(epoch, ptr);
+        GetGarbageList<Page32Ki>()->AddGarbage(epoch, const_cast<void*>(garbage_ptr));
         break;
       }
       case k64Ki: {
-        auto* const ptr = static_cast<Page64Ki*>(const_cast<void*>(garbage_ptr));
-        GetGarbageList<Page64Ki>()->AddGarbage(epoch, ptr);
+        GetGarbageList<Page64Ki>()->AddGarbage(epoch, const_cast<void*>(garbage_ptr));
         break;
       }
       default:
@@ -241,8 +239,11 @@ class EpochBasedGC
    * @brief Reuse a destructed page if exist.
    *
    * @tparam Target A class for representing target garbage.
-   * @retval A memory page if exist.
+   * @retval A memory page if exist, whose first `Target::kZeroFillSize` bytes are
+   * filled with zeros.
    * @retval nullptr otherwise.
+   * @exception `std::out_of_range` if the ID of the current thread is not less than
+   * the maximum number of threads when this GC was constructed.
    */
   template <class Target = DefaultTarget>
   auto
@@ -257,8 +258,10 @@ class EpochBasedGC
    * @brief Reuse a destructed page if exist.
    *
    * @param page_size The size of a garbage page.
-   * @retval A memory page if exist.
+   * @retval A memory page filled with zeros if exist.
    * @retval nullptr otherwise.
+   * @exception `std::out_of_range` if the ID of the current thread is not less than
+   * the maximum number of threads when this GC was constructed.
    */
   auto
   GetPageIfPossible(           //
@@ -443,6 +446,8 @@ class EpochBasedGC
   /**
    * @tparam Target A class for representing target garbage.
    * @return A garbage list for a given target class.
+   * @exception `std::out_of_range` if the ID of the current thread is not less than
+   * the maximum number of threads when this GC was constructed.
    */
   template <class Target>
   [[nodiscard]] auto
@@ -450,7 +455,13 @@ class EpochBasedGC
   {
     using ListsPtr = std::unique_ptr<GarbageList<Target>[]>;
 
-    return &(std::get<ListsPtr>(garbage_lists_)[IDManager::GetThreadID()]);
+    // the maximum number of threads may be increased after construction
+    const auto id = IDManager::GetThreadID();
+    if (id >= thread_num_) [[unlikely]] {
+      throw std::out_of_range{
+          "EpochBasedGC: The thread ID exceeded the maximum number of threads at construction."};
+    }
+    return &(std::get<ListsPtr>(garbage_lists_)[id]);
   }
 
   /**
@@ -477,7 +488,7 @@ class EpochBasedGC
       if (++pos >= thread_num_) {
         pos = 0;
       }
-      no_garbage &= lists[pos].ClearGarbage(min_epoch, reuse_capacity_, reuse_pages);
+      no_garbage &= lists[pos].ClearGarbage(pos, min_epoch, reuse_capacity_, reuse_pages);
     }
     for (auto* const page : reuse_pages) {
       Release<Target>(page);
@@ -485,7 +496,9 @@ class EpochBasedGC
     reuse_pages.clear();
 
     if constexpr (sizeof...(Tails) > 0) {
-      return no_garbage && ClearGarbage<Tails...>(min_epoch);
+      // clear the remaining targets even if this target still has garbage
+      const auto no_rest_garbage = ClearGarbage<Tails...>(min_epoch);
+      return no_garbage && no_rest_garbage;
     }
     return no_garbage;
   }

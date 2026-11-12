@@ -1,0 +1,4 @@
+# ThreadSanitizer suppressions for unit tests.
+#
+# Add a suppression rule (e.g., "race:<function or class name>") with its reason
+# when a reported race is intended by design.

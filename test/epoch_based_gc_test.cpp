@@ -18,14 +18,20 @@
 #include "dbgroup/memory/epoch_based_gc.hpp"
 
 // C++ standard libraries
+#include <algorithm>
 #include <array>
 #include <atomic>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <future>
+#include <latch>
 #include <memory>
 #include <mutex>
+#include <new>
 #include <random>
+#include <span>
+#include <stdexcept>
 #include <thread>
 #include <utility>
 #include <vector>
@@ -33,7 +39,11 @@
 // external libraries
 #include <gtest/gtest.h>
 
-// library sources
+// our libraries
+#include <dbgroup/constants.hpp>
+#include <dbgroup/thread/id_manager.hpp>
+
+// local sources
 #include "dbgroup/memory/utility.hpp"
 
 namespace dbgroup::memory::test
@@ -51,6 +61,7 @@ using Target = uint64_t;
 struct SharedPtrTarget : public DefaultTarget {
   using T = std::shared_ptr<Target>;
   static constexpr bool kReusePages = true;
+  static constexpr size_t kZeroFillSize = sizeof(T);
 };
 
 class EpochBasedGCFixture : public ::testing::Test
@@ -93,16 +104,26 @@ class EpochBasedGCFixture : public ::testing::Test
    * Internal utility functions
    *##########################################################################*/
 
+  static auto
+  IsFilledWithZeros(  //
+      const void* page,
+      const size_t size)  //
+      -> bool
+  {
+    const std::span bytes{static_cast<const std::byte*>(page), size};
+    return std::ranges::all_of(bytes, [](const std::byte b) { return b == std::byte{0}; });
+  }
+
   void
   AddGarbage(  //
       std::promise<GarbageRef> p)
   {
     GarbageRef target_weak_ptrs;
     for (size_t loop = 0; loop < kGarbageNumLarge; ++loop) {
-      auto *target = new Target{loop};
-      auto *page = gc_->GetPageIfPossible<SharedPtrTarget>();
-      auto *target_shared = (page == nullptr) ? new std::shared_ptr<Target>{target}
-                                              : new (page) std::shared_ptr<Target>{target};
+      auto* target = new Target{loop};
+      auto* page = gc_->GetPageIfPossible<SharedPtrTarget>();
+      auto* target_shared =
+          !page ? new std::shared_ptr<Target>{target} : new (page) std::shared_ptr<Target>{target};
 
       target_weak_ptrs.emplace_back(*target_shared);
       gc_->AddGarbage<SharedPtrTarget>(target_shared);
@@ -124,7 +145,7 @@ class EpochBasedGCFixture : public ::testing::Test
     }
 
     GarbageRef target_weak_ptrs;
-    for (auto &&future : futures) {
+    for (auto&& future : futures) {
       auto weak_ptrs = future.get();
       target_weak_ptrs.insert(target_weak_ptrs.end(), weak_ptrs.begin(), weak_ptrs.end());
     }
@@ -138,8 +159,8 @@ class EpochBasedGCFixture : public ::testing::Test
       -> GarbageRef
   {
     // an array for embedding reserved pages
-    std::array<std::atomic<std::shared_ptr<Target> *>, kThreadNum> arr{};
-    for (auto &&page : arr) {
+    std::array<std::atomic<std::shared_ptr<Target>*>, kThreadNum> arr{};
+    for (auto&& page : arr) {
       page.store(nullptr, std::memory_order_release);
     }
 
@@ -154,22 +175,22 @@ class EpochBasedGCFixture : public ::testing::Test
         const auto guard = gc_->CreateEpochGuard();
 
         // prepare a page for embedding
-        auto *target = new Target{loop};
-        auto *page = gc_->GetPageIfPossible<SharedPtrTarget>();
-        auto *target_shared =  //
-            (page == nullptr) ? new std::shared_ptr<Target>{target}
-                              : new (page) std::shared_ptr<Target>{target};
+        auto* target = new Target{loop};
+        auto* page = gc_->GetPageIfPossible<SharedPtrTarget>();
+        auto* target_shared =  //
+            !page ? new std::shared_ptr<Target>{target}
+                  : new (page) std::shared_ptr<Target>{target};
 
         // embed the page
         const auto pos = id_dist(rand_engine);
-        auto *expected = arr.at(pos).load(std::memory_order_acquire);
+        auto* expected = arr.at(pos).load(std::memory_order_acquire);
         while (!arr.at(pos).compare_exchange_weak(expected, target_shared,  //
                                                   std::memory_order_acq_rel)) {
           // continue until embedding succeeds
         }
 
         target_weak_ptrs.emplace_back(*target_shared);
-        if (expected != nullptr) gc_->AddGarbage<SharedPtrTarget>(expected);
+        if (expected) gc_->AddGarbage<SharedPtrTarget>(expected);
       }
 
       p.set_value(std::move(target_weak_ptrs));
@@ -185,14 +206,14 @@ class EpochBasedGCFixture : public ::testing::Test
 
     // gather weak pointers of GC targets
     GarbageRef target_weak_ptrs;
-    for (auto &&future : futures) {
+    for (auto&& future : futures) {
       auto weak_ptrs = future.get();
       target_weak_ptrs.insert(target_weak_ptrs.end(), weak_ptrs.begin(), weak_ptrs.end());
     }
 
     // delete remaining instances
-    for (auto &&page : arr) {
-      auto *shared_p = page.load(std::memory_order_acquire);
+    for (auto&& page : arr) {
+      auto* shared_p = page.load(std::memory_order_acquire);
       delete shared_p;
     }
 
@@ -216,7 +237,7 @@ class EpochBasedGCFixture : public ::testing::Test
     gc_.reset(nullptr);
 
     // check there is no reference to target pointers
-    for (auto &&target_weak : target_weak_ptrs) {
+    for (auto&& target_weak : target_weak_ptrs) {
       EXPECT_TRUE(target_weak.expired());
     }
   }
@@ -251,7 +272,7 @@ class EpochBasedGCFixture : public ::testing::Test
       auto target_weak_ptrs = TestGC(thread_num);
 
       // check target pointers remain
-      for (auto &&target_weak : target_weak_ptrs) {
+      for (auto&& target_weak : target_weak_ptrs) {
         EXPECT_FALSE(target_weak.expired());
       }
     }
@@ -270,7 +291,7 @@ class EpochBasedGCFixture : public ::testing::Test
     gc_->StopGC();
 
     // check there is no reference to target pointers
-    for (auto &&target_weak : target_weak_ptrs) {
+    for (auto&& target_weak : target_weak_ptrs) {
       EXPECT_TRUE(target_weak.expired());
     }
   }
@@ -278,10 +299,10 @@ class EpochBasedGCFixture : public ::testing::Test
   static void
   VerifyDefaultTarget()
   {
-    auto &&gc = GCBuilder{}.SetGCInterval(kGCInterval).SetGCThreadNum(kThreadNum).Build();
+    auto&& gc = GCBuilder{}.SetGCInterval(kGCInterval).SetGCThreadNum(kThreadNum).Build();
 
     for (size_t loop = 0; loop < kGarbageNumLarge; ++loop) {
-      auto *target = new Target{loop};
+      auto* target = new Target{loop};
       gc->AddGarbage(target);
     }
   }
@@ -352,16 +373,78 @@ TEST_F(  //
     EpochBasedGCFixture,
     GCManageCommonPageSizes)
 {
-  auto &&gc = GCBuilder{}.SetGCInterval(kGCInterval).Build();
+  auto&& gc = GCBuilder{}.SetGCInterval(kGCInterval).Build();
   for (size_t page_size = k512; page_size <= k64Ki; page_size <<= 1UL) {
-    auto *page = ::operator new(page_size, GetAlignValOnVirtualPages(page_size));
+    auto* page = ::operator new(page_size, GetAlignValOnVirtualPages(page_size));
     gc->AddGarbage(page, page_size);
     do {
       page = gc->GetPageIfPossible(page_size);
     } while (!page);
+    EXPECT_TRUE(IsFilledWithZeros(page, page_size));
+    ::operator delete(page, GetAlignValOnVirtualPages(page_size));
   }
   EXPECT_EQ(gc->GetPageIfPossible(0), nullptr);
   EXPECT_THROW(gc->AddGarbage(nullptr, 0), std::runtime_error);
+}
+
+TEST_F(  //
+    EpochBasedGCFixture,
+    GCReleaseGarbageOfAllTargetsEvenIfDefaultTargetRemains)
+{
+  auto&& gc = GCBuilder{}.SetGCInterval(kGCInterval).Build();
+  auto* target_shared = new std::shared_ptr<Target>{new Target{0}};
+  const std::weak_ptr<Target> target_weak = *target_shared;
+  gc->AddGarbage<SharedPtrTarget>(target_shared);
+
+  // keep adding garbage of the default target, which always remains in GC
+  constexpr std::chrono::seconds kTimeout{10};
+  constexpr std::chrono::microseconds kAddInterval{100};
+  const auto deadline = std::chrono::steady_clock::now() + kTimeout;
+  while (!target_weak.expired() && std::chrono::steady_clock::now() < deadline) {
+    gc->AddGarbage(new Target{0});
+    std::this_thread::sleep_for(kAddInterval);
+  }
+  EXPECT_TRUE(target_weak.expired());
+}
+
+TEST_F(  //
+    EpochBasedGCFixture,
+    GCWithTooLargeThreadIDsThrowOutOfRange)
+{
+  using IDManager = ::dbgroup::thread::IDManager;
+
+  // construct GC for only one thread, and then increase the capacity
+  const auto max_thread_num = IDManager::GetMaxThreadNum();
+  IDManager::SetMaxThreadNum(1);
+  auto&& gc = GCBuilder{}.SetGCInterval(kGCInterval).Build();
+  IDManager::SetMaxThreadNum(max_thread_num);
+
+  // run threads simultaneously so that some of them have thread IDs over the capacity
+  constexpr size_t kWorkerNum = 2;
+  std::latch ready{kWorkerNum};
+  std::atomic_size_t thrown_num{0};
+  auto f = [&] {
+    const auto id = IDManager::GetThreadID();
+    ready.arrive_and_wait();
+    if (id == 0) return;
+
+    auto* garbage = new Target{0};
+    EXPECT_THROW(gc->AddGarbage(garbage), std::out_of_range);
+    EXPECT_THROW(gc->AddGarbage(garbage, k4Ki), std::out_of_range);
+    EXPECT_THROW(static_cast<void>(gc->GetPageIfPossible<SharedPtrTarget>()), std::out_of_range);
+    EXPECT_THROW(static_cast<void>(gc->GetPageIfPossible(k4Ki)), std::out_of_range);
+    delete garbage;
+    thrown_num.fetch_add(1, std::memory_order_relaxed);
+  };
+
+  std::vector<std::thread> threads{};
+  for (size_t i = 0; i < kWorkerNum; ++i) {
+    threads.emplace_back(f);
+  }
+  for (auto&& t : threads) {
+    t.join();
+  }
+  EXPECT_GE(thrown_num.load(std::memory_order_relaxed), 1);
 }
 
 }  // namespace dbgroup::memory::test

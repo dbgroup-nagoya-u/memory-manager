@@ -21,11 +21,14 @@
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <exception>
+#include <functional>
 #include <iostream>
 #include <stdexcept>
+#include <thread>
 #include <utility>
 
-// external libraries
+// our libraries
 #include <dbgroup/constants.hpp>
 #include <dbgroup/lock/utility.hpp>
 
@@ -54,13 +57,13 @@ MappingTable::~MappingTable()
   try {
     for (size_t i = 0; i < kSheetNum; ++i) {
       auto* const sheet = sheets_[i].load(kRelaxed);
-      if (sheet == nullptr) continue;
+      if (!sheet) continue;
       for (size_t j = 0; j < kRowNum; ++j) {
         auto* const row = sheet->rows[j].load(kRelaxed);
-        if (row == nullptr) continue;
+        if (!row) continue;
         for (size_t k = 0; k < kColNum; ++k) {
           auto* const page = row->cols[k].load(kRelaxed);
-          if (page == nullptr) continue;
+          if (!page) continue;
           deleter_(page);
         }
         Release<Row>(row);
@@ -84,7 +87,7 @@ MappingTable::ReservePageID()  //
   for (size_t i = 1; true; ++i) {
     while ((cur_id & kIDMask) < kColNum) {
       if (cur_id > kMaxPID) throw std::runtime_error{"The mapping table has no space."};
-      if (cnt_.compare_exchange_weak(cur_id, cur_id + kColUnit, kRelaxed, kRelaxed)) {
+      if (cnt_.compare_exchange_weak(cur_id, cur_id + kColUnit, kAcquire, kRelaxed)) {
         if ((cur_id & kIDMask) >= kColNum - 1) {
           AllocateNewSpace(cur_id);
         }
@@ -177,8 +180,8 @@ MappingTable::GetCell(   //
     throw std::runtime_error{"The process accessed the invalid page ID."};
   }
 
-  auto* const sheet = sheets_[sheet_id].load(kRelaxed);
-  auto* const row = sheet->rows[row_id].load(kRelaxed);
+  auto* const sheet = sheets_[sheet_id].load(kAcquire);
+  auto* const row = sheet->rows[row_id].load(kAcquire);
   return row->cols[col_id];
 }
 
@@ -191,16 +194,16 @@ MappingTable::AllocateNewSpace(  //
   auto row_id = (new_id >> kRowShift) & kIDMask;
   Sheet* sheet;
   if (row_id < kRowNum) {
-    sheet = sheets_[(new_id >> kSheetShift) & kIDMask].load(kRelaxed);
+    sheet = sheets_[(new_id >> kSheetShift) & kIDMask].load(kAcquire);
   } else {
     // create a new sheet
     row_id = 0;
     new_id = (new_id + kSheetUnit) & ~(kIDMask << kRowShift);
     auto& sheet_ref = sheets_[(new_id >> kSheetShift) & kIDMask];
     auto* expected = sheet_ref.load(kRelaxed);
-    if (expected != nullptr) return cnt_.load(kRelaxed);
+    if (expected) return cnt_.load(kRelaxed);
     sheet = new (Allocate<Sheet>()) Sheet{};
-    if (!sheet_ref.compare_exchange_strong(expected, sheet, kRelaxed, kRelaxed)) {
+    if (!sheet_ref.compare_exchange_strong(expected, sheet, kRelease, kRelaxed)) {
       Release<Sheet>(sheet);
       return cnt_.load(kRelaxed);
     };
@@ -209,14 +212,14 @@ MappingTable::AllocateNewSpace(  //
   // create a new row
   auto& row_ref = sheet->rows[row_id];
   auto* expected = row_ref.load(kRelaxed);
-  if (expected != nullptr) return cnt_.load(kRelaxed);
+  if (expected) return cnt_.load(kRelaxed);
   auto* const row = new (Allocate<Row>()) Row{};
-  if (!row_ref.compare_exchange_strong(expected, row, kRelaxed, kRelaxed)) {
+  if (!row_ref.compare_exchange_strong(expected, row, kRelease, kRelaxed)) {
     Release<Row>(row);
     return cnt_.load(kRelaxed);
   }
 
-  cnt_.store(new_id, kRelaxed);
+  cnt_.store(new_id, kRelease);
   return new_id;
 }
 }  // namespace dbgroup::memory

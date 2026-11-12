@@ -22,9 +22,9 @@
 #include <bit>
 #include <cstddef>
 #include <cstdint>
-#include <memory>
+#include <vector>
 
-// external libraries
+// our libraries
 #include <dbgroup/constants.hpp>
 #include <dbgroup/thread/id_manager.hpp>
 #include <dbgroup/types.hpp>
@@ -84,7 +84,7 @@ class alignas(kCacheLineSize) ListHolder
   ~ListHolder()
   {
     auto* const glist = std::bit_cast<GarbageList*>(gc_glist_.load(kRelaxed));
-    delete glist;
+    GarbageList::DestroyLists(glist);
 
     if constexpr (Target::kReusePages) {
       auto* const rlist = cl_rlist_.load(kAcquire);
@@ -107,7 +107,6 @@ class alignas(kCacheLineSize) ListHolder
       const Serial64_t epoch,
       void* const garbage)
   {
-    AssignCurrentThreadIfNeeded();
     GarbageList::AddGarbage(&cl_glist_, epoch, garbage);
   }
 
@@ -121,7 +120,6 @@ class alignas(kCacheLineSize) ListHolder
   GetPageIfPossible()  //
       -> void*
   {
-    AssignCurrentThreadIfNeeded();
     return ReuseList::GetPage(&cl_rlist_);
   }
 
@@ -132,6 +130,10 @@ class alignas(kCacheLineSize) ListHolder
   /**
    * @brief Release registered garbage if possible.
    *
+   * If no thread reserves the given thread ID, this function releases garbage
+   * pages instead of retaining them for reuse.
+   *
+   * @param id The thread ID that corresponds to this list.
    * @param min_epoch An epoch to check whether garbage can be freed.
    * @param reuse_capacity The maximum number of reusable pages for each thread.
    * @param reuse_pages A temporary buffer for reusable pages.
@@ -140,22 +142,22 @@ class alignas(kCacheLineSize) ListHolder
    */
   auto
   ClearGarbage(  //
+      const size_t id,
       const Serial64_t min_epoch,
       const size_t reuse_capacity,
       std::vector<void*>& reuse_pages)  //
       -> bool
   {
-    fence_.test_and_set(kAcquire);
     if constexpr (!Target::kReusePages) {
       return GarbageList::Clear<Target>(&gc_glist_, min_epoch);
     } else {
-      if (heartbeat_.expired()) {
+      if (!IDManager::IsReserved(id)) {
         return GarbageList::Clear<Target>(&gc_glist_, min_epoch);
       }
 
       const auto no_garbage = GarbageList::Clear<Target>(&gc_glist_, min_epoch, &reuse_pages);
       if (!reuse_pages.empty()) {
-        ReuseList::AddPages(&gc_rlist_, reuse_pages, reuse_capacity);
+        ReuseList::AddPages(&gc_rlist_, reuse_pages, reuse_capacity, Target::kZeroFillSize);
       }
       return no_garbage;
     }
@@ -163,27 +165,16 @@ class alignas(kCacheLineSize) ListHolder
 
  private:
   /*##########################################################################*
-   * Internal utilities
+   * Static assertions
    *##########################################################################*/
 
-  /**
-   * @brief Assign this list to the current thread.
-   *
-   */
-  void
-  AssignCurrentThreadIfNeeded()
-  {
-    if (!heartbeat_.expired()) return;
-    heartbeat_ = IDManager::GetHeartBeat();
-    fence_.clear(kRelease);
-  }
+  static_assert(
+      !Target::kReusePages || requires { size_t{Target::kZeroFillSize}; },
+      "Targets reusing pages must define `kZeroFillSize` (zero for no filling).");
 
   /*##########################################################################*
    * Internal member variables
    *##########################################################################*/
-
-  /// @brief A flag for checking the corresponding thread has exited.
-  std::weak_ptr<size_t> heartbeat_{};
 
   /// @brief A garbage list for a client thread.
   std::atomic<GarbageList*> cl_glist_{};
@@ -191,14 +182,8 @@ class alignas(kCacheLineSize) ListHolder
   /// @brief A reusable page list for a client thread.
   std::atomic<ReuseList*> cl_rlist_{};
 
-  /// @brief A padding region for cache line alignment.
-  uint64_t padding_[4] = {};
-
-  /// @brief A dummy fence.
-  std::atomic_flag fence_{};
-
   /// @brief A garbage list for cleaner threads.
-  std::atomic_uintptr_t gc_glist_{};
+  alignas(kCacheLineSize) std::atomic_uintptr_t gc_glist_{};
 
   /// @brief A reusable page list for cleaner threads.
   std::atomic_uintptr_t gc_rlist_{};

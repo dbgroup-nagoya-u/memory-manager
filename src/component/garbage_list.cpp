@@ -20,8 +20,9 @@
 // C++ standard libraries
 #include <atomic>
 
-// external libraries
+// our libraries
 #include <dbgroup/constants.hpp>
+#include <dbgroup/types.hpp>
 
 namespace dbgroup::memory::component
 {
@@ -41,9 +42,9 @@ GarbageList::AddGarbage(  //
   if (tail >= kGarbageListCapacity - 1) {
     auto* const next = new GarbageList{};
     tail_addr->store(next, kRelease);
-    list->next_ = next;
+    list->next_.store(next, kRelease);
   }
-  list->tail_.fetch_add(1, kRelease);
+  list->tail_.store(tail + 1, kRelease);
 }
 
 }  // namespace dbgroup::memory::component

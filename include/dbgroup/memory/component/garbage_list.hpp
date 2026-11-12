@@ -23,7 +23,7 @@
 #include <cstddef>
 #include <vector>
 
-// external libraries
+// our libraries
 #include <dbgroup/constants.hpp>
 #include <dbgroup/types.hpp>
 
@@ -101,7 +101,7 @@ class alignas(kVMPageSize) GarbageList
     uint64_t tail;
 
     auto uptr = head_addr->load(kAcquire);
-    if (!head_addr->compare_exchange_strong(uptr, uptr + kCntUnit, kRelaxed, kRelaxed)) {
+    if (!head_addr->compare_exchange_strong(uptr, uptr + kCntUnit, kAcquire, kRelaxed)) {
       return false;  // the thread cannot read this list, so work pessimistically
     }
 
@@ -110,31 +110,39 @@ class alignas(kVMPageSize) GarbageList
     while (true) {
       tail = list->tail_.load(kAcquire);
       auto head = list->head_.load(kRelaxed);
-      for (; head < tail && list->garbage_[head].epoch < min_epoch; ++head) {
-        if (!list->head_.compare_exchange_strong(head, head + 1, kRelaxed, kRelaxed)) {
-          goto end;
+
+      // claim releasable garbage in batches
+      while (true) {
+        auto new_head = head;
+        while (new_head < tail && new_head - head < kMaxBatchSize
+               && list->garbage_[new_head].epoch < min_epoch) {
+          ++new_head;
         }
-        auto* const page = list->garbage_[head].ptr;
-        if constexpr (!std::is_same_v<T, void>) {
-          std::bit_cast<T*>(page)->~T();
-        }
-        if (reuse_pages != nullptr) {
-          reuse_pages->emplace_back(page);
-        } else {
-          Release<Target>(page);
+        if (new_head == head) break;
+        if (!list->head_.compare_exchange_strong(head, new_head, kRelaxed, kRelaxed)) goto end;
+        for (; head < new_head; ++head) {
+          auto* const page = list->garbage_[head].ptr;
+          if constexpr (!std::is_same_v<T, void>) {
+            std::bit_cast<T*>(page)->~T();
+          }
+          if (reuse_pages) {
+            reuse_pages->emplace_back(page);
+          } else {
+            Release<Target>(page);
+          }
         }
       }
-      if (head < kGarbageListCapacity || list->next_ == nullptr) goto end;
+      auto* const next = list->next_.load(kAcquire);
+      if (head < kGarbageListCapacity || !next) goto end;
 
-      const auto next_ptr = std::bit_cast<uintptr_t>(list->next_) | kCntUnit;
+      const auto next_ptr = std::bit_cast<uintptr_t>(next) | kCntUnit;
       if (head_addr->load(kRelaxed) != uptr
-          || !head_addr->compare_exchange_strong(uptr, next_ptr, kRelease, kRelaxed)) {
+          || !head_addr->compare_exchange_strong(uptr, next_ptr, kAcqRel, kRelaxed)) {
         uptr = next_ptr;
-        list = list->next_;
+        list = next;
         continue;
       }
 
-      auto* const next = list->next_;
       delete list;
       uptr = next_ptr;
       list = next;
@@ -142,9 +150,34 @@ class alignas(kVMPageSize) GarbageList
 
   end:
     const auto no_garbage =
-        list->next_ == nullptr && (tail == 0 || list->garbage_[tail - 1].epoch < min_epoch);
+        !list->next_.load(kAcquire) && (tail == 0 || list->garbage_[tail - 1].epoch < min_epoch);
     head_addr->fetch_sub(kCntUnit, kRelease);
     return no_garbage;
+  }
+
+  /*##########################################################################*
+   * Public APIs for destruction
+   *##########################################################################*/
+
+  /**
+   * @brief Destroy all the linked lists.
+   *
+   * Cleaner threads may leave consumed lists if other cleaners are reading
+   * them, so this function destroys all the lists linked from a given one.
+   *
+   * @param list The head list of a linked list.
+   * @note This function is not lock-free. Only a single thread must call this
+   * function.
+   */
+  static void
+  DestroyLists(  //
+      GarbageList* list)
+  {
+    while (list) {
+      auto* const next = list->next_.load(kAcquire);
+      delete list;
+      list = next;
+    }
   }
 
  private:
@@ -154,6 +187,11 @@ class alignas(kVMPageSize) GarbageList
 
   /// @brief The size of buffers for retaining garbages.
   static constexpr size_t kGarbageListCapacity = (kVMPageSize - 32) / 16;
+
+  /// @brief The maximum number of garbage instances claimed at once.
+  /// @note Claiming too many instances at once prevents cleaners from deleting
+  /// consumed lists because each cleaner reads a list for a long time.
+  static constexpr size_t kMaxBatchSize = 16;
 
   /// @brief The begin bit position of an inline counter.
   static constexpr uint64_t kCntShift = 48;
@@ -193,8 +231,8 @@ class alignas(kVMPageSize) GarbageList
   /// @brief The begin position of not freed garbage.
   std::atomic_uint64_t head_{};
 
-  /// @brief The previous garbage list.
-  GarbageList* next_{};
+  /// @brief The next garbage list.
+  std::atomic<GarbageList*> next_{};
 };
 
 }  // namespace dbgroup::memory::component

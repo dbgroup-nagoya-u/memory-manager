@@ -20,9 +20,10 @@
 // C++ standard libraries
 #include <atomic>
 #include <cstddef>
+#include <cstdint>
 #include <vector>
 
-// external libraries
+// our libraries
 #include <dbgroup/constants.hpp>
 
 // local sources
@@ -76,11 +77,14 @@ class alignas(kVMPageSize) ReuseList
    * @param tail_addr The address of the tail list container.
    * @param pages Reusable pages.
    * @param reuse_capacity The maximum number of reusable pages for each thread.
+   * @param zero_fill_size The size of each page to be filled with zeros before
+   * reuse (zero for no filling).
    */
   static void AddPages(  //
       std::atomic_uintptr_t* tail_addr,
       std::vector<void*>& pages,
-      size_t reuse_capacity);
+      size_t reuse_capacity,
+      size_t zero_fill_size);
 
   /**
    * @brief Reuse a destructed page if exist.
@@ -101,16 +105,22 @@ class alignas(kVMPageSize) ReuseList
    * @brief Destroy all the linked list and their contents.
    *
    * @tparam Target A class for representing target garbage.
-   * @param list The head list of a linked list.
+   * @param list A list in a linked list.
    * @note This function is not lock-free. Only a single thread must call this
    * function.
+   * @note Lists before a given one may remain if client threads have consumed
+   * them but cleaner threads have not deleted them yet, so this function
+   * rewinds to the oldest list before destruction.
    */
   template <class Target>
   static void
   DestroyPages(  //
       ReuseList* list)
   {
-    while (list != nullptr) {
+    while (list && list->prev_) {
+      list = list->prev_;
+    }
+    while (list) {
       const auto tail = list->tail_.load(kAcquire);
       for (size_t i = list->head_.load(kRelaxed); i < tail; ++i) {
         Release<Target>(list->pages_[i].load(kRelaxed));
