@@ -1,6 +1,6 @@
 # Memory Manager
 
-[![Ubuntu 24.04](https://github.com/dbgroup-nagoya-u/memory-manager/actions/workflows/ubuntu_24.yaml/badge.svg)](https://github.com/dbgroup-nagoya-u/memory-manager/actions/workflows/ubuntu_24.yaml) [![Ubuntu 22.04](https://github.com/dbgroup-nagoya-u/memory-manager/actions/workflows/ubuntu_22.yaml/badge.svg)](https://github.com/dbgroup-nagoya-u/memory-manager/actions/workflows/ubuntu_22.yaml) [![macOS](https://github.com/dbgroup-nagoya-u/memory-manager/actions/workflows/mac.yaml/badge.svg)](https://github.com/dbgroup-nagoya-u/memory-manager/actions/workflows/mac.yaml)
+[![Ubuntu 24.04](https://github.com/dbgroup-nagoya-u/memory-manager/actions/workflows/ubuntu_24.yaml/badge.svg?branch=main)](https://github.com/dbgroup-nagoya-u/memory-manager/actions/workflows/ubuntu_24.yaml?query=branch%3Amain) [![Ubuntu 22.04](https://github.com/dbgroup-nagoya-u/memory-manager/actions/workflows/ubuntu_22.yaml/badge.svg?branch=main)](https://github.com/dbgroup-nagoya-u/memory-manager/actions/workflows/ubuntu_22.yaml?query=branch%3Amain) [![macOS](https://github.com/dbgroup-nagoya-u/memory-manager/actions/workflows/mac.yaml/badge.svg?branch=main)](https://github.com/dbgroup-nagoya-u/memory-manager/actions/workflows/mac.yaml?query=branch%3Amain)
 
 This repository is an open source implementation of epoch-based garbage collection for research use.
 
@@ -11,8 +11,10 @@ This repository is an open source implementation of epoch-based garbage collecti
 - [Usage](#usage)
     - [Linking by CMake](#linking-by-cmake)
     - [Collect and Release Garbage Pages](#collect-and-release-garbage-pages)
+    - [Configure Garbage Collectors](#configure-garbage-collectors)
     - [Destruct Garbage before Releasing](#destruct-garbage-before-releasing)
     - [Reuse Garbage-Collected Pages](#reuse-garbage-collected-pages)
+    - [Reuse Common-Size Pages](#reuse-common-size-pages)
     - [Release Aligned Pages](#release-aligned-pages)
 - [Acknowledgments](#acknowledgments)
 
@@ -33,6 +35,9 @@ sudo apt update && sudo apt install -y build-essential cmake
 #### Parameters for Unit Testing
 
 - `MEMORY_MANAGER_BUILD_TESTS`: build unit tests for this repository if `ON` (default `OFF`).
+- `MEMORY_MANAGER_TEST_SANITIZER`: sanitizers for unit tests and their dependencies (default `none`).
+    - `thread`: use ThreadSanitizer.
+    - `address`: use AddressSanitizer and UndefinedBehaviorSanitizer.
 - `DBGROUP_TEST_THREAD_NUM`: the number of threads to run unit tests (default `2`).
 
 ### Build and Run Unit Tests
@@ -44,6 +49,12 @@ cmake .. \
   -DMEMORY_MANAGER_BUILD_TESTS=ON
 cmake --build . --parallel --config Release
 ctest -C Release
+```
+
+GCC's ThreadSanitizer may abort with "unexpected memory mapping" under address space layout randomization. In this case, use Clang 18 or later, or run unit tests as follows.
+
+```bash
+setarch $(uname -m) -R ctest -C Release
 ```
 
 ## Usage
@@ -91,15 +102,14 @@ main(  //
 {
   // create and run a garbage collector
   ::dbgroup::memory::EpochBasedGC gc{};
-  gc.StartGC();
 
   // prepare a sample worker procedure
   auto worker = [&]() {
     for (size_t loop = 0; loop < 100; ++loop) {
-      // this thread has not enter a current epoch yet
+      // this thread has not entered the current epoch yet
       {
         // we use the scoped pattern to prevent garbage from releasing.
-        const auto &guard = gc.CreateEpochGuard();
+        const auto guard = gc.CreateEpochGuard();
 
         // you can access this page safely until all the threads leave the current epoch
         auto *page = ::dbgroup::memory::Allocate<size_t>();
@@ -128,6 +138,20 @@ main(  //
 }
 ```
 
+### Configure Garbage Collectors
+
+You can configure a garbage collector by using `Builder`, which receives the same template arguments as `EpochBasedGC`.
+
+```cpp
+auto gc = ::dbgroup::memory::Builder<>{}  //
+              .SetGCInterval(10)          // run GC every 10 ms (default: 100 ms)
+              .SetGCThreadNum(2)          // use two cleaner threads (default: 1)
+              .SetReusablePageNum(64)     // retain 64 reusable pages for each thread (default: 32)
+              .Build();                   // std::unique_ptr<EpochBasedGC<>>
+```
+
+Our GC prepares garbage lists for `::dbgroup::thread::IDManager::GetMaxThreadNum()` threads at its construction. If you change the maximum number of threads by `::dbgroup::thread::IDManager::SetMaxThreadNum()`, call it before constructing garbage collectors; otherwise, threads with larger IDs fail to add garbage with `std::out_of_range`.
+
 ### Destruct Garbage before Releasing
 
 You can call a specific destructor before releasing garbage.
@@ -138,6 +162,8 @@ You can call a specific destructor before releasing garbage.
 #include <cstddef>
 #include <iostream>
 #include <memory>
+#include <mutex>
+#include <stdexcept>
 #include <thread>
 #include <vector>
 
@@ -163,20 +189,19 @@ main(  //
   {
     // create a garbage collector with a specific target
     ::dbgroup::memory::EpochBasedGC<SharedPtrTarget> gc{};
-    gc.StartGC();
 
     // prepare a sample worker procedure
     auto worker = [&]() {
       for (size_t loop = 0; loop < 100; ++loop) {
         {
-          const auto &guard = gc.CreateEpochGuard();
+          const auto guard = gc.CreateEpochGuard();
 
           // create a shared pointer as garbage pages
           auto *page = ::dbgroup::memory::Allocate<std::shared_ptr<size_t>>();
           auto *garbage = new (page) std::shared_ptr<size_t>{new size_t{loop}};
           {
             // track the life-time of this garbage
-            const auto &lock_guard = std::lock_guard{lock};
+            const std::lock_guard lock_guard{lock};
             weak_pointers.emplace_back(*garbage);
           }
 
@@ -245,26 +270,25 @@ main(  //
 {
   std::atomic_size_t count{0};
 
-  // create a garbage collector with a reusable target
-  ::dbgroup::memory::EpochBasedGC<ReusableTarget> gc{};
-  gc.StartGC();
+  // create a garbage collector with a reusable target and a short GC interval
+  auto gc = ::dbgroup::memory::Builder<ReusableTarget>{}.SetGCInterval(10).Build();
 
   // prepare a sample worker procedure
   auto worker = [&]() {
     for (size_t loop = 0; loop < 100; ++loop) {
       {
-        const auto &guard = gc.CreateEpochGuard();
+        const auto guard = gc->CreateEpochGuard();
 
         // get a page if exist
-        auto *page = gc.GetPageIfPossible<ReusableTarget>();
-        if (page != nullptr) {
+        auto *page = gc->GetPageIfPossible<ReusableTarget>();
+        if (page) {
           ++count;
         } else {
           page = ::dbgroup::memory::Allocate<size_t>();
         }
 
         auto *garbage = new (page) size_t{loop};
-        gc.AddGarbage<ReusableTarget>(garbage);
+        gc->AddGarbage<ReusableTarget>(garbage);
       }
       std::this_thread::sleep_for(std::chrono::milliseconds{1});
     }
@@ -284,17 +308,57 @@ main(  //
 }
 ```
 
-### Release Aligned Pages
+### Reuse Common-Size Pages
 
-If a target class has a specific alignment, you must also specify this in your target garbage class.
+Our GC also manages pages of common sizes (512B, 1KiB, 2KiB, ..., and 64KiB) without declaring target classes. Specify the size of each page when you add garbage or get a reusable page. Note that reused pages are filled with zeros, and you must allocate pages with `Page512`, `Page1Ki`, ..., or `Page64Ki` to align them properly.
 
 ```cpp
+::dbgroup::memory::EpochBasedGC gc{};
+{
+  const auto guard = gc.CreateEpochGuard();
+
+  // reuse a 4KiB page if exist; otherwise, allocate a new one
+  void *page = gc.GetPageIfPossible(4096);
+  if (!page) {
+    page = ::dbgroup::memory::Allocate<::dbgroup::memory::Page4Ki>();
+  }
+
+  // ... use the page ...
+
+  // add the page as garbage with its size
+  gc.AddGarbage(page, 4096);
+}
+```
+
+If you give an unsupported size, `AddGarbage` throws `std::runtime_error`, and `GetPageIfPossible` returns `nullptr`.
+
+### Release Aligned Pages
+
+Our GC releases garbage with the alignment of its target class (i.e., `alignof(Target)`). If a garbage class has a specific alignment, you must also specify it in your target class and allocate garbage with the same alignment.
+
+```cpp
+// a garbage class aligned with CPU cache lines
+struct alignas(64) AlignedClass {
+  size_t data{};
+};
+
 // release pointers with alignment for CPU cache lines
 struct alignas(64) AlignedTarget : public ::dbgroup::memory::DefaultTarget {
   // you can set the other parameters here
 };
+
+::dbgroup::memory::EpochBasedGC<AlignedTarget> gc{};
+{
+  const auto guard = gc.CreateEpochGuard();
+
+  // `Allocate` uses the alignment of a given class
+  auto *garbage = new (::dbgroup::memory::Allocate<AlignedClass>()) AlignedClass{};
+  gc.AddGarbage<AlignedTarget>(garbage);
+}
 ```
 
 ## Acknowledgments
 
 This work is based on results from project JPNP16007 commissioned by the New Energy and Industrial Technology Development Organization (NEDO), and it was supported partially by KAKENHI (JP16H01722, JP20K19804, JP21H03555, and JP22H03594).
+
+We used Claude, a generative AI model developed by Anthropic, to assist with development tasks such as debugging.
