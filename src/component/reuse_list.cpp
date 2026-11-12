@@ -117,7 +117,7 @@ ReuseList::GetPage(                      //
     if (head == kReuseListCapacity - 1) {
       head_addr->store(list->next_.load(kRelaxed), kRelaxed);
     }
-    list->head_.fetch_add(1, kRelease);
+    list->head_.store(head + 1, kRelease);
   }
   return page;
 }

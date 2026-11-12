@@ -44,7 +44,7 @@ GarbageList::AddGarbage(  //
     tail_addr->store(next, kRelease);
     list->next_.store(next, kRelease);
   }
-  list->tail_.fetch_add(1, kRelease);
+  list->tail_.store(tail + 1, kRelease);
 }
 
 }  // namespace dbgroup::memory::component
