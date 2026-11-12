@@ -24,6 +24,7 @@
 #include <cstdint>
 #include <future>
 #include <memory>
+#include <new>
 #include <thread>
 #include <utility>
 #include <vector>
@@ -32,6 +33,7 @@
 #include <gtest/gtest.h>
 
 // our libraries
+#include <dbgroup/constants.hpp>
 #include <dbgroup/lock/utility.hpp>
 
 namespace dbgroup::memory::test
@@ -43,6 +45,7 @@ namespace dbgroup::memory::test
 constexpr size_t kOverSheetCapacity =
     static_cast<size_t>(MappingTable::kColNum * MappingTable::kRowNum * 1.1);
 constexpr size_t kThreadNum = DBGROUP_TEST_THREAD_NUM;
+constexpr size_t kPageSize = k4Ki;
 constexpr bool kUseCASWeak = true;
 
 /*############################################################################*
@@ -65,7 +68,7 @@ class MappingTableFixture : public testing::Test
   void
   SetUp() override
   {
-    table_ = std::make_unique<MappingTable>();
+    table_ = std::make_unique<MappingTable>(kPageSize);
   }
 
   void
@@ -223,6 +226,21 @@ TEST_F(MappingTableFixture, CASUpdateStoredPageAtomically)
 TEST_F(MappingTableFixture, CASStrongUpdateStoredPageAtomically)
 {  //
   VerifyCAS(!kUseCASWeak);
+}
+
+TEST_F(MappingTableFixture, DestructorReleaseStoredPagesWithTheirAlignment)
+{
+  constexpr size_t kOddPageSize = 3000;  // not a power of two
+  constexpr size_t kPageNum = 8;
+  for (const auto page_size : {k512, k1Ki, k2Ki, k4Ki, k8Ki, k16Ki, k32Ki, k64Ki, kOddPageSize}) {
+    auto table = std::make_unique<MappingTable>(page_size);
+    for (size_t i = 0; i < kPageNum; ++i) {
+      const auto pid = table->ReservePageID();
+      table->Store(pid, ::operator new(page_size, GetAlignValOnVirtualPages(page_size)));
+    }
+    // sanitizers detect leaked pages or mismatched alignments
+    table.reset();
+  }
 }
 
 }  // namespace dbgroup::memory::test

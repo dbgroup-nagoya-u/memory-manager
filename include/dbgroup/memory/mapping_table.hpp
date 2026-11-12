@@ -22,14 +22,11 @@
 #include <bit>
 #include <cstddef>
 #include <cstdint>
-#include <functional>
+#include <new>
 #include <utility>
 
 // our libraries
 #include <dbgroup/constants.hpp>
-
-// local sources
-#include "dbgroup/memory/utility.hpp"
 
 namespace dbgroup::memory
 {
@@ -72,9 +69,12 @@ class alignas(kVMPageSize) MappingTable
   /**
    * @brief Construct a new mapping table.
    *
+   * @param page_size The size of pages stored in this table.
+   * @note Stored pages must be allocated with the alignment of
+   * `GetAlignValOnVirtualPages(page_size)` (e.g., `Allocate<Page4Ki>()`).
    */
   explicit MappingTable(  //
-      std::function<void(void*)> deleter = Release<void>);
+      size_t page_size);
 
   MappingTable(const MappingTable&) = delete;
   MappingTable(MappingTable&&) = delete;
@@ -89,7 +89,8 @@ class alignas(kVMPageSize) MappingTable
   /**
    * @brief Destroy the MappingTable object.
    *
-   * @note This destructor will release all the pages.
+   * @note This destructor will release all the stored pages with the alignment
+   * of `GetAlignValOnVirtualPages(page_size)`.
    */
   ~MappingTable();
 
@@ -256,8 +257,8 @@ class alignas(kVMPageSize) MappingTable
   /// @brief An atomic counter for incrementing page IDs.
   std::atomic_uint64_t cnt_{};
 
-  /// @brief A function to release stored pages.
-  std::function<void(void*)> deleter_{};
+  /// @brief The alignment of stored pages.
+  std::align_val_t page_align_{};
 
   /// @brief Mapping tables.
   alignas(kCacheLineSize) std::atomic<Sheet*> sheets_[kSheetNum] = {};

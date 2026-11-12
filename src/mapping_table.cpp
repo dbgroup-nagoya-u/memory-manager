@@ -21,9 +21,7 @@
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
-#include <exception>
-#include <functional>
-#include <iostream>
+#include <new>
 #include <stdexcept>
 #include <thread>
 #include <utility>
@@ -42,8 +40,8 @@ namespace dbgroup::memory
  *############################################################################*/
 
 MappingTable::MappingTable(  //
-    std::function<void(void*)> deleter)
-    : deleter_{std::move(deleter)}
+    const size_t page_size)
+    : page_align_{GetAlignValOnVirtualPages(page_size)}
 {
   auto* const row = new (Allocate<Row>()) Row{};
   auto* const sheet = new (Allocate<Sheet>()) Sheet{};
@@ -54,24 +52,20 @@ MappingTable::MappingTable(  //
 
 MappingTable::~MappingTable()
 {
-  try {
-    for (size_t i = 0; i < kSheetNum; ++i) {
-      auto* const sheet = sheets_[i].load(kRelaxed);
-      if (!sheet) continue;
-      for (size_t j = 0; j < kRowNum; ++j) {
-        auto* const row = sheet->rows[j].load(kRelaxed);
-        if (!row) continue;
-        for (size_t k = 0; k < kColNum; ++k) {
-          auto* const page = row->cols[k].load(kRelaxed);
-          if (!page) continue;
-          deleter_(page);
-        }
-        Release<Row>(row);
+  for (size_t i = 0; i < kSheetNum; ++i) {
+    auto* const sheet = sheets_[i].load(kRelaxed);
+    if (!sheet) continue;
+    for (size_t j = 0; j < kRowNum; ++j) {
+      auto* const row = sheet->rows[j].load(kRelaxed);
+      if (!row) continue;
+      for (size_t k = 0; k < kColNum; ++k) {
+        auto* const page = row->cols[k].load(kRelaxed);
+        if (!page) continue;
+        ::operator delete(page, page_align_);
       }
-      Release<Sheet>(sheet);
+      Release<Row>(row);
     }
-  } catch (const std::exception& e) {
-    std::cerr << e.what() << '\n';
+    Release<Sheet>(sheet);
   }
 }
 
