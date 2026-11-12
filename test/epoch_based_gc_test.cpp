@@ -24,6 +24,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <future>
+#include <latch>
 #include <memory>
 #include <mutex>
 #include <new>
@@ -38,6 +39,7 @@
 
 // our libraries
 #include <dbgroup/constants.hpp>
+#include <dbgroup/thread/id_manager.hpp>
 
 // local sources
 #include "dbgroup/memory/utility.hpp"
@@ -389,6 +391,46 @@ TEST_F(  //
     std::this_thread::sleep_for(kAddInterval);
   }
   EXPECT_TRUE(target_weak.expired());
+}
+
+TEST_F(  //
+    EpochBasedGCFixture,
+    GCWithTooLargeThreadIDsThrowOutOfRange)
+{
+  using IDManager = ::dbgroup::thread::IDManager;
+
+  // construct GC for only one thread, and then increase the capacity
+  const auto max_thread_num = IDManager::GetMaxThreadNum();
+  IDManager::SetMaxThreadNum(1);
+  auto&& gc = GCBuilder{}.SetGCInterval(kGCInterval).Build();
+  IDManager::SetMaxThreadNum(max_thread_num);
+
+  // run threads simultaneously so that some of them have thread IDs over the capacity
+  constexpr size_t kWorkerNum = 2;
+  std::latch ready{kWorkerNum};
+  std::atomic_size_t thrown_num{0};
+  auto f = [&] {
+    const auto id = IDManager::GetThreadID();
+    ready.arrive_and_wait();
+    if (id == 0) return;
+
+    auto* garbage = new Target{0};
+    EXPECT_THROW(gc->AddGarbage(garbage), std::out_of_range);
+    EXPECT_THROW(gc->AddGarbage(garbage, k4Ki), std::out_of_range);
+    EXPECT_THROW(static_cast<void>(gc->GetPageIfPossible<SharedPtrTarget>()), std::out_of_range);
+    EXPECT_THROW(static_cast<void>(gc->GetPageIfPossible(k4Ki)), std::out_of_range);
+    delete garbage;
+    thrown_num.fetch_add(1, std::memory_order_relaxed);
+  };
+
+  std::vector<std::thread> threads{};
+  for (size_t i = 0; i < kWorkerNum; ++i) {
+    threads.emplace_back(f);
+  }
+  for (auto&& t : threads) {
+    t.join();
+  }
+  EXPECT_GE(thrown_num.load(std::memory_order_relaxed), 1);
 }
 
 }  // namespace dbgroup::memory::test

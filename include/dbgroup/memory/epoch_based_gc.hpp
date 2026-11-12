@@ -24,6 +24,8 @@
 #include <iostream>
 #include <memory>
 #include <random>
+#include <stdexcept>
+#include <string>
 #include <thread>
 #include <tuple>
 #include <vector>
@@ -147,6 +149,8 @@ class EpochBasedGC
    *
    * @tparam Target A class for representing target garbage.
    * @param garbage_ptr A pointer to target garbage.
+   * @exception `std::out_of_range` if the ID of the current thread is not less than
+   * the maximum number of threads when this GC was constructed.
    */
   template <class Target = DefaultTarget>
   void
@@ -163,6 +167,8 @@ class EpochBasedGC
    * @param garbage_ptr A pointer to target garbage.
    * @param page_size The size of a garbage page.
    * @exception `std::runtime_error` if illegal `page_size` is given.
+   * @exception `std::out_of_range` if the ID of the current thread is not less than
+   * the maximum number of threads when this GC was constructed.
    */
   void
   AddGarbage(  //
@@ -215,6 +221,8 @@ class EpochBasedGC
    * @tparam Target A class for representing target garbage.
    * @retval A memory page if exist.
    * @retval nullptr otherwise.
+   * @exception `std::out_of_range` if the ID of the current thread is not less than
+   * the maximum number of threads when this GC was constructed.
    */
   template <class Target = DefaultTarget>
   auto
@@ -231,6 +239,8 @@ class EpochBasedGC
    * @param page_size The size of a garbage page.
    * @retval A memory page if exist.
    * @retval nullptr otherwise.
+   * @exception `std::out_of_range` if the ID of the current thread is not less than
+   * the maximum number of threads when this GC was constructed.
    */
   auto
   GetPageIfPossible(           //
@@ -415,6 +425,8 @@ class EpochBasedGC
   /**
    * @tparam Target A class for representing target garbage.
    * @return A garbage list for a given target class.
+   * @exception `std::out_of_range` if the ID of the current thread is not less than
+   * the maximum number of threads when this GC was constructed.
    */
   template <class Target>
   [[nodiscard]] auto
@@ -422,7 +434,13 @@ class EpochBasedGC
   {
     using ListsPtr = std::unique_ptr<GarbageList<Target>[]>;
 
-    return &(std::get<ListsPtr>(garbage_lists_)[IDManager::GetThreadID()]);
+    // the maximum number of threads may be increased after construction
+    const auto id = IDManager::GetThreadID();
+    if (id >= thread_num_) [[unlikely]] {
+      throw std::out_of_range{
+          "EpochBasedGC: The thread ID exceeded the maximum number of threads at construction."};
+    }
+    return &(std::get<ListsPtr>(garbage_lists_)[id]);
   }
 
   /**
