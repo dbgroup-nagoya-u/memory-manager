@@ -19,12 +19,17 @@
 
 // C++ standard libraries
 #include <algorithm>
+#include <atomic>
 #include <bit>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <future>
 #include <memory>
+#include <new>
+#include <stdexcept>
 #include <thread>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -32,7 +37,11 @@
 #include <gtest/gtest.h>
 
 // our libraries
+#include <dbgroup/constants.hpp>
 #include <dbgroup/lock/utility.hpp>
+
+// local sources
+#include "dbgroup/memory/epoch_based_gc.hpp"
 
 namespace dbgroup::memory::test
 {
@@ -43,6 +52,9 @@ namespace dbgroup::memory::test
 constexpr size_t kOverSheetCapacity =
     static_cast<size_t>(MappingTable::kColNum * MappingTable::kRowNum * 1.1);
 constexpr size_t kThreadNum = DBGROUP_TEST_THREAD_NUM;
+constexpr size_t kPageSize = k4Ki;
+constexpr size_t kGCInterval = 1;
+constexpr std::chrono::seconds kTimeout{10};
 constexpr bool kUseCASWeak = true;
 
 /*############################################################################*
@@ -65,7 +77,7 @@ class MappingTableFixture : public testing::Test
   void
   SetUp() override
   {
-    table_ = std::make_unique<MappingTable>();
+    table_ = std::make_unique<MappingTable>(kPageSize);
   }
 
   void
@@ -125,6 +137,26 @@ class MappingTableFixture : public testing::Test
     }
 
     return ids;
+  }
+
+  /**
+   * @brief Wait until the actual memory usage becomes a given value.
+   *
+   * @param expected An expected actual usage in bytes.
+   * @retval true if the usage becomes the expected value.
+   * @retval false if timeout occurs.
+   */
+  auto
+  WaitForUsage(               //
+      const size_t expected)  //
+      -> bool
+  {
+    const auto deadline = std::chrono::steady_clock::now() + kTimeout;
+    while (std::chrono::steady_clock::now() < deadline) {
+      if (table_->GetMemoryUsage().first == expected) return true;
+      std::this_thread::sleep_for(std::chrono::milliseconds{kGCInterval});
+    }
+    return false;
   }
 
   /*##########################################################################*
@@ -223,6 +255,155 @@ TEST_F(MappingTableFixture, CASUpdateStoredPageAtomically)
 TEST_F(MappingTableFixture, CASStrongUpdateStoredPageAtomically)
 {  //
   VerifyCAS(!kUseCASWeak);
+}
+
+TEST_F(MappingTableFixture, GetMemoryUsageReturnUsageOfReservedSpaces)
+{
+  constexpr size_t kColNum = MappingTable::kColNum;
+  constexpr size_t kRowNum = MappingTable::kRowNum;
+  constexpr size_t kIDsInSheet = kColNum * kRowNum;
+
+  size_t reserved_num = 0;
+  for (const size_t target_num : {0UL, 1UL, kColNum - 1, kColNum, kColNum + 1, kIDsInSheet - 1,
+                                  kIDsInSheet, kOverSheetCapacity}) {
+    for (; reserved_num < target_num; ++reserved_num) {
+      static_cast<void>(table_->ReservePageID());
+    }
+
+    // the next row (and sheet) is allocated in advance after kPreallocColID
+    auto row_num = reserved_num / kColNum + 1;
+    auto sheet_num = (row_num - 1) / kRowNum + 1;
+    if (reserved_num % kColNum > MappingTable::kPreallocColID) {
+      ++row_num;
+      if ((row_num - 1) % kRowNum == 0) ++sheet_num;
+    }
+
+    // a table page has a header (a cache line) and pointers to sheets, rows, and pages
+    const auto [used, reserved] = table_->GetMemoryUsage();
+    EXPECT_EQ(reserved, (1 + sheet_num + row_num) * kVMPageSize);
+    EXPECT_EQ(used, kCacheLineSize + kWordSize * (sheet_num + row_num + reserved_num));
+  }
+}
+
+TEST_F(MappingTableFixture, ReservePageIDReturnSequentialIDsAcrossRowsAndSheets)
+{
+  for (size_t i = 0; i < kOverSheetCapacity; ++i) {
+    const auto sheet_id = i / (MappingTable::kColNum * MappingTable::kRowNum);
+    const auto row_id = (i / MappingTable::kColNum) % MappingTable::kRowNum;
+    const auto col_id = i % MappingTable::kColNum;
+    const auto expected = MappingTable::kLPIDFlag | (sheet_id << MappingTable::kSheetShift)
+                          | (row_id << MappingTable::kRowShift) | col_id;
+    ASSERT_EQ(table_->ReservePageID(), expected);
+  }
+}
+
+TEST_F(MappingTableFixture, DestructorReleaseStoredPagesWithTheirAlignment)
+{
+  constexpr size_t kOddPageSize = 3000;  // not a power of two
+  constexpr size_t kPageNum = 8;
+  for (const auto page_size : {k512, k1Ki, k2Ki, k4Ki, k8Ki, k16Ki, k32Ki, k64Ki, kOddPageSize}) {
+    auto table = std::make_unique<MappingTable>(page_size);
+    for (size_t i = 0; i < kPageNum; ++i) {
+      const auto pid = table->ReservePageID();
+      table->Store(pid, ::operator new(page_size, GetAlignValOnVirtualPages(page_size)));
+    }
+    // sanitizers detect leaked pages or mismatched alignments
+    table.reset();
+  }
+}
+
+TEST_F(MappingTableFixture, DeletePageIDReuseIDsAfterGC)
+{
+  constexpr size_t kIDNum = 1000;
+  auto gc = Builder<MappingTable::PageIDTarget>{}.SetGCInterval(kGCInterval).Build();
+
+  std::unordered_set<uint64_t> deleted{};
+  for (size_t i = 0; i < kIDNum; ++i) {
+    const auto pid = table_->ReservePageID();
+    table_->Store(pid, std::bit_cast<void*>(pid));  // dummy pages
+    deleted.emplace(pid);
+  }
+  const auto [used, reserved] = table_->GetMemoryUsage();
+  for (const auto pid : deleted) {
+    table_->DeletePageID(pid, *gc);
+  }
+  ASSERT_TRUE(WaitForUsage(used - kIDNum * kWordSize));
+
+  // deleted page IDs are reused with empty slots
+  for (size_t i = 0; i < kIDNum; ++i) {
+    const auto pid = table_->ReservePageID();
+    EXPECT_EQ(deleted.erase(pid), 1);
+    EXPECT_EQ(table_->Load(pid), nullptr);
+  }
+  EXPECT_EQ(table_->GetMemoryUsage().first, used);
+  EXPECT_EQ(deleted.count(table_->ReservePageID()), 0);
+}
+
+TEST_F(MappingTableFixture, DeletePageIDDeferReuseWhileGuarded)
+{
+  constexpr size_t kWaitIntervalNum = 10;
+  auto gc = Builder<MappingTable::PageIDTarget>{}.SetGCInterval(kGCInterval).Build();
+  const auto pid = table_->ReservePageID();
+  auto* page = std::bit_cast<void*>(pid);  // a dummy page
+  table_->Store(pid, page);
+  const auto [used, reserved] = table_->GetMemoryUsage();
+
+  {
+    // a thread holding the old epoch can still read the page
+    const auto guard = gc->CreateEpochGuard();
+    table_->DeletePageID(pid, *gc);
+    std::this_thread::sleep_for(std::chrono::milliseconds{kGCInterval * kWaitIntervalNum});
+    EXPECT_EQ(table_->Load(pid), page);
+    EXPECT_EQ(table_->GetMemoryUsage().first, used);
+  }
+
+  ASSERT_TRUE(WaitForUsage(used - kWordSize));
+  EXPECT_EQ(table_->Load(pid), nullptr);
+  EXPECT_EQ(table_->ReservePageID(), pid);
+}
+
+TEST_F(MappingTableFixture, DeletePageIDWithInvalidIDsThrowRuntimeError)
+{
+  auto gc = Builder<MappingTable::PageIDTarget>{}.SetGCInterval(kGCInterval).Build();
+  const auto pid = table_->ReservePageID();
+  EXPECT_THROW(table_->DeletePageID(0, *gc), std::runtime_error);        // not a page ID
+  EXPECT_THROW(table_->DeletePageID(pid + 1, *gc), std::runtime_error);  // not reserved
+}
+
+TEST_F(MappingTableFixture, ReserveAndDeletePageIDsWithMultiThreadsKeepIDsUnique)
+{
+  constexpr size_t kRepeatNum = 1E4;
+  constexpr size_t kMaxIDNum = kThreadNum * kRepeatNum;
+  static_assert(kMaxIDNum < MappingTable::kColNum * MappingTable::kRowNum);
+  auto gc = Builder<MappingTable::PageIDTarget>{}.SetGCInterval(kGCInterval).Build();
+
+  // flags for checking that each living page ID is reserved by only one thread
+  std::vector<std::atomic_bool> in_use(kMaxIDNum);
+  constexpr uint64_t kIDMask = (1UL << MappingTable::kRowShift) - 1;
+  auto to_index = [](const uint64_t pid) {
+    return ((pid >> MappingTable::kRowShift) & kIDMask) * MappingTable::kColNum + (pid & kIDMask);
+  };
+
+  std::vector<std::thread> threads{};
+  for (size_t i = 0; i < kThreadNum; ++i) {
+    threads.emplace_back([&]() {
+      for (size_t j = 0; j < kRepeatNum; ++j) {
+        const auto guard = gc->CreateEpochGuard();
+        const auto pid = table_->ReservePageID();
+        ASSERT_LT(to_index(pid), kMaxIDNum);
+        EXPECT_FALSE(in_use[to_index(pid)].exchange(true, std::memory_order_relaxed));
+        EXPECT_EQ(table_->Load(pid), nullptr);
+        table_->Store(pid, std::bit_cast<void*>(pid));  // a dummy page
+
+        in_use[to_index(pid)].store(false, std::memory_order_relaxed);
+        table_->DeletePageID(pid, *gc);
+      }
+    });
+  }
+  for (auto&& t : threads) {
+    t.join();
+  }
+  gc.reset();  // reuse all the deleted page IDs
 }
 
 }  // namespace dbgroup::memory::test

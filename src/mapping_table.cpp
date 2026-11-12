@@ -19,11 +19,11 @@
 
 // C++ standard libraries
 #include <atomic>
+#include <bit>
 #include <cstddef>
 #include <cstdint>
-#include <exception>
-#include <functional>
-#include <iostream>
+#include <mutex>
+#include <new>
 #include <stdexcept>
 #include <thread>
 #include <utility>
@@ -42,8 +42,8 @@ namespace dbgroup::memory
  *############################################################################*/
 
 MappingTable::MappingTable(  //
-    std::function<void(void*)> deleter)
-    : deleter_{std::move(deleter)}
+    const size_t page_size)
+    : page_align_{GetAlignValOnVirtualPages(page_size)}
 {
   auto* const row = new (Allocate<Row>()) Row{};
   auto* const sheet = new (Allocate<Sheet>()) Sheet{};
@@ -54,24 +54,27 @@ MappingTable::MappingTable(  //
 
 MappingTable::~MappingTable()
 {
-  try {
-    for (size_t i = 0; i < kSheetNum; ++i) {
-      auto* const sheet = sheets_[i].load(kRelaxed);
-      if (!sheet) continue;
-      for (size_t j = 0; j < kRowNum; ++j) {
-        auto* const row = sheet->rows[j].load(kRelaxed);
-        if (!row) continue;
-        for (size_t k = 0; k < kColNum; ++k) {
-          auto* const page = row->cols[k].load(kRelaxed);
-          if (!page) continue;
-          deleter_(page);
-        }
-        Release<Row>(row);
+  // clear the slots linking reusable page IDs
+  for (auto pid = free_list_->head; pid;) {
+    auto& cell = GetCellUnchecked(pid);
+    pid = std::bit_cast<uint64_t>(cell.load(kRelaxed));
+    cell.store(nullptr, kRelaxed);
+  }
+
+  for (size_t i = 0; i < kSheetNum; ++i) {
+    auto* const sheet = sheets_[i].load(kRelaxed);
+    if (!sheet) continue;
+    for (size_t j = 0; j < kRowNum; ++j) {
+      auto* const row = sheet->rows[j].load(kRelaxed);
+      if (!row) continue;
+      for (size_t k = 0; k < kColNum; ++k) {
+        auto* const page = row->cols[k].load(kRelaxed);
+        if (!page) continue;
+        ::operator delete(page, page_align_);
       }
-      Release<Sheet>(sheet);
+      Release<Row>(row);
     }
-  } catch (const std::exception& e) {
-    std::cerr << e.what() << '\n';
+    Release<Sheet>(sheet);
   }
 }
 
@@ -83,33 +86,42 @@ auto
 MappingTable::ReservePageID()  //
     -> uint64_t
 {
-  auto cur_id = cnt_.load(kRelaxed);
-  for (size_t i = 1; true; ++i) {
-    while ((cur_id & kIDMask) < kColNum) {
-      if (cur_id > kMaxPID) throw std::runtime_error{"The mapping table has no space."};
-      if (cnt_.compare_exchange_weak(cur_id, cur_id + kColUnit, kAcquire, kRelaxed)) {
-        if ((cur_id & kIDMask) >= kColNum - 1) {
-          AllocateNewSpace(cur_id);
-        }
-        return cur_id;
-      }
-      CPP_UTILITY_SPINLOCK_HINT
+  // reuse a deleted page ID without waiting for other threads
+  if (free_num_.load(kRelaxed) > 0 && free_list_->mtx.try_lock()) {
+    const std::lock_guard guard{free_list_->mtx, std::adopt_lock};
+    const auto pid = free_list_->head;
+    if (pid) {
+      auto& cell = GetCellUnchecked(pid);
+      free_list_->head = std::bit_cast<uint64_t>(cell.load(kRelaxed));
+      cell.store(nullptr, kRelaxed);
+      free_num_.store(free_num_.load(kRelaxed) - 1, kRelaxed);
+      return pid;
     }
-    if (i <= ::dbgroup::lock::kRetryNum) {
-      CPP_UTILITY_SPINLOCK_HINT
-      cur_id = cnt_.load(kRelaxed);
+  }
+
+  auto cur_id = cnt_.load(kRelaxed);
+  while (true) {
+    const auto col_id = cur_id & kIDMask;
+    if (col_id >= kColNum) {
+      cur_id = WaitForNextRow(cur_id);
       continue;
     }
 
-    // insert back off
-    i = 0;
-    auto prev_id = cur_id;
-    std::this_thread::sleep_for(::dbgroup::lock::kBackOffTime);
-    cur_id = cnt_.load(kRelaxed);
-    if (cur_id != prev_id) continue;
+    // the last column moves the counter to the next row if it has been allocated
+    const auto is_last = col_id == kColNum - 1;
+    const auto next_id = is_last && HasNextRow(cur_id) ? GetNextRowID(cur_id) : cur_id + kColUnit;
+    if (!cnt_.compare_exchange_weak(cur_id, next_id, kAcqRel, kRelaxed)) {
+      CPP_UTILITY_SPINLOCK_HINT
+      continue;
+    }
 
-    // the last thread may be stalled
-    cur_id = AllocateNewSpace(cur_id);
+    if (col_id == kPreallocColID) {
+      AllocateNextRow(cur_id);  // prepare the next row in advance
+    } else if (is_last && next_id == cur_id + kColUnit) {
+      // the next row has not been prepared in time (or this table becomes full)
+      static_cast<void>(AdvanceToNextRow(next_id));
+    }
+    return cur_id;
   }
 }
 
@@ -122,9 +134,21 @@ MappingTable::GetMemoryUsage() const  //
   const auto row_id = (id >> kRowShift) & kIDMask;
   const auto col_id = id & kIDMask;
 
-  const auto reserved = (tab_id * (kSheetNum + 1) + row_id + 3) * kVMPageSize;
-  const auto empty_num = 2 * kSheetNum + kSheetNum - col_id - row_id - tab_id - 3;
-  const auto used = reserved - empty_num * kWordSize;
+  // count rows and sheets including those allocated in advance
+  auto sheet_num = tab_id + 1;
+  auto row_num = tab_id * kRowNum + row_id + 1;
+  const auto next_tab_id = (GetNextRowID(id) >> kSheetShift) & kIDMask;
+  if (next_tab_id != tab_id && next_tab_id < kSheetNum && sheets_[next_tab_id].load(kAcquire)) {
+    ++sheet_num;
+  }
+  if (HasNextRow(id)) {
+    ++row_num;
+  }
+
+  // the actual usage consists of a header and pointers to sheets, rows, and pages
+  const auto id_num = (tab_id * kRowNum + row_id) * kColNum + col_id - free_num_.load(kRelaxed);
+  const auto reserved = (1 + sheet_num + row_num) * kVMPageSize;
+  const auto used = kCacheLineSize + (sheet_num + row_num + id_num) * kWordSize;
 
   return {used, reserved};
 }
@@ -179,47 +203,116 @@ MappingTable::GetCell(   //
   if ((pid & kLPIDFlag) == 0 || sheet_id >= kSheetNum || row_id >= kRowNum || col_id >= kColNum) {
     throw std::runtime_error{"The process accessed the invalid page ID."};
   }
+  return GetCellUnchecked(pid);
+}
 
+auto
+MappingTable::GetCellUnchecked(   //
+    const uint64_t pid) noexcept  //
+    -> std::atomic<void*>&
+{
+  const auto sheet_id = (pid >> kSheetShift) & kIDMask;
+  const auto row_id = (pid >> kRowShift) & kIDMask;
+  const auto col_id = pid & kIDMask;
   auto* const sheet = sheets_[sheet_id].load(kAcquire);
   auto* const row = sheet->rows[row_id].load(kAcquire);
   return row->cols[col_id];
 }
 
 auto
-MappingTable::AllocateNewSpace(  //
-    const uint64_t cur_id)       //
+MappingTable::HasNextRow(                  //
+    const uint64_t cur_id) const noexcept  //
+    -> bool
+{
+  const auto next_id = GetNextRowID(cur_id);
+  const auto tab_id = (next_id >> kSheetShift) & kIDMask;
+  if (tab_id >= kSheetNum) return false;
+  const auto* const sheet = sheets_[tab_id].load(kAcquire);
+  return sheet && sheet->rows[(next_id >> kRowShift) & kIDMask].load(kAcquire);
+}
+
+auto
+MappingTable::AllocateNextRow(  //
+    const uint64_t cur_id)      //
+    -> bool
+{
+  const auto next_id = GetNextRowID(cur_id);
+  const auto tab_id = (next_id >> kSheetShift) & kIDMask;
+  if (tab_id >= kSheetNum) return false;
+
+  // create a new sheet if needed
+  auto& sheet_ref = sheets_[tab_id];
+  auto* sheet = sheet_ref.load(kAcquire);
+  if (!sheet) {
+    auto* const new_sheet = new (Allocate<Sheet>()) Sheet{};
+    if (sheet_ref.compare_exchange_strong(sheet, new_sheet, kAcqRel, kAcquire)) {
+      sheet = new_sheet;
+    } else {
+      Release<Sheet>(new_sheet);
+    }
+  }
+
+  // create a new row if needed
+  auto& row_ref = sheet->rows[(next_id >> kRowShift) & kIDMask];
+  auto* row = row_ref.load(kAcquire);
+  if (!row) {
+    auto* const new_row = new (Allocate<Row>()) Row{};
+    if (!row_ref.compare_exchange_strong(row, new_row, kRelease, kRelaxed)) {
+      Release<Row>(new_row);
+    }
+  }
+  return true;
+}
+
+auto
+MappingTable::AdvanceToNextRow(    //
+    const uint64_t overflowed_id)  //
+    -> bool
+{
+  if (!AllocateNextRow(overflowed_id)) return false;
+  auto expected = overflowed_id;
+  cnt_.compare_exchange_strong(expected, GetNextRowID(overflowed_id), kAcqRel, kRelaxed);
+  return true;
+}
+
+auto
+MappingTable::WaitForNextRow(      //
+    const uint64_t overflowed_id)  //
     -> uint64_t
 {
-  auto new_id = (cur_id + kRowUnit) & ~kIDMask;
-  auto row_id = (new_id >> kRowShift) & kIDMask;
-  Sheet* sheet;
-  if (row_id < kRowNum) {
-    sheet = sheets_[(new_id >> kSheetShift) & kIDMask].load(kAcquire);
-  } else {
-    // create a new sheet
-    row_id = 0;
-    new_id = (new_id + kSheetUnit) & ~(kIDMask << kRowShift);
-    auto& sheet_ref = sheets_[(new_id >> kSheetShift) & kIDMask];
-    auto* expected = sheet_ref.load(kRelaxed);
-    if (expected) return cnt_.load(kRelaxed);
-    sheet = new (Allocate<Sheet>()) Sheet{};
-    if (!sheet_ref.compare_exchange_strong(expected, sheet, kRelease, kRelaxed)) {
-      Release<Sheet>(sheet);
-      return cnt_.load(kRelaxed);
-    };
+  for (size_t i = 0; true; ++i) {
+    if (i >= kMaxYieldNum) {
+      // the thread moving the counter may be stalled
+      if (!AdvanceToNextRow(overflowed_id)) {
+        throw std::runtime_error{"The mapping table has no space."};
+      }
+      i = 0;
+    }
+    std::this_thread::yield();
+    const auto cur_id = cnt_.load(kRelaxed);
+    if (cur_id != overflowed_id) return cur_id;
   }
-
-  // create a new row
-  auto& row_ref = sheet->rows[row_id];
-  auto* expected = row_ref.load(kRelaxed);
-  if (expected) return cnt_.load(kRelaxed);
-  auto* const row = new (Allocate<Row>()) Row{};
-  if (!row_ref.compare_exchange_strong(expected, row, kRelease, kRelaxed)) {
-    Release<Row>(row);
-    return cnt_.load(kRelaxed);
-  }
-
-  cnt_.store(new_id, kRelease);
-  return new_id;
 }
+
+void
+MappingTable::RecyclePageID(  //
+    const uint64_t pid)
+{
+  auto& cell = GetCellUnchecked(pid);
+
+  const std::lock_guard guard{free_list_->mtx};
+  cell.store(std::bit_cast<void*>(free_list_->head), kRelaxed);
+  free_list_->head = pid;
+  free_num_.store(free_num_.load(kRelaxed) + 1, kRelaxed);
+}
+
+/*############################################################################*
+ * Public classes for garbage collection
+ *############################################################################*/
+
+MappingTable::PageIDGarbage::~PageIDGarbage()
+{  //
+  table->RecyclePageID(pid);
+}
+
 }  // namespace dbgroup::memory
