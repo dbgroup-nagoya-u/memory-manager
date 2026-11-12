@@ -449,7 +449,7 @@ class EpochBasedGC
       if (++pos >= thread_num_) {
         pos = 0;
       }
-      no_garbage &= lists[pos].ClearGarbage(min_epoch, reuse_capacity_, reuse_pages);
+      no_garbage &= lists[pos].ClearGarbage(pos, min_epoch, reuse_capacity_, reuse_pages);
     }
     for (auto* const page : reuse_pages) {
       Release<Target>(page);
