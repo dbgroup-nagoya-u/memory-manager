@@ -457,7 +457,9 @@ class EpochBasedGC
     reuse_pages.clear();
 
     if constexpr (sizeof...(Tails) > 0) {
-      return no_garbage && ClearGarbage<Tails...>(min_epoch);
+      // clear the remaining targets even if this target still has garbage
+      const auto no_rest_garbage = ClearGarbage<Tails...>(min_epoch);
+      return no_garbage && no_rest_garbage;
     }
     return no_garbage;
   }

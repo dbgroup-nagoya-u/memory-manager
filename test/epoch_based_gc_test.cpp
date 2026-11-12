@@ -20,6 +20,7 @@
 // C++ standard libraries
 #include <array>
 #include <atomic>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <future>
@@ -368,6 +369,26 @@ TEST_F(  //
   }
   EXPECT_EQ(gc->GetPageIfPossible(0), nullptr);
   EXPECT_THROW(gc->AddGarbage(nullptr, 0), std::runtime_error);
+}
+
+TEST_F(  //
+    EpochBasedGCFixture,
+    GCReleaseGarbageOfAllTargetsEvenIfDefaultTargetRemains)
+{
+  auto&& gc = GCBuilder{}.SetGCInterval(kGCInterval).Build();
+  auto* target_shared = new std::shared_ptr<Target>{new Target{0}};
+  const std::weak_ptr<Target> target_weak = *target_shared;
+  gc->AddGarbage<SharedPtrTarget>(target_shared);
+
+  // keep adding garbage of the default target, which always remains in GC
+  constexpr std::chrono::seconds kTimeout{10};
+  constexpr std::chrono::microseconds kAddInterval{100};
+  const auto deadline = std::chrono::steady_clock::now() + kTimeout;
+  while (!target_weak.expired() && std::chrono::steady_clock::now() < deadline) {
+    gc->AddGarbage(new Target{0});
+    std::this_thread::sleep_for(kAddInterval);
+  }
+  EXPECT_TRUE(target_weak.expired());
 }
 
 }  // namespace dbgroup::memory::test
