@@ -19,8 +19,10 @@
 
 // C++ standard libraries
 #include <atomic>
+#include <bit>
 #include <cstddef>
 #include <cstdint>
+#include <mutex>
 #include <new>
 #include <stdexcept>
 #include <thread>
@@ -52,6 +54,13 @@ MappingTable::MappingTable(  //
 
 MappingTable::~MappingTable()
 {
+  // clear the slots linking reusable page IDs
+  for (auto pid = free_list_->head; pid;) {
+    auto& cell = GetCellUnchecked(pid);
+    pid = std::bit_cast<uint64_t>(cell.load(kRelaxed));
+    cell.store(nullptr, kRelaxed);
+  }
+
   for (size_t i = 0; i < kSheetNum; ++i) {
     auto* const sheet = sheets_[i].load(kRelaxed);
     if (!sheet) continue;
@@ -77,6 +86,19 @@ auto
 MappingTable::ReservePageID()  //
     -> uint64_t
 {
+  // reuse a deleted page ID without waiting for other threads
+  if (free_num_.load(kRelaxed) > 0 && free_list_->mtx.try_lock()) {
+    const std::lock_guard guard{free_list_->mtx, std::adopt_lock};
+    const auto pid = free_list_->head;
+    if (pid) {
+      auto& cell = GetCellUnchecked(pid);
+      free_list_->head = std::bit_cast<uint64_t>(cell.load(kRelaxed));
+      cell.store(nullptr, kRelaxed);
+      free_num_.store(free_num_.load(kRelaxed) - 1, kRelaxed);
+      return pid;
+    }
+  }
+
   auto cur_id = cnt_.load(kRelaxed);
   for (size_t i = 1; true; ++i) {
     while ((cur_id & kIDMask) < kColNum) {
@@ -120,7 +142,8 @@ MappingTable::GetMemoryUsage() const  //
   const auto row_num = tab_id * kRowNum + row_id + 1;
   const auto reserved = (1 + sheet_num + row_num) * kVMPageSize;
   const auto empty_num = (kSheetNum - sheet_num) + (kRowNum - row_id - 1) + (kColNum - col_id);
-  const auto used = reserved - empty_num * kWordSize;
+  const auto free_num = free_num_.load(kRelaxed);
+  const auto used = reserved - (empty_num + free_num) * kWordSize;
 
   return {used, reserved};
 }
@@ -175,7 +198,17 @@ MappingTable::GetCell(   //
   if ((pid & kLPIDFlag) == 0 || sheet_id >= kSheetNum || row_id >= kRowNum || col_id >= kColNum) {
     throw std::runtime_error{"The process accessed the invalid page ID."};
   }
+  return GetCellUnchecked(pid);
+}
 
+auto
+MappingTable::GetCellUnchecked(   //
+    const uint64_t pid) noexcept  //
+    -> std::atomic<void*>&
+{
+  const auto sheet_id = (pid >> kSheetShift) & kIDMask;
+  const auto row_id = (pid >> kRowShift) & kIDMask;
+  const auto col_id = pid & kIDMask;
   auto* const sheet = sheets_[sheet_id].load(kAcquire);
   auto* const row = sheet->rows[row_id].load(kAcquire);
   return row->cols[col_id];
@@ -218,4 +251,26 @@ MappingTable::AllocateNewSpace(  //
   cnt_.store(new_id, kRelease);
   return new_id;
 }
+
+void
+MappingTable::RecyclePageID(  //
+    const uint64_t pid)
+{
+  auto& cell = GetCellUnchecked(pid);
+
+  const std::lock_guard guard{free_list_->mtx};
+  cell.store(std::bit_cast<void*>(free_list_->head), kRelaxed);
+  free_list_->head = pid;
+  free_num_.store(free_num_.load(kRelaxed) + 1, kRelaxed);
+}
+
+/*############################################################################*
+ * Public classes for garbage collection
+ *############################################################################*/
+
+MappingTable::PageIDGarbage::~PageIDGarbage()
+{  //
+  table->RecyclePageID(pid);
+}
+
 }  // namespace dbgroup::memory

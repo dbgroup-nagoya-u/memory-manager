@@ -22,7 +22,10 @@
 #include <bit>
 #include <cstddef>
 #include <cstdint>
+#include <memory>
+#include <mutex>
 #include <new>
+#include <stdexcept>
 #include <utility>
 
 // our libraries
@@ -33,6 +36,9 @@ namespace dbgroup::memory
 /**
  * @brief A class for managing page IDs and their logical pointers.
  *
+ * @note If you delete page IDs by `DeletePageID`, destroy the given garbage
+ * collector before this table because the collector reuses the IDs via this
+ * table.
  */
 class alignas(kVMPageSize) MappingTable
 {
@@ -61,6 +67,67 @@ class alignas(kVMPageSize) MappingTable
 
   /// @brief The capacity of each array (rows and columns).
   static constexpr size_t kSheetNum = (kVMPageSize - kCacheLineSize) / kWordSize;
+
+  /*##########################################################################*
+   * Public classes for garbage collection
+   *##########################################################################*/
+
+  /**
+   * @brief A garbage instance for reusing a deleted page ID.
+   *
+   */
+  struct PageIDGarbage {
+    /*########################################################################*
+     * Public constructors and assignment operators
+     *########################################################################*/
+
+    /**
+     * @param table The table containing a deleted page ID.
+     * @param pid A deleted page ID.
+     */
+    PageIDGarbage(  //
+        MappingTable* table,
+        uint64_t pid)
+        : table{table}
+        , pid{pid}
+    {
+    }
+
+    PageIDGarbage(const PageIDGarbage&) = delete;
+    PageIDGarbage(PageIDGarbage&&) = delete;
+
+    auto operator=(const PageIDGarbage&) -> PageIDGarbage& = delete;
+    auto operator=(PageIDGarbage&&) -> PageIDGarbage& = delete;
+
+    /*########################################################################*
+     * Public destructors
+     *########################################################################*/
+
+    /// @brief Reuse the page ID after garbage collection.
+    ~PageIDGarbage();
+
+    /*########################################################################*
+     * Public member variables
+     *########################################################################*/
+
+    /// @brief The table containing the page ID.
+    MappingTable* table;
+
+    /// @brief The deleted page ID.
+    uint64_t pid;
+  };
+
+  /**
+   * @brief A target class of garbage collectors for deleted page IDs.
+   *
+   */
+  struct PageIDTarget {
+    /// @brief Call the destructor to reuse page IDs.
+    using T = PageIDGarbage;
+
+    /// @brief Release garbage instances immediately.
+    static constexpr bool kReusePages = false;
+  };
 
   /*##########################################################################*
    * Public constructors and assignment operators
@@ -116,9 +183,36 @@ class alignas(kVMPageSize) MappingTable
 
   /**
    * @return A reserved page ID.
+   * @note This function reuses a deleted page ID if possible, and the slot of
+   * the returned page ID always contains `nullptr`.
    */
   [[nodiscard]] auto ReservePageID()  //
       -> uint64_t;
+
+  /**
+   * @brief Delete a page ID and reuse it after garbage collection.
+   *
+   * @tparam GC A class of garbage collectors containing `PageIDTarget`.
+   * @param pid A page ID to be deleted.
+   * @param gc A garbage collector to defer reusing the page ID.
+   * @exception `std::runtime_error` if an invalid page ID is given.
+   * @note This function does not release the page stored in the slot, so
+   * threads detaching the page must release it. Threads must not modify the
+   * slot after this function.
+   */
+  template <class GC>
+  void
+  DeletePageID(  //
+      const uint64_t pid,
+      GC& gc)
+  {
+    static_assert(GC::template HasTarget<PageIDTarget>(),
+                  "Garbage collectors must contain `MappingTable::PageIDTarget`.");
+    if (!IsPageID(pid) || pid >= cnt_.load(kAcquire)) {
+      throw std::runtime_error{"The process tried to delete the invalid page ID."};
+    }
+    gc.template AddGarbage<PageIDTarget>(new PageIDGarbage{this, pid});
+  }
 
   /**
    * @brief Compute the memory usage of this table (excluding stored pages).
@@ -207,6 +301,15 @@ class alignas(kVMPageSize) MappingTable
     std::atomic<Row*> rows[kVMPageSize / kWordSize] = {};
   };
 
+  /// @brief A list of reusable page IDs linked via their slots.
+  struct FreeList {
+    /// @brief A mutex for modifying this list.
+    std::mutex mtx{};
+
+    /// @brief The first reusable page ID (zero for an empty list).
+    uint64_t head{};
+  };
+
   /*##########################################################################*
    * Internal constants
    *##########################################################################*/
@@ -235,9 +338,19 @@ class alignas(kVMPageSize) MappingTable
   /**
    * @param pid A target page ID.
    * @return The reference of a corresponding cell.
+   * @exception `std::runtime_error` if an invalid page ID is given.
    */
   auto GetCell(      //
       uint64_t pid)  //
+      -> std::atomic<void*>&;
+
+  /**
+   * @param pid A reserved page ID.
+   * @return The reference of a corresponding cell.
+   * @note This function does not validate a given page ID.
+   */
+  auto GetCellUnchecked(      //
+      uint64_t pid) noexcept  //
       -> std::atomic<void*>&;
 
   /**
@@ -250,6 +363,25 @@ class alignas(kVMPageSize) MappingTable
       uint64_t cur_id)    //
       -> uint64_t;
 
+  /**
+   * @brief Register a deleted page ID for reuse.
+   *
+   * @param pid A deleted page ID.
+   * @note The slot of the deleted page ID stores the next reusable page ID to
+   * link reusable IDs without additional memory.
+   */
+  void RecyclePageID(  //
+      uint64_t pid);
+
+  /*##########################################################################*
+   * Static assertions
+   *##########################################################################*/
+
+  // the members before sheets must fit in a cache line to fit a table in a page
+  static_assert(sizeof(std::atomic_uint64_t) + sizeof(std::atomic_size_t) + sizeof(std::align_val_t)
+                    + sizeof(std::unique_ptr<FreeList>)
+                <= kCacheLineSize);
+
   /*##########################################################################*
    * Internal member variables
    *##########################################################################*/
@@ -257,8 +389,14 @@ class alignas(kVMPageSize) MappingTable
   /// @brief An atomic counter for incrementing page IDs.
   std::atomic_uint64_t cnt_{};
 
+  /// @brief The number of reusable page IDs.
+  std::atomic_size_t free_num_{};
+
   /// @brief The alignment of stored pages.
   std::align_val_t page_align_{};
+
+  /// @brief Reusable page IDs.
+  std::unique_ptr<FreeList> free_list_{std::make_unique<FreeList>()};
 
   /// @brief Mapping tables.
   alignas(kCacheLineSize) std::atomic<Sheet*> sheets_[kSheetNum] = {};
