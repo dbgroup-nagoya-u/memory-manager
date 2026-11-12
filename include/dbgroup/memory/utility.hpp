@@ -66,9 +66,12 @@ struct DefaultTarget {
  * @brief A dummy struct for representing fixed-length pages.
  *
  * @tparam kPageSize A target page size.
+ * @note GCC 11 cannot use `GetAlignValOnVirtualPages` in `alignas` because it calls
+ * `std::bit_ceil`, so this struct computes the same alignment directly from
+ * power-of-two page sizes.
  */
 template <size_t kPageSize>
-struct alignas(static_cast<size_t>(GetAlignValOnVirtualPages(kPageSize))) Page {
+struct alignas(kPageSize < kVMPageSize ? kPageSize : kVMPageSize) Page {
   /*##########################################################################*
    * GC settings
    *##########################################################################*/
