@@ -87,7 +87,7 @@ MappingTable::ReservePageID()  //
   for (size_t i = 1; true; ++i) {
     while ((cur_id & kIDMask) < kColNum) {
       if (cur_id > kMaxPID) throw std::runtime_error{"The mapping table has no space."};
-      if (cnt_.compare_exchange_weak(cur_id, cur_id + kColUnit, kRelaxed, kRelaxed)) {
+      if (cnt_.compare_exchange_weak(cur_id, cur_id + kColUnit, kAcquire, kRelaxed)) {
         if ((cur_id & kIDMask) >= kColNum - 1) {
           AllocateNewSpace(cur_id);
         }
@@ -219,7 +219,7 @@ MappingTable::AllocateNewSpace(  //
     return cnt_.load(kRelaxed);
   }
 
-  cnt_.store(new_id, kRelaxed);
+  cnt_.store(new_id, kRelease);
   return new_id;
 }
 }  // namespace dbgroup::memory
