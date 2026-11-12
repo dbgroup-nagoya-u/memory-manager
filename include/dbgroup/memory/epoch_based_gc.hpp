@@ -62,7 +62,7 @@ class EpochBasedGC
   using IDManager = ::dbgroup::thread::IDManager;
   using EpochGuard = ::dbgroup::thread::EpochGuard;
   using EpochManager = ::dbgroup::thread::EpochManager<Serial64_t>;
-  using Clock_t = ::std::chrono::system_clock;
+  using Clock_t = ::std::chrono::steady_clock;
 
   template <class Target>
   using GarbageList = component::ListHolder<Target>;
