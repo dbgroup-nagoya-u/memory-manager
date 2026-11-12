@@ -153,7 +153,7 @@ class EpochBasedGC
   AddGarbage(  //
       const void* const garbage_ptr)
   {
-    auto* const ptr = static_cast<typename Target::T*>(const_cast<void*>(garbage_ptr));
+    auto* const ptr = const_cast<void*>(garbage_ptr);
     GetGarbageList<Target>()->AddGarbage(epoch_manager_.GetCurrentEpoch(), ptr);
   }
 
@@ -172,43 +172,35 @@ class EpochBasedGC
     const auto epoch = epoch_manager_.GetCurrentEpoch();
     switch (page_size) {
       case k512: {
-        auto* const ptr = static_cast<Page512*>(const_cast<void*>(garbage_ptr));
-        GetGarbageList<Page512>()->AddGarbage(epoch, ptr);
+        GetGarbageList<Page512>()->AddGarbage(epoch, const_cast<void*>(garbage_ptr));
         break;
       }
       case k1Ki: {
-        auto* const ptr = static_cast<Page1Ki*>(const_cast<void*>(garbage_ptr));
-        GetGarbageList<Page1Ki>()->AddGarbage(epoch, ptr);
+        GetGarbageList<Page1Ki>()->AddGarbage(epoch, const_cast<void*>(garbage_ptr));
         break;
       }
       case k2Ki: {
-        auto* const ptr = static_cast<Page2Ki*>(const_cast<void*>(garbage_ptr));
-        GetGarbageList<Page2Ki>()->AddGarbage(epoch, ptr);
+        GetGarbageList<Page2Ki>()->AddGarbage(epoch, const_cast<void*>(garbage_ptr));
         break;
       }
       case k4Ki: {
-        auto* const ptr = static_cast<Page4Ki*>(const_cast<void*>(garbage_ptr));
-        GetGarbageList<Page4Ki>()->AddGarbage(epoch, ptr);
+        GetGarbageList<Page4Ki>()->AddGarbage(epoch, const_cast<void*>(garbage_ptr));
         break;
       }
       case k8Ki: {
-        auto* const ptr = static_cast<Page8Ki*>(const_cast<void*>(garbage_ptr));
-        GetGarbageList<Page8Ki>()->AddGarbage(epoch, ptr);
+        GetGarbageList<Page8Ki>()->AddGarbage(epoch, const_cast<void*>(garbage_ptr));
         break;
       }
       case k16Ki: {
-        auto* const ptr = static_cast<Page16Ki*>(const_cast<void*>(garbage_ptr));
-        GetGarbageList<Page16Ki>()->AddGarbage(epoch, ptr);
+        GetGarbageList<Page16Ki>()->AddGarbage(epoch, const_cast<void*>(garbage_ptr));
         break;
       }
       case k32Ki: {
-        auto* const ptr = static_cast<Page32Ki*>(const_cast<void*>(garbage_ptr));
-        GetGarbageList<Page32Ki>()->AddGarbage(epoch, ptr);
+        GetGarbageList<Page32Ki>()->AddGarbage(epoch, const_cast<void*>(garbage_ptr));
         break;
       }
       case k64Ki: {
-        auto* const ptr = static_cast<Page64Ki*>(const_cast<void*>(garbage_ptr));
-        GetGarbageList<Page64Ki>()->AddGarbage(epoch, ptr);
+        GetGarbageList<Page64Ki>()->AddGarbage(epoch, const_cast<void*>(garbage_ptr));
         break;
       }
       default:

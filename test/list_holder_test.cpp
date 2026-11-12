@@ -29,6 +29,7 @@
 // external libraries
 #include <gtest/gtest.h>
 
+#include <dbgroup/constants.hpp>
 #include <dbgroup/lock/utility.hpp>
 #include <dbgroup/types.hpp>
 
