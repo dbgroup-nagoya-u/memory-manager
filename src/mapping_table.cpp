@@ -100,32 +100,28 @@ MappingTable::ReservePageID()  //
   }
 
   auto cur_id = cnt_.load(kRelaxed);
-  for (size_t i = 1; true; ++i) {
-    while ((cur_id & kIDMask) < kColNum) {
-      if (cur_id > kMaxPID) throw std::runtime_error{"The mapping table has no space."};
-      if (cnt_.compare_exchange_weak(cur_id, cur_id + kColUnit, kAcquire, kRelaxed)) {
-        if ((cur_id & kIDMask) >= kColNum - 1) {
-          AllocateNewSpace(cur_id);
-        }
-        return cur_id;
-      }
-      CPP_UTILITY_SPINLOCK_HINT
-    }
-    if (i <= ::dbgroup::lock::kRetryNum) {
-      CPP_UTILITY_SPINLOCK_HINT
-      cur_id = cnt_.load(kRelaxed);
+  while (true) {
+    const auto col_id = cur_id & kIDMask;
+    if (col_id >= kColNum) {
+      cur_id = WaitForNextRow(cur_id);
       continue;
     }
 
-    // insert back off
-    i = 0;
-    auto prev_id = cur_id;
-    std::this_thread::sleep_for(::dbgroup::lock::kBackOffTime);
-    cur_id = cnt_.load(kRelaxed);
-    if (cur_id != prev_id) continue;
+    // the last column moves the counter to the next row if it has been allocated
+    const auto is_last = col_id == kColNum - 1;
+    const auto next_id = is_last && HasNextRow(cur_id) ? GetNextRowID(cur_id) : cur_id + kColUnit;
+    if (!cnt_.compare_exchange_weak(cur_id, next_id, kAcqRel, kRelaxed)) {
+      CPP_UTILITY_SPINLOCK_HINT
+      continue;
+    }
 
-    // the last thread may be stalled
-    cur_id = AllocateNewSpace(cur_id);
+    if (col_id == kPreallocColID) {
+      AllocateNextRow(cur_id);  // prepare the next row in advance
+    } else if (is_last && next_id == cur_id + kColUnit) {
+      // the next row has not been prepared in time (or this table becomes full)
+      static_cast<void>(AdvanceToNextRow(next_id));
+    }
+    return cur_id;
   }
 }
 
@@ -138,12 +134,21 @@ MappingTable::GetMemoryUsage() const  //
   const auto row_id = (id >> kRowShift) & kIDMask;
   const auto col_id = id & kIDMask;
 
-  const auto sheet_num = tab_id + 1;
-  const auto row_num = tab_id * kRowNum + row_id + 1;
+  // count rows and sheets including those allocated in advance
+  auto sheet_num = tab_id + 1;
+  auto row_num = tab_id * kRowNum + row_id + 1;
+  const auto next_tab_id = (GetNextRowID(id) >> kSheetShift) & kIDMask;
+  if (next_tab_id != tab_id && next_tab_id < kSheetNum && sheets_[next_tab_id].load(kAcquire)) {
+    ++sheet_num;
+  }
+  if (HasNextRow(id)) {
+    ++row_num;
+  }
+
+  // the actual usage consists of a header and pointers to sheets, rows, and pages
+  const auto id_num = (tab_id * kRowNum + row_id) * kColNum + col_id - free_num_.load(kRelaxed);
   const auto reserved = (1 + sheet_num + row_num) * kVMPageSize;
-  const auto empty_num = (kSheetNum - sheet_num) + (kRowNum - row_id - 1) + (kColNum - col_id);
-  const auto free_num = free_num_.load(kRelaxed);
-  const auto used = reserved - (empty_num + free_num) * kWordSize;
+  const auto used = kCacheLineSize + (sheet_num + row_num + id_num) * kWordSize;
 
   return {used, reserved};
 }
@@ -215,41 +220,78 @@ MappingTable::GetCellUnchecked(   //
 }
 
 auto
-MappingTable::AllocateNewSpace(  //
-    const uint64_t cur_id)       //
+MappingTable::HasNextRow(                  //
+    const uint64_t cur_id) const noexcept  //
+    -> bool
+{
+  const auto next_id = GetNextRowID(cur_id);
+  const auto tab_id = (next_id >> kSheetShift) & kIDMask;
+  if (tab_id >= kSheetNum) return false;
+  const auto* const sheet = sheets_[tab_id].load(kAcquire);
+  return sheet && sheet->rows[(next_id >> kRowShift) & kIDMask].load(kAcquire);
+}
+
+auto
+MappingTable::AllocateNextRow(  //
+    const uint64_t cur_id)      //
+    -> bool
+{
+  const auto next_id = GetNextRowID(cur_id);
+  const auto tab_id = (next_id >> kSheetShift) & kIDMask;
+  if (tab_id >= kSheetNum) return false;
+
+  // create a new sheet if needed
+  auto& sheet_ref = sheets_[tab_id];
+  auto* sheet = sheet_ref.load(kAcquire);
+  if (!sheet) {
+    auto* const new_sheet = new (Allocate<Sheet>()) Sheet{};
+    if (sheet_ref.compare_exchange_strong(sheet, new_sheet, kAcqRel, kAcquire)) {
+      sheet = new_sheet;
+    } else {
+      Release<Sheet>(new_sheet);
+    }
+  }
+
+  // create a new row if needed
+  auto& row_ref = sheet->rows[(next_id >> kRowShift) & kIDMask];
+  auto* row = row_ref.load(kAcquire);
+  if (!row) {
+    auto* const new_row = new (Allocate<Row>()) Row{};
+    if (!row_ref.compare_exchange_strong(row, new_row, kRelease, kRelaxed)) {
+      Release<Row>(new_row);
+    }
+  }
+  return true;
+}
+
+auto
+MappingTable::AdvanceToNextRow(    //
+    const uint64_t overflowed_id)  //
+    -> bool
+{
+  if (!AllocateNextRow(overflowed_id)) return false;
+  auto expected = overflowed_id;
+  cnt_.compare_exchange_strong(expected, GetNextRowID(overflowed_id), kAcqRel, kRelaxed);
+  return true;
+}
+
+auto
+MappingTable::WaitForNextRow(      //
+    const uint64_t overflowed_id)  //
     -> uint64_t
 {
-  auto new_id = (cur_id + kRowUnit) & ~kIDMask;
-  auto row_id = (new_id >> kRowShift) & kIDMask;
-  Sheet* sheet;
-  if (row_id < kRowNum) {
-    sheet = sheets_[(new_id >> kSheetShift) & kIDMask].load(kAcquire);
-  } else {
-    // create a new sheet
-    row_id = 0;
-    new_id = (new_id + kSheetUnit) & ~(kIDMask << kRowShift);
-    auto& sheet_ref = sheets_[(new_id >> kSheetShift) & kIDMask];
-    auto* expected = sheet_ref.load(kRelaxed);
-    if (expected) return cnt_.load(kRelaxed);
-    sheet = new (Allocate<Sheet>()) Sheet{};
-    if (!sheet_ref.compare_exchange_strong(expected, sheet, kRelease, kRelaxed)) {
-      Release<Sheet>(sheet);
-      return cnt_.load(kRelaxed);
-    };
+  for (size_t i = 0; true; ++i) {
+    if (i >= kMaxYieldNum) {
+      // the thread moving the counter may be stalled
+      if (!AdvanceToNextRow(overflowed_id)) {
+        throw std::runtime_error{"The mapping table has no space."};
+      }
+      i = 0;
+    }
+    std::this_thread::yield();
+    const auto cur_id = cnt_.load(kRelaxed);
+    if (cur_id != overflowed_id) return cur_id;
   }
-
-  // create a new row
-  auto& row_ref = sheet->rows[row_id];
-  auto* expected = row_ref.load(kRelaxed);
-  if (expected) return cnt_.load(kRelaxed);
-  auto* const row = new (Allocate<Row>()) Row{};
-  if (!row_ref.compare_exchange_strong(expected, row, kRelease, kRelaxed)) {
-    Release<Row>(row);
-    return cnt_.load(kRelaxed);
-  }
-
-  cnt_.store(new_id, kRelease);
-  return new_id;
 }
 
 void

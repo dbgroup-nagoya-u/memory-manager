@@ -68,6 +68,9 @@ class alignas(kVMPageSize) MappingTable
   /// @brief The capacity of each array (rows and columns).
   static constexpr size_t kSheetNum = (kVMPageSize - kCacheLineSize) / kWordSize;
 
+  /// @brief The column ID for allocating the next row in advance.
+  static constexpr size_t kPreallocColID = kColNum * 7 / 10;
+
   /*##########################################################################*
    * Public classes for garbage collection
    *##########################################################################*/
@@ -326,10 +329,8 @@ class alignas(kVMPageSize) MappingTable
   /// @brief A bit mask for extracting IDs.
   static constexpr uint64_t kIDMask = 0xFFFFUL;
 
-  /// @brief The maximum logical page ID.
-  static constexpr uint64_t kMaxPID{((kSheetNum - 1) << kSheetShift)  //
-                                    | ((kRowNum - 1) << kRowShift)    //
-                                    | (kColNum - 1) | kLPIDFlag};
+  /// @brief The number of yields before helping a thread allocating a row.
+  static constexpr size_t kMaxYieldNum = 100;
 
   /*##########################################################################*
    * Internal utilities
@@ -354,13 +355,66 @@ class alignas(kVMPageSize) MappingTable
       -> std::atomic<void*>&;
 
   /**
-   * @brief Allocate a new row (and a new sheet if needed).
-   *
-   * @param cur_id The expected current page ID.
-   * @return A new page ID.
+   * @param cur_id A page ID (or the counter value) in a row.
+   * @return The first page ID in the next row.
+   * @note The returned ID may exceed the capacity of this table.
    */
-  auto AllocateNewSpace(  //
-      uint64_t cur_id)    //
+  [[nodiscard]]
+  static constexpr auto
+  GetNextRowID(               //
+      const uint64_t cur_id)  //
+      -> uint64_t
+  {
+    auto next_id = (cur_id + kRowUnit) & ~kIDMask;
+    if (((next_id >> kRowShift) & kIDMask) >= kRowNum) {
+      next_id = (next_id + kSheetUnit) & ~(kIDMask << kRowShift);
+    }
+    return next_id;
+  }
+
+  /**
+   * @param cur_id A page ID (or the counter value) in a row.
+   * @retval true if the next row has been allocated.
+   * @retval false otherwise.
+   */
+  [[nodiscard]]
+  auto HasNextRow(                     //
+      uint64_t cur_id) const noexcept  //
+      -> bool;
+
+  /**
+   * @brief Allocate the next row (and a new sheet if needed) if not exist.
+   *
+   * @param cur_id A page ID (or the counter value) in a row.
+   * @retval true if the next row exists.
+   * @retval false if this table has no space.
+   */
+  auto AllocateNextRow(  //
+      uint64_t cur_id)   //
+      -> bool;
+
+  /**
+   * @brief Move the overflowed counter to the first page ID in the next row.
+   *
+   * @param overflowed_id The overflowed counter value.
+   * @retval true if the counter has been moved (by any thread).
+   * @retval false if this table has no space.
+   */
+  auto AdvanceToNextRow(       //
+      uint64_t overflowed_id)  //
+      -> bool;
+
+  /**
+   * @brief Wait for a thread moving the overflowed counter to the next row.
+   *
+   * @param overflowed_id The overflowed counter value.
+   * @return The current counter value.
+   * @exception `std::runtime_error` if this table has no space.
+   * @note If the counter does not change for a while, this function helps
+   * moving it because the thread may be stalled.
+   */
+  auto WaitForNextRow(         //
+      uint64_t overflowed_id)  //
       -> uint64_t;
 
   /**

@@ -270,12 +270,30 @@ TEST_F(MappingTableFixture, GetMemoryUsageReturnUsageOfReservedSpaces)
       static_cast<void>(table_->ReservePageID());
     }
 
+    // the next row (and sheet) is allocated in advance after kPreallocColID
+    auto row_num = reserved_num / kColNum + 1;
+    auto sheet_num = (row_num - 1) / kRowNum + 1;
+    if (reserved_num % kColNum > MappingTable::kPreallocColID) {
+      ++row_num;
+      if ((row_num - 1) % kRowNum == 0) ++sheet_num;
+    }
+
     // a table page has a header (a cache line) and pointers to sheets, rows, and pages
-    const auto row_num = reserved_num / kColNum + 1;
-    const auto sheet_num = (row_num - 1) / kRowNum + 1;
     const auto [used, reserved] = table_->GetMemoryUsage();
     EXPECT_EQ(reserved, (1 + sheet_num + row_num) * kVMPageSize);
     EXPECT_EQ(used, kCacheLineSize + kWordSize * (sheet_num + row_num + reserved_num));
+  }
+}
+
+TEST_F(MappingTableFixture, ReservePageIDReturnSequentialIDsAcrossRowsAndSheets)
+{
+  for (size_t i = 0; i < kOverSheetCapacity; ++i) {
+    const auto sheet_id = i / (MappingTable::kColNum * MappingTable::kRowNum);
+    const auto row_id = (i / MappingTable::kColNum) % MappingTable::kRowNum;
+    const auto col_id = i % MappingTable::kColNum;
+    const auto expected = MappingTable::kLPIDFlag | (sheet_id << MappingTable::kSheetShift)
+                          | (row_id << MappingTable::kRowShift) | col_id;
+    ASSERT_EQ(table_->ReservePageID(), expected);
   }
 }
 
