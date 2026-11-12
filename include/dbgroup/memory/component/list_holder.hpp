@@ -84,7 +84,7 @@ class alignas(kCacheLineSize) ListHolder
   ~ListHolder()
   {
     auto* const glist = std::bit_cast<GarbageList*>(gc_glist_.load(kRelaxed));
-    delete glist;
+    GarbageList::DestroyLists(glist);
 
     if constexpr (Target::kReusePages) {
       auto* const rlist = cl_rlist_.load(kAcquire);

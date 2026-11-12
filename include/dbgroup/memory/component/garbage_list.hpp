@@ -147,6 +147,31 @@ class alignas(kVMPageSize) GarbageList
     return no_garbage;
   }
 
+  /*##########################################################################*
+   * Public APIs for destruction
+   *##########################################################################*/
+
+  /**
+   * @brief Destroy all the linked lists.
+   *
+   * Cleaner threads may leave consumed lists if other cleaners are reading
+   * them, so this function destroys all the lists linked from a given one.
+   *
+   * @param list The head list of a linked list.
+   * @note This function is not lock-free. Only a single thread must call this
+   * function.
+   */
+  static void
+  DestroyLists(  //
+      GarbageList* list)
+  {
+    while (list != nullptr) {
+      auto* const next = list->next_.load(kAcquire);
+      delete list;
+      list = next;
+    }
+  }
+
  private:
   /*##########################################################################*
    * Internal constants
