@@ -31,6 +31,7 @@
 // external libraries
 #include <gtest/gtest.h>
 
+// our libraries
 #include <dbgroup/lock/utility.hpp>
 
 namespace dbgroup::memory::test

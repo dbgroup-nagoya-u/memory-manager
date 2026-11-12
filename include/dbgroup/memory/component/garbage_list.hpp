@@ -23,7 +23,7 @@
 #include <cstddef>
 #include <vector>
 
-// external libraries
+// our libraries
 #include <dbgroup/constants.hpp>
 #include <dbgroup/types.hpp>
 

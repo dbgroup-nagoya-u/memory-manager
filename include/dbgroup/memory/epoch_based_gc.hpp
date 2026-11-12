@@ -28,7 +28,7 @@
 #include <tuple>
 #include <vector>
 
-// external libraries
+// our libraries
 #include <dbgroup/constants.hpp>
 #include <dbgroup/thread/epoch_guard.hpp>
 #include <dbgroup/thread/epoch_manager.hpp>

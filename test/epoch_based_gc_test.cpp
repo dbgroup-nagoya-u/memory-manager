@@ -35,9 +35,10 @@
 // external libraries
 #include <gtest/gtest.h>
 
+// our libraries
 #include <dbgroup/constants.hpp>
 
-// library sources
+// local sources
 #include "dbgroup/memory/utility.hpp"
 
 namespace dbgroup::memory::test

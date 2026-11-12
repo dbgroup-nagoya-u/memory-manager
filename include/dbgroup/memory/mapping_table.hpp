@@ -25,7 +25,7 @@
 #include <functional>
 #include <utility>
 
-// external libraries
+// our libraries
 #include <dbgroup/constants.hpp>
 
 // local sources

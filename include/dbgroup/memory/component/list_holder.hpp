@@ -24,7 +24,7 @@
 #include <cstdint>
 #include <memory>
 
-// external libraries
+// our libraries
 #include <dbgroup/constants.hpp>
 #include <dbgroup/thread/id_manager.hpp>
 #include <dbgroup/types.hpp>

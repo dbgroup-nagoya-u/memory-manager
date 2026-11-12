@@ -20,7 +20,7 @@
 // C++ standard libraries
 #include <atomic>
 
-// external libraries
+// our libraries
 #include <dbgroup/constants.hpp>
 #include <dbgroup/types.hpp>
 

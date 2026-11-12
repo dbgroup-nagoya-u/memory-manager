@@ -28,7 +28,7 @@
 #include <thread>
 #include <utility>
 
-// external libraries
+// our libraries
 #include <dbgroup/constants.hpp>
 #include <dbgroup/lock/utility.hpp>
 

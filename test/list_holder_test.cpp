@@ -29,11 +29,12 @@
 // external libraries
 #include <gtest/gtest.h>
 
+// our libraries
 #include <dbgroup/constants.hpp>
 #include <dbgroup/lock/utility.hpp>
 #include <dbgroup/types.hpp>
 
-// library sources
+// local sources
 #include "dbgroup/memory/utility.hpp"
 
 namespace dbgroup::memory::component::test

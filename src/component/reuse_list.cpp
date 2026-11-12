@@ -24,7 +24,7 @@
 #include <cstdint>
 #include <vector>
 
-// external libraries
+// our libraries
 #include <dbgroup/constants.hpp>
 
 namespace dbgroup::memory::component
