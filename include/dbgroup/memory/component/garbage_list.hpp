@@ -110,18 +110,26 @@ class alignas(kVMPageSize) GarbageList
     while (true) {
       tail = list->tail_.load(kAcquire);
       auto head = list->head_.load(kRelaxed);
-      for (; head < tail && list->garbage_[head].epoch < min_epoch; ++head) {
-        if (!list->head_.compare_exchange_strong(head, head + 1, kRelaxed, kRelaxed)) {
-          goto end;
+
+      // claim releasable garbage in batches
+      while (true) {
+        auto new_head = head;
+        while (new_head < tail && new_head - head < kMaxBatchSize
+               && list->garbage_[new_head].epoch < min_epoch) {
+          ++new_head;
         }
-        auto* const page = list->garbage_[head].ptr;
-        if constexpr (!std::is_same_v<T, void>) {
-          std::bit_cast<T*>(page)->~T();
-        }
-        if (reuse_pages != nullptr) {
-          reuse_pages->emplace_back(page);
-        } else {
-          Release<Target>(page);
+        if (new_head == head) break;
+        if (!list->head_.compare_exchange_strong(head, new_head, kRelaxed, kRelaxed)) goto end;
+        for (; head < new_head; ++head) {
+          auto* const page = list->garbage_[head].ptr;
+          if constexpr (!std::is_same_v<T, void>) {
+            std::bit_cast<T*>(page)->~T();
+          }
+          if (reuse_pages != nullptr) {
+            reuse_pages->emplace_back(page);
+          } else {
+            Release<Target>(page);
+          }
         }
       }
       auto* const next = list->next_.load(kAcquire);
@@ -179,6 +187,11 @@ class alignas(kVMPageSize) GarbageList
 
   /// @brief The size of buffers for retaining garbages.
   static constexpr size_t kGarbageListCapacity = (kVMPageSize - 32) / 16;
+
+  /// @brief The maximum number of garbage instances claimed at once.
+  /// @note Claiming too many instances at once prevents cleaners from deleting
+  /// consumed lists because each cleaner reads a list for a long time.
+  static constexpr size_t kMaxBatchSize = 16;
 
   /// @brief The begin bit position of an inline counter.
   static constexpr uint64_t kCntShift = 48;
