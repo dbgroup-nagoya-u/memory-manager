@@ -77,11 +77,14 @@ class alignas(kVMPageSize) ReuseList
    * @param tail_addr The address of the tail list container.
    * @param pages Reusable pages.
    * @param reuse_capacity The maximum number of reusable pages for each thread.
+   * @param zero_fill_size The size of each page to be filled with zeros before
+   * reuse (zero for no filling).
    */
   static void AddPages(  //
       std::atomic_uintptr_t* tail_addr,
       std::vector<void*>& pages,
-      size_t reuse_capacity);
+      size_t reuse_capacity,
+      size_t zero_fill_size);
 
   /**
    * @brief Reuse a destructed page if exist.

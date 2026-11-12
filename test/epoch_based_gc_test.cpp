@@ -18,6 +18,7 @@
 #include "dbgroup/memory/epoch_based_gc.hpp"
 
 // C++ standard libraries
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <chrono>
@@ -29,6 +30,7 @@
 #include <mutex>
 #include <new>
 #include <random>
+#include <span>
 #include <stdexcept>
 #include <thread>
 #include <utility>
@@ -59,6 +61,7 @@ using Target = uint64_t;
 struct SharedPtrTarget : public DefaultTarget {
   using T = std::shared_ptr<Target>;
   static constexpr bool kReusePages = true;
+  static constexpr size_t kZeroFillSize = sizeof(T);
 };
 
 class EpochBasedGCFixture : public ::testing::Test
@@ -100,6 +103,16 @@ class EpochBasedGCFixture : public ::testing::Test
   /*##########################################################################*
    * Internal utility functions
    *##########################################################################*/
+
+  static auto
+  IsFilledWithZeros(  //
+      const void* page,
+      const size_t size)  //
+      -> bool
+  {
+    const std::span bytes{static_cast<const std::byte*>(page), size};
+    return std::ranges::all_of(bytes, [](const std::byte b) { return b == std::byte{0}; });
+  }
 
   void
   AddGarbage(  //
@@ -367,6 +380,7 @@ TEST_F(  //
     do {
       page = gc->GetPageIfPossible(page_size);
     } while (!page);
+    EXPECT_TRUE(IsFilledWithZeros(page, page_size));
     ::operator delete(page, GetAlignValOnVirtualPages(page_size));
   }
   EXPECT_EQ(gc->GetPageIfPossible(0), nullptr);

@@ -18,11 +18,13 @@
 #include "dbgroup/memory/component/list_holder.hpp"
 
 // C++ standard libraries
+#include <algorithm>
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
 #include <memory>
+#include <span>
 #include <thread>
 #include <vector>
 
@@ -68,6 +70,7 @@ class GarbageListFixture : public ::testing::Test
   struct SharedPtrTarget : public DefaultTarget {
     using T = std::shared_ptr<Target>;
     static constexpr bool kReusePages = true;
+    static constexpr size_t kZeroFillSize = sizeof(T);
   };
 
   /*##########################################################################*
@@ -103,6 +106,16 @@ class GarbageListFixture : public ::testing::Test
   /*##########################################################################*
    * Internal utility functions
    *##########################################################################*/
+
+  static auto
+  IsFilledWithZeros(  //
+      const void* page,
+      const size_t size)  //
+      -> bool
+  {
+    const std::span bytes{static_cast<const std::byte*>(page), size};
+    return std::ranges::all_of(bytes, [](const std::byte b) { return b == std::byte{0}; });
+  }
 
   void
   AddGarbage(  //
@@ -251,7 +264,8 @@ TEST_F(  //
 
   for (size_t i = 0; i < kReusablePageNum; ++i) {
     auto* page = list_->GetPageIfPossible();
-    EXPECT_NE(nullptr, page);
+    ASSERT_NE(nullptr, page);
+    EXPECT_TRUE(IsFilledWithZeros(page, SharedPtrTarget::kZeroFillSize));
     Release<std::shared_ptr<Target>>(page);
   }
   EXPECT_EQ(nullptr, list_->GetPageIfPossible());

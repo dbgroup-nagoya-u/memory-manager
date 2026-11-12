@@ -20,7 +20,6 @@
 // C++ standard libraries
 #include <bit>
 #include <cstddef>
-#include <cstring>
 #include <new>
 
 // our libraries
@@ -58,6 +57,9 @@ struct DefaultTarget {
 
   /// @brief Do not reuse pages after GC (release immediately).
   static constexpr bool kReusePages = false;
+
+  /// @brief The size of reused pages to be filled with zeros (zero for no filling).
+  static constexpr size_t kZeroFillSize = 0;
 };
 
 /**
@@ -71,11 +73,14 @@ struct alignas(static_cast<size_t>(GetAlignValOnVirtualPages(kPageSize))) Page {
    * GC settings
    *##########################################################################*/
 
-  /// @brief Call a self destructor (zero filling).
-  using T = Page;
+  /// @brief Use the void type to avoid calling a destructor.
+  using T = void;
 
   /// @brief Reuse pages after GC.
   static constexpr bool kReusePages = true;
+
+  /// @brief Fill reused pages with zeros.
+  static constexpr size_t kZeroFillSize = kPageSize;
 
   /*##########################################################################*
    * Public constructors and assignment operators
@@ -93,11 +98,7 @@ struct alignas(static_cast<size_t>(GetAlignValOnVirtualPages(kPageSize))) Page {
    * Public destructors
    *##########################################################################*/
 
-  /// @brief Fill this page with zeros.
-  ~Page()
-  {  //
-    static_cast<void>(std::memset(static_cast<void*>(this), 0, kPageSize));
-  }
+  constexpr ~Page() = default;
 
   /*##########################################################################*
    * Public member variables

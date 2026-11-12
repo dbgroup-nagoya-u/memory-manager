@@ -157,13 +157,21 @@ class alignas(kCacheLineSize) ListHolder
 
       const auto no_garbage = GarbageList::Clear<Target>(&gc_glist_, min_epoch, &reuse_pages);
       if (!reuse_pages.empty()) {
-        ReuseList::AddPages(&gc_rlist_, reuse_pages, reuse_capacity);
+        ReuseList::AddPages(&gc_rlist_, reuse_pages, reuse_capacity, Target::kZeroFillSize);
       }
       return no_garbage;
     }
   }
 
  private:
+  /*##########################################################################*
+   * Static assertions
+   *##########################################################################*/
+
+  static_assert(
+      !Target::kReusePages || requires { size_t{Target::kZeroFillSize}; },
+      "Targets reusing pages must define `kZeroFillSize` (zero for no filling).");
+
   /*##########################################################################*
    * Internal member variables
    *##########################################################################*/

@@ -214,6 +214,8 @@ main(  //
 
 You can reuse garbage-collected pages. Our GC maintains garbage lists in each thread's local storage, so reusing pages can avoid contention due to memory allocation.
 
+A target class reusing pages must define `kZeroFillSize`, which is the size of each page filled with zeros before reuse. If it is zero, reused pages are not filled with zeros. Note that `DefaultTarget` defines `kZeroFillSize` as zero, so derived classes inherit it.
+
 ```cpp
 // C++ standard libraries
 #include <atomic>
@@ -230,6 +232,9 @@ You can reuse garbage-collected pages. Our GC maintains garbage lists in each th
 struct ReusableTarget : public ::dbgroup::memory::DefaultTarget {
   // reuse garbage-collected pages
   static constexpr bool kReusePages = true;
+
+  // fill reused pages with zeros
+  static constexpr size_t kZeroFillSize = sizeof(size_t);
 };
 
 auto

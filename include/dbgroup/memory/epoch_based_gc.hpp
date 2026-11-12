@@ -219,7 +219,8 @@ class EpochBasedGC
    * @brief Reuse a destructed page if exist.
    *
    * @tparam Target A class for representing target garbage.
-   * @retval A memory page if exist.
+   * @retval A memory page if exist, whose first `Target::kZeroFillSize` bytes are
+   * filled with zeros.
    * @retval nullptr otherwise.
    * @exception `std::out_of_range` if the ID of the current thread is not less than
    * the maximum number of threads when this GC was constructed.
@@ -237,7 +238,7 @@ class EpochBasedGC
    * @brief Reuse a destructed page if exist.
    *
    * @param page_size The size of a garbage page.
-   * @retval A memory page if exist.
+   * @retval A memory page filled with zeros if exist.
    * @retval nullptr otherwise.
    * @exception `std::out_of_range` if the ID of the current thread is not less than
    * the maximum number of threads when this GC was constructed.

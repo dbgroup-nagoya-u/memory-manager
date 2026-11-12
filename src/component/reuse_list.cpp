@@ -22,6 +22,7 @@
 #include <bit>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <vector>
 
 // our libraries
@@ -37,7 +38,8 @@ void
 ReuseList::AddPages(  //
     std::atomic_uintptr_t* const tail_addr,
     std::vector<void*>& pages,
-    const size_t reuse_capacity)
+    const size_t reuse_capacity,
+    const size_t zero_fill_size)
 {
   auto uptr = tail_addr->load(kAcquire);
   if (!tail_addr->compare_exchange_strong(uptr, uptr + kCntUnit, kAcquire, kRelaxed)) return;
@@ -49,9 +51,14 @@ ReuseList::AddPages(  //
     // add reusable pages
     auto& dest = list->pages_[tail];
     auto* cur_page = dest.load(kRelaxed);
-    if (cur_page == nullptr
-        && dest.compare_exchange_strong(cur_page, pages.back(), kRelease, kRelaxed)) {
-      pages.pop_back();
+    if (cur_page == nullptr) {
+      auto* const page = pages.back();
+      if (zero_fill_size > 0) {
+        std::memset(page, 0, zero_fill_size);
+      }
+      if (dest.compare_exchange_strong(cur_page, page, kRelease, kRelaxed)) {
+        pages.pop_back();
+      }
     }
     if (list->tail_.load(kRelaxed) != tail) goto end;
 
