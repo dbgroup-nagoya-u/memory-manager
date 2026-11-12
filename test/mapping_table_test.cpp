@@ -228,6 +228,28 @@ TEST_F(MappingTableFixture, CASStrongUpdateStoredPageAtomically)
   VerifyCAS(!kUseCASWeak);
 }
 
+TEST_F(MappingTableFixture, GetMemoryUsageReturnUsageOfReservedSpaces)
+{
+  constexpr size_t kColNum = MappingTable::kColNum;
+  constexpr size_t kRowNum = MappingTable::kRowNum;
+  constexpr size_t kIDsInSheet = kColNum * kRowNum;
+
+  size_t reserved_num = 0;
+  for (const size_t target_num : {0UL, 1UL, kColNum - 1, kColNum, kColNum + 1, kIDsInSheet - 1,
+                                  kIDsInSheet, kOverSheetCapacity}) {
+    for (; reserved_num < target_num; ++reserved_num) {
+      static_cast<void>(table_->ReservePageID());
+    }
+
+    // a table page has a header (a cache line) and pointers to sheets, rows, and pages
+    const auto row_num = reserved_num / kColNum + 1;
+    const auto sheet_num = (row_num - 1) / kRowNum + 1;
+    const auto [used, reserved] = table_->GetMemoryUsage();
+    EXPECT_EQ(reserved, (1 + sheet_num + row_num) * kVMPageSize);
+    EXPECT_EQ(used, kCacheLineSize + kWordSize * (sheet_num + row_num + reserved_num));
+  }
+}
+
 TEST_F(MappingTableFixture, DestructorReleaseStoredPagesWithTheirAlignment)
 {
   constexpr size_t kOddPageSize = 3000;  // not a power of two

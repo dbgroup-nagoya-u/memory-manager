@@ -116,8 +116,10 @@ MappingTable::GetMemoryUsage() const  //
   const auto row_id = (id >> kRowShift) & kIDMask;
   const auto col_id = id & kIDMask;
 
-  const auto reserved = (tab_id * (kSheetNum + 1) + row_id + 3) * kVMPageSize;
-  const auto empty_num = 2 * kSheetNum + kSheetNum - col_id - row_id - tab_id - 3;
+  const auto sheet_num = tab_id + 1;
+  const auto row_num = tab_id * kRowNum + row_id + 1;
+  const auto reserved = (1 + sheet_num + row_num) * kVMPageSize;
+  const auto empty_num = (kSheetNum - sheet_num) + (kRowNum - row_id - 1) + (kColNum - col_id);
   const auto used = reserved - empty_num * kWordSize;
 
   return {used, reserved};

@@ -121,10 +121,10 @@ class alignas(kVMPageSize) MappingTable
       -> uint64_t;
 
   /**
-   * @brief Compute memory usage.
+   * @brief Compute the memory usage of this table (excluding stored pages).
    *
-   * @retval 2nd: The actual usage in bytes.
-   * @retval 3rd: The virtual usage in bytes.
+   * @return The pair of the actual and reserved usage in bytes, where the
+   * actual usage excludes unused slots in reserved spaces.
    */
   [[nodiscard]] auto GetMemoryUsage() const  //
       -> std::pair<size_t, size_t>;
